@@ -1,10 +1,10 @@
 ---
 name: confluence-publisher
 description: >
-  Publish, sync, diff, and export markdown documentation to/from Confluence Cloud.
-  Use when the user asks to publish, update, preview, diff, or export markdown files
+  Publish, sync, diff, delete, discover, and export markdown documentation to/from Confluence Cloud.
+  Use when the user asks to publish, update, delete, preview, diff, or export markdown files
   to Confluence, or when they want to verify existing Confluence pages against local
-  docs. Handles page creation, updates, cross-page link rewriting, Mermaid diagram
+  docs. Handles page creation, updates, deletion, cross-page link rewriting, Mermaid diagram
   rendering, hierarchy verification, diff/preview, and reverse export to markdown.
 license: MIT
 metadata:
@@ -24,6 +24,7 @@ Publish a tree of markdown files to Confluence Cloud, maintaining hierarchy, cro
 Use this skill when the user wants to:
 - Publish one or more markdown files to Confluence
 - Update existing Confluence pages from local markdown
+- Delete Confluence pages (by manifest file key or page ID)
 - Verify that Confluence pages match local docs (hierarchy, titles, content)
 - Discover existing Confluence pages and build a local manifest
 - Validate that a manifest is consistent with both disk and Confluence
@@ -269,6 +270,27 @@ Attachment paths are relative to `docs_dir`. Multiple files are comma-separated.
 
 Mermaid diagram PNGs are uploaded automatically — no need to list them in `--attachments`.
 
+### Delete pages
+
+Remove Confluence pages and their manifest entries. Supports deletion by manifest file key or direct page ID.
+
+```bash
+# Delete by manifest file path
+python <skill_dir>/scripts/delete_page.py --config .confluence.json --file plan/old-design.md
+
+# Delete multiple files
+python <skill_dir>/scripts/delete_page.py --config .confluence.json \
+    --file "plan/old-design.md,plan/deprecated.md"
+
+# Delete by page ID (not in manifest)
+python <skill_dir>/scripts/delete_page.py --config .confluence.json --page-id 123456
+
+# Dry run — show what would be deleted without deleting
+python <skill_dir>/scripts/delete_page.py --config .confluence.json --file plan/old-design.md --dry-run
+```
+
+**Never run delete without explicit user approval.** Before executing, list every page that will be deleted (title and ID) and wait for the user to confirm. Deletion is irreversible unless the page is recovered from Confluence trash. When in doubt, use `--dry-run` first.
+
 ### Validate only
 
 ```bash
@@ -283,7 +305,7 @@ python <skill_dir>/scripts/verify_hierarchy.py --config .confluence.json
 
 ## Important rules
 
-1. **Never publish without showing the plan first and getting user approval.**
+1. **Never publish or delete without showing the plan first and getting explicit user approval.** Deletion is destructive and irreversible (except via Confluence trash recovery).
 2. **Never print or log credentials.** Only confirm that the environment variables are set.
 3. **Publish parents before children** so that parent IDs are available for child creation.
 4. The manifest file (`.confluence-manifest.json`) is auto-maintained by scripts. Do not edit it manually.
@@ -305,7 +327,6 @@ These operations can be added to this skill in the future:
 
 | Capability | Description |
 |---|---|
-| **Delete pages** | Remove Confluence pages for files deleted locally |
 | **Bulk rename** | Rename Confluence pages when local titles change |
 | **Labels/tags** | Auto-apply Confluence labels based on directory structure or markdown frontmatter |
 | **Page permissions** | Set view/edit restrictions on published pages |
