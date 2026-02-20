@@ -35,7 +35,6 @@ def markdown_to_confluence_storage(md_content: str) -> str:
             "fenced_code",
             "codehilite",
             "toc",
-            "nl2br",
             "sane_lists",
         ],
         extension_configs={
@@ -99,6 +98,12 @@ def rewrite_md_links(html: str, current_file: str, manifest: dict, space_key: st
         href = match.group(1)
         link_text = match.group(2)
 
+        # Split off anchor fragment if present (e.g. "setup.md#section")
+        anchor = ""
+        if "#" in href:
+            href, anchor = href.split("#", 1)
+            anchor = "#" + anchor
+
         if not href.endswith(".md"):
             return match.group(0)
 
@@ -106,8 +111,9 @@ def rewrite_md_links(html: str, current_file: str, manifest: dict, space_key: st
 
         if resolved in manifest:
             page_title = manifest[resolved]["title"]
+            anchor_attr = f' ac:anchor="{anchor[1:]}"' if anchor else ""
             return (
-                f'<ac:link>'
+                f'<ac:link{anchor_attr}>'
                 f'<ri:page ri:content-title="{page_title}" ri:space-key="{space_key}"/>'
                 f'<ac:plain-text-link-body><![CDATA[{link_text}]]></ac:plain-text-link-body>'
                 f'</ac:link>'

@@ -10,34 +10,15 @@ Usage:
 """
 
 import argparse
-import json
-import subprocess
 import sys
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config_loader import load_config, resolve_credentials, load_manifest
+from config_loader import load_config, resolve_credentials, load_manifest, ensure_deps
 
-REQUIRED_PACKAGES = {"atlassian-python-api": "atlassian"}
-
-
-def ensure_deps():
-    missing = []
-    for pkg, imp in REQUIRED_PACKAGES.items():
-        try:
-            __import__(imp)
-        except ImportError:
-            missing.append(pkg)
-    if missing:
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--quiet", *missing],
-            stdout=subprocess.DEVNULL,
-        )
-
-
-ensure_deps()
+ensure_deps({"atlassian-python-api": "atlassian"})
 
 from atlassian import Confluence  # noqa: E402
 
@@ -58,7 +39,8 @@ def get_children(confluence: Confluence, page_id: str) -> list:
     return [(c["id"], c["title"]) for c in children]
 
 
-def print_tree(confluence, page_id, title, manifest_lookup, indent=0):
+def print_tree(confluence, page_id, title, manifest_lookup, visited_ids, indent=0):
+    visited_ids.add(page_id)
     prefix = "  " * indent + ("|- " if indent > 0 else "")
     manifest_file = manifest_lookup.get(page_id, "")
     marker = f" <- {manifest_file}" if manifest_file else " [NOT IN MANIFEST]"
@@ -66,14 +48,7 @@ def print_tree(confluence, page_id, title, manifest_lookup, indent=0):
 
     children = get_children(confluence, page_id)
     for child_id, child_title in sorted(children, key=lambda x: x[1]):
-        print_tree(confluence, child_id, child_title, manifest_lookup, indent + 1)
-
-
-def collect_tree_ids(confluence, page_id) -> set:
-    ids = {page_id}
-    for child_id, _ in get_children(confluence, page_id):
-        ids.update(collect_tree_ids(confluence, child_id))
-    return ids
+        print_tree(confluence, child_id, child_title, manifest_lookup, visited_ids, indent + 1)
 
 
 def main():
@@ -100,9 +75,8 @@ def main():
     print(f"  URL:   {config.confluence_url}")
     print(f"  Space: {config.space_key}")
     print()
-    print_tree(confluence, config.root_page_id, root["title"], manifest_lookup)
-
-    tree_ids = collect_tree_ids(confluence, config.root_page_id)
+    tree_ids = set()
+    print_tree(confluence, config.root_page_id, root["title"], manifest_lookup, tree_ids)
 
     print("\n--- Manifest entries NOT in tree ---")
     orphans = 0

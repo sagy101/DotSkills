@@ -154,7 +154,7 @@ Present the plan to the user in this exact format (see [references/PUBLISH_PLAN_
 ║  2 │ CREATE │ plan/README.md          │ Design & Plan         ║
 ║  3 │ UPDATE │ plan/architecture.md    │ Architecture          ║
 ╠══════════════════════════════════════════════════════════════╣
-║ Creates: 1  │  Updates: 2  │  Total: 3                       ║
+║ Creates: 1  │  Updates: 2  │  Skipped: 0  │  Total: 3        ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
 
@@ -165,7 +165,7 @@ Present the plan to the user in this exact format (see [references/PUBLISH_PLAN_
 Run the publish script for each file in hierarchical order (parents before children):
 
 ```bash
-python <skill_dir>/scripts/publish_page.py \
+.confluence-venv/bin/python <skill_dir>/scripts/publish_page.py \
   --config .confluence.json \
   --file <relative_path> \
   --title "<title>" \

@@ -7,10 +7,27 @@ Loads .confluence.json and resolves credentials from env vars or .env file.
 import json
 import os
 import re
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+
+def ensure_deps(required_packages: dict) -> None:
+    """Install missing Python packages. required_packages maps pip name → import name."""
+    missing = []
+    for pkg, imp in required_packages.items():
+        try:
+            __import__(imp)
+        except ImportError:
+            missing.append(pkg)
+    if missing:
+        print(f"Installing: {', '.join(missing)}")
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "--quiet", *missing],
+            stdout=subprocess.DEVNULL,
+        )
 
 
 @dataclass
@@ -60,7 +77,11 @@ def load_env_file(env_path: Path) -> dict:
         line = line.strip()
         if "=" in line and not line.startswith("#"):
             key, _, val = line.partition("=")
-            env[key.strip()] = val.strip().strip('"')
+            key = key.strip()
+            # Handle 'export KEY=VALUE' syntax
+            if key.startswith("export "):
+                key = key[len("export "):].strip()
+            env[key] = val.strip().strip('"').strip("'")
     return env
 
 

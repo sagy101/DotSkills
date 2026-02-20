@@ -13,34 +13,15 @@ Usage:
 """
 
 import argparse
-import json
-import subprocess
 import sys
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config_loader import load_config, resolve_credentials, load_manifest
+from config_loader import load_config, resolve_credentials, load_manifest, ensure_deps
 
-REQUIRED_PACKAGES = {"atlassian-python-api": "atlassian"}
-
-
-def ensure_deps():
-    missing = []
-    for pkg, imp in REQUIRED_PACKAGES.items():
-        try:
-            __import__(imp)
-        except ImportError:
-            missing.append(pkg)
-    if missing:
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--quiet", *missing],
-            stdout=subprocess.DEVNULL,
-        )
-
-
-ensure_deps()
+ensure_deps({"atlassian-python-api": "atlassian"})
 
 from atlassian import Confluence  # noqa: E402
 
@@ -76,22 +57,15 @@ def classify_entry(file_exists: bool, page_exists: bool, actual_title, expected_
     return "TITLE"
 
 
-def print_suggested_fixes(confluence, manifest: dict, config) -> None:
+def print_suggested_fixes(results: list) -> None:
     """Print suggested fixes for entries with issues."""
     print("\nSuggested fixes:")
-    for md_file, info in sorted(manifest.items()):
-        page_id = info["id"]
-        expected_title = info["title"]
-        file_path = config.docs_root / md_file
-
-        if not file_path.exists():
+    for md_file, status, info, actual_title in results:
+        if status == "NO FILE":
             print(f'  "{md_file}": file missing on disk — remove from manifest or create file')
-            continue
-
-        page_exists, actual_title = fetch_page_title(confluence, page_id)
-        if not page_exists:
-            print(f'  "{md_file}": page {page_id} not found — remove from manifest or re-create')
-        elif actual_title != expected_title:
+        elif status == "NO PAGE":
+            print(f'  "{md_file}": page {info["id"]} not found — remove from manifest or re-create')
+        elif status == "TITLE":
             print(f'  "{md_file}": update manifest title to "{actual_title}"')
 
 
@@ -115,6 +89,7 @@ def main():
     )
 
     counts = {"OK": 0, "TITLE": 0, "NO FILE": 0, "NO PAGE": 0}
+    results = []
 
     print(f"Validating {len(manifest)} manifest entries...")
     print(f"  Config:   {config.confluence_url} / {config.space_key}")
@@ -130,6 +105,7 @@ def main():
 
         status = classify_entry(file_exists, page_exists, actual_title, info["title"])
         counts[status] = counts.get(status, 0) + 1
+        results.append((md_file, status, info, actual_title))
 
         actual_display = actual_title or "(not found)"
         file_flag = "" if file_exists else " [MISSING]"
@@ -141,7 +117,7 @@ def main():
     print(f"\nSummary: {counts['OK']} OK, {warns} title mismatches, {errs} errors")
 
     if warns > 0 or errs > 0:
-        print_suggested_fixes(confluence, manifest, config)
+        print_suggested_fixes([r for r in results if r[1] != "OK"])
         sys.exit(1)
     else:
         print("\nAll manifest entries are valid.")

@@ -29,7 +29,6 @@ Usage:
 import argparse
 import difflib
 import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -37,31 +36,9 @@ from typing import Optional
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config_loader import load_config, resolve_credentials, load_manifest
+from config_loader import load_config, resolve_credentials, load_manifest, ensure_deps
 
-REQUIRED_PACKAGES = {
-    "atlassian-python-api": "atlassian",
-    "markdownify": "markdownify",
-    "markdown": "markdown",
-}
-
-
-def ensure_deps():
-    missing = []
-    for pkg, imp in REQUIRED_PACKAGES.items():
-        try:
-            __import__(imp)
-        except ImportError:
-            missing.append(pkg)
-    if missing:
-        print(f"Installing: {', '.join(missing)}")
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--quiet", *missing],
-            stdout=subprocess.DEVNULL,
-        )
-
-
-ensure_deps()
+ensure_deps({"atlassian-python-api": "atlassian", "markdownify": "markdownify", "markdown": "markdown"})
 
 from atlassian import Confluence  # noqa: E402
 from markdownify import markdownify as md_convert  # noqa: E402

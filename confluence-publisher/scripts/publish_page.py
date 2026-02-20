@@ -25,7 +25,6 @@ Manifest: auto-updates .confluence-manifest.json with {file → {id, title, pare
 
 import argparse
 import re
-import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -43,35 +42,11 @@ from config_loader import (
     load_manifest,
     save_manifest,
     resolve_title,
+    ensure_deps,
     ConfluenceConfig,
 )
 
-# ---------------------------------------------------------------------------
-# Dependencies
-# ---------------------------------------------------------------------------
-
-REQUIRED_PACKAGES = {
-    "atlassian-python-api": "atlassian",
-    "markdown": "markdown",
-}
-
-
-def ensure_deps():
-    missing = []
-    for pkg, imp in REQUIRED_PACKAGES.items():
-        try:
-            __import__(imp)
-        except ImportError:
-            missing.append(pkg)
-    if missing:
-        print(f"Installing: {', '.join(missing)}")
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--quiet", *missing],
-            stdout=subprocess.DEVNULL,
-        )
-
-
-ensure_deps()
+ensure_deps({"atlassian-python-api": "atlassian", "markdown": "markdown"})
 
 from atlassian import Confluence  # noqa: E402
 from transforms import (  # noqa: E402

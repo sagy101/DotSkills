@@ -13,10 +13,7 @@ Usage:
 
 import argparse
 import fnmatch
-import json
-import subprocess
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -28,26 +25,10 @@ from config_loader import (
     load_manifest,
     save_manifest,
     resolve_title,
+    ensure_deps,
 )
 
-REQUIRED_PACKAGES = {"atlassian-python-api": "atlassian"}
-
-
-def ensure_deps():
-    missing = []
-    for pkg, imp in REQUIRED_PACKAGES.items():
-        try:
-            __import__(imp)
-        except ImportError:
-            missing.append(pkg)
-    if missing:
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--quiet", *missing],
-            stdout=subprocess.DEVNULL,
-        )
-
-
-ensure_deps()
+ensure_deps({"atlassian-python-api": "atlassian"})
 
 from atlassian import Confluence  # noqa: E402
 

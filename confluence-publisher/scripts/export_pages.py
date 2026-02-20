@@ -24,7 +24,6 @@ Usage:
 
 import argparse
 import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -37,30 +36,10 @@ from config_loader import (
     resolve_credentials,
     load_manifest,
     save_manifest,
+    ensure_deps,
 )
 
-REQUIRED_PACKAGES = {
-    "atlassian-python-api": "atlassian",
-    "markdownify": "markdownify",
-}
-
-
-def ensure_deps():
-    missing = []
-    for pkg, imp in REQUIRED_PACKAGES.items():
-        try:
-            __import__(imp)
-        except ImportError:
-            missing.append(pkg)
-    if missing:
-        print(f"Installing: {', '.join(missing)}")
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--quiet", *missing],
-            stdout=subprocess.DEVNULL,
-        )
-
-
-ensure_deps()
+ensure_deps({"atlassian-python-api": "atlassian", "markdownify": "markdownify"})
 
 from atlassian import Confluence  # noqa: E402
 from markdownify import markdownify as md_convert  # noqa: E402
@@ -256,8 +235,9 @@ def export_tree(confluence, config, manifest, dry_run):
             filename = title_to_filename(title)
             rel_path = str(parent_dir / filename)
 
-        # Track directory for children
-        id_to_dir[page_id] = Path(rel_path).parent
+        # Track directory for children — use the file's stem as subdirectory
+        # so children of "child-a.md" go under "child-a/" not "."
+        id_to_dir[page_id] = Path(rel_path).with_suffix("")
 
         result = fetch_page(confluence, page_id)
         if not result:
