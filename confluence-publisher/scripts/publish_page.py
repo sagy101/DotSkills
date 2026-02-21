@@ -38,7 +38,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from config_loader import (
     load_config,
-    resolve_credentials,
+    connect,
     load_manifest,
     save_manifest,
     resolve_title,
@@ -61,16 +61,6 @@ from transforms import (  # noqa: E402
 # ---------------------------------------------------------------------------
 # Confluence operations
 # ---------------------------------------------------------------------------
-
-
-def connect(config: ConfluenceConfig) -> Confluence:
-    username, token = resolve_credentials(config)
-    return Confluence(
-        url=config.confluence_url,
-        username=username,
-        password=token,
-        cloud=True,
-    )
 
 
 def publish_page(
@@ -211,6 +201,10 @@ def main():
     # Resolve title
     md_content = file_path.read_text(encoding="utf-8")
     title = args.title or resolve_title(args.file, md_content, config)
+
+    if args.mode == "update" and not args.page_id:
+        print("ERROR: --page-id is required for update mode")
+        sys.exit(1)
 
     # Resolve parent_id for creates
     parent_id = args.parent_id

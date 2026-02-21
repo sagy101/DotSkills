@@ -33,16 +33,9 @@ def markdown_to_confluence_storage(md_content: str) -> str:
         extensions=[
             "tables",
             "fenced_code",
-            "codehilite",
             "toc",
             "sane_lists",
         ],
-        extension_configs={
-            "codehilite": {
-                "css_class": "code",
-                "guess_lang": False,
-            }
-        },
     )
 
     def unescape_html(text: str) -> str:

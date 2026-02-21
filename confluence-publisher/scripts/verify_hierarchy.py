@@ -16,11 +16,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config_loader import load_config, resolve_credentials, load_manifest, ensure_deps
-
-ensure_deps({"atlassian-python-api": "atlassian"})
-
-from atlassian import Confluence  # noqa: E402
+from config_loader import load_config, connect, load_manifest, get_all_children
 
 
 def parse_args() -> argparse.Namespace:
@@ -32,10 +28,8 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def get_children(confluence: Confluence, page_id: str) -> list:
-    children = confluence.get_page_child_by_type(
-        page_id=page_id, type="page", limit=100
-    )
+def get_children(confluence, page_id: str) -> list:
+    children = get_all_children(confluence, page_id)
     return [(c["id"], c["title"]) for c in children]
 
 
@@ -55,13 +49,7 @@ def main():
     args = parse_args()
     config = load_config(args.config)
 
-    username, token = resolve_credentials(config)
-    confluence = Confluence(
-        url=config.confluence_url,
-        username=username,
-        password=token,
-        cloud=True,
-    )
+    confluence = connect(config)
 
     manifest = load_manifest(config)
     manifest_lookup = {info["id"]: md_file for md_file, info in manifest.items()}

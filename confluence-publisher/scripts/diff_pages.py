@@ -36,7 +36,7 @@ from typing import Optional
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config_loader import load_config, resolve_credentials, load_manifest, ensure_deps
+from config_loader import load_config, connect, load_manifest, ensure_deps
 
 ensure_deps({"atlassian-python-api": "atlassian", "markdownify": "markdownify", "markdown": "markdown"})
 
@@ -199,13 +199,7 @@ def main():
         print("ERROR: No manifest found. Run discover_pages.py or publish first.")
         sys.exit(1)
 
-    username, token = resolve_credentials(config)
-    confluence = Confluence(
-        url=config.confluence_url,
-        username=username,
-        password=token,
-        cloud=True,
-    )
+    confluence = connect(config)
 
     print("Diff: local docs vs Confluence (normalized)")
     print(f"  Target: {config.confluence_url} / {config.space_key}")

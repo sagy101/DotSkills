@@ -33,10 +33,11 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from config_loader import (
     load_config,
-    resolve_credentials,
+    connect,
     load_manifest,
     save_manifest,
     ensure_deps,
+    get_all_children,
 )
 
 ensure_deps({"atlassian-python-api": "atlassian", "markdownify": "markdownify"})
@@ -122,9 +123,7 @@ def fetch_page(confluence: Confluence, page_id: str) -> Optional[dict]:
 
 def get_children(confluence: Confluence, page_id: str) -> list:
     """Get child pages of a given page."""
-    children = confluence.get_page_child_by_type(
-        page_id=page_id, type="page", limit=100
-    )
+    children = get_all_children(confluence, page_id)
     return [(c["id"], c["title"]) for c in children]
 
 
@@ -273,13 +272,7 @@ def main():
     config = load_config(args.config)
     manifest = load_manifest(config)
 
-    username, token = resolve_credentials(config)
-    confluence = Confluence(
-        url=config.confluence_url,
-        username=username,
-        password=token,
-        cloud=True,
-    )
+    confluence = connect(config)
 
     print("Export from Confluence")
     print(f"  Target: {config.confluence_url} / {config.space_key}")

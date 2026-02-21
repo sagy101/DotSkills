@@ -19,11 +19,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config_loader import load_config, resolve_credentials, load_manifest, ensure_deps
-
-ensure_deps({"atlassian-python-api": "atlassian"})
-
-from atlassian import Confluence  # noqa: E402
+from config_loader import load_config, connect, load_manifest
 
 
 def parse_args() -> argparse.Namespace:
@@ -80,13 +76,7 @@ def main():
         print("  Run discover_pages.py or publish pages first.")
         sys.exit(1)
 
-    username, token = resolve_credentials(config)
-    confluence = Confluence(
-        url=config.confluence_url,
-        username=username,
-        password=token,
-        cloud=True,
-    )
+    confluence = connect(config)
 
     counts = {"OK": 0, "TITLE": 0, "NO FILE": 0, "NO PAGE": 0}
     results = []

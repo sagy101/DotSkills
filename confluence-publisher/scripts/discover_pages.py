@@ -21,16 +21,12 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from config_loader import (
     load_config,
-    resolve_credentials,
+    connect,
     load_manifest,
     save_manifest,
     resolve_title,
-    ensure_deps,
+    get_all_children,
 )
-
-ensure_deps({"atlassian-python-api": "atlassian"})
-
-from atlassian import Confluence  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -73,9 +69,7 @@ def find_md_files(config) -> dict:
 def walk_confluence_tree(confluence, page_id) -> list:
     """Recursively walk Confluence tree, returning list of (id, title, parent_id)."""
     pages = []
-    children = confluence.get_page_child_by_type(
-        page_id=page_id, type="page", limit=100
-    )
+    children = get_all_children(confluence, page_id)
     for child in children:
         cid = child["id"]
         ctitle = child["title"]
@@ -111,13 +105,7 @@ def main():
     args = parse_args()
     config = load_config(args.config)
 
-    username, token = resolve_credentials(config)
-    confluence = Confluence(
-        url=config.confluence_url,
-        username=username,
-        password=token,
-        cloud=True,
-    )
+    confluence = connect(config)
 
     print(f"Discovering pages under root {config.root_page_id}...")
     print(f"  URL:      {config.confluence_url}")

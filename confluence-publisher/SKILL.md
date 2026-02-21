@@ -67,14 +67,19 @@ Before running ANY script, perform these checks proactively. Do not wait for a s
 
 ### Check 1 — Python environment
 
-Verify Python 3.10+ is available and dependencies are installed:
+Verify Python 3.10+ is available:
 
 ```bash
 python3 --version
-python3 -c "import atlassian, markdown; print('OK')"
 ```
 
-If Python is missing or dependencies are not installed, run the setup script:
+Check if the virtual environment already exists and has dependencies installed:
+
+```bash
+.confluence-venv/bin/python -c "import atlassian, markdown; print('OK')"
+```
+
+If the venv does not exist or dependencies are missing, run the setup script:
 
 ```bash
 python3 <skill_dir>/scripts/setup_env.py
@@ -82,7 +87,7 @@ python3 <skill_dir>/scripts/setup_env.py
 
 This creates a virtual environment at `.confluence-venv/` and installs all dependencies. If it fails, tell the user exactly what is missing and how to install it (e.g. `brew install python3` on macOS, `apt install python3` on Linux).
 
-After setup, all subsequent script commands should use the venv Python:
+After setup, all subsequent script commands must use the venv Python:
 
 ```bash
 .confluence-venv/bin/python <skill_dir>/scripts/publish_page.py ...
@@ -227,6 +232,8 @@ python <skill_dir>/scripts/diff_pages.py --config .confluence.json --all
 # Summary only (changed/unchanged counts, no full diff)
 python <skill_dir>/scripts/diff_pages.py --config .confluence.json --all --summary
 ```
+
+**Note:** The diff script exits with code 1 if any changes or new pages are detected, and code 0 if everything is unchanged. This is informational (like the `diff` command), not an error — do not treat exit code 1 as a failure.
 
 Present the diff output to the user before publishing so they can review what would change.
 

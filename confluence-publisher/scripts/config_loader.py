@@ -162,6 +162,38 @@ def save_manifest(config: ConfluenceConfig, manifest: dict) -> None:
     )
 
 
+def connect(config: ConfluenceConfig):
+    """Create a Confluence client from config credentials."""
+    ensure_deps({"atlassian-python-api": "atlassian"})
+    from atlassian import Confluence
+
+    username, token = resolve_credentials(config)
+    return Confluence(
+        url=config.confluence_url,
+        username=username,
+        password=token,
+        cloud=True,
+    )
+
+
+def get_all_children(confluence, page_id: str) -> list:
+    """Fetch all child pages with pagination (handles >100 children)."""
+    all_children = []
+    start = 0
+    limit = 100
+    while True:
+        batch = confluence.get_page_child_by_type(
+            page_id=page_id, type="page", start=start, limit=limit
+        )
+        if not batch:
+            break
+        all_children.extend(batch)
+        if len(batch) < limit:
+            break
+        start += limit
+    return all_children
+
+
 def resolve_title(file_path: str, md_content: str, config: ConfluenceConfig) -> str:
     """Resolve page title using: title_map > first heading > filename."""
     # 1. Explicit title_map

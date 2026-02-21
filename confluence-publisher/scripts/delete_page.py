@@ -34,12 +34,8 @@ from config_loader import (
     load_config,
     load_manifest,
     save_manifest,
-    ensure_deps,
+    connect,
 )
-
-ensure_deps({"atlassian-python-api": "atlassian"})
-
-from publish_page import connect  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
