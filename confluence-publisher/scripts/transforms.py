@@ -5,6 +5,7 @@ All markdown → Confluence storage format conversions live here so that
 publish_page.py and diff_pages.py share the same logic.
 """
 
+import html
 import os
 import re
 import subprocess
@@ -28,7 +29,7 @@ MERMAID_BLOCK_RE = re.compile(r"```mermaid\s*\n(.*?)```", re.DOTALL)
 
 def markdown_to_confluence_storage(md_content: str) -> str:
     """Convert Markdown to Confluence storage format (XHTML-based)."""
-    html = md_lib.markdown(
+    html_content = md_lib.markdown(
         md_content,
         extensions=[
             "tables",
@@ -38,11 +39,8 @@ def markdown_to_confluence_storage(md_content: str) -> str:
         ],
     )
 
-    def unescape_html(text: str) -> str:
-        return text.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
-
     def make_code_macro(code: str, lang: str = "") -> str:
-        code = unescape_html(code)
+        code = html.unescape(code)
         if lang:
             return (
                 f'<ac:structured-macro ac:name="code">'
@@ -57,22 +55,62 @@ def markdown_to_confluence_storage(md_content: str) -> str:
         )
 
     # Code blocks with language
-    html = re.sub(
+    html_content = re.sub(
         r'<pre><code class="(?:language-)?(\w+)">(.*?)</code></pre>',
         lambda m: make_code_macro(m.group(2), m.group(1)),
-        html,
+        html_content,
         flags=re.DOTALL,
     )
 
     # Code blocks without language
-    html = re.sub(
+    html_content = re.sub(
         r"<pre><code>(.*?)</code></pre>",
         lambda m: make_code_macro(m.group(1)),
-        html,
+        html_content,
         flags=re.DOTALL,
     )
 
-    return html
+    return html_content
+
+
+def preprocess_confluence_storage(html_content: str) -> str:
+    """
+    Pre-process Confluence storage HTML before passing to markdownify.
+    Converts <ac:structured-macro ac:name="code"> to <pre><code> blocks
+    so they are correctly converted to fenced code blocks.
+    """
+    def replace_code_macro(match):
+        content = match.group(0)
+        # Extract language
+        lang_match = re.search(r'<ac:parameter ac:name="language">(\w+)</ac:parameter>', content)
+        lang = lang_match.group(1) if lang_match else ""
+
+        # Extract body
+        # Try CDATA first
+        body_match = re.search(r'<ac:plain-text-body><!\[CDATA\[(.*?)\]\]></ac:plain-text-body>', content, re.DOTALL)
+        if body_match:
+            code = body_match.group(1)
+        else:
+            # Fallback for non-CDATA (rare but possible)
+            body_match = re.search(r'<ac:plain-text-body>(.*?)</ac:plain-text-body>', content, re.DOTALL)
+            code = body_match.group(1) if body_match else ""
+
+        # Unescape HTML entities in the code
+        code = html.unescape(code)
+
+        class_attr = f' class="language-{lang}"' if lang else ""
+        return f'<pre><code{class_attr}>{code}</code></pre>'
+
+    # Regex to find code macros
+    # We use a non-greedy match for the content between tags
+    pattern = r'<ac:structured-macro[^>]+ac:name="code"[^>]*>.*?</ac:structured-macro>'
+    
+    return re.sub(
+        pattern,
+        replace_code_macro,
+        html_content,
+        flags=re.DOTALL
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -80,12 +118,12 @@ def markdown_to_confluence_storage(md_content: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def rewrite_md_links(html: str, current_file: str, manifest: dict, space_key: str) -> str:
+def rewrite_md_links(html_content: str, current_file: str, manifest: dict, space_key: str) -> str:
     """
     Replace <a href="something.md"> links with Confluence page link macros,
     using the manifest to resolve relative paths to page IDs/titles.
     """
-    current_dir = str(Path(current_file).parent)
+    current_dir = Path(current_file).parent
 
     def replace_link(match):
         href = match.group(1)
@@ -100,7 +138,13 @@ def rewrite_md_links(html: str, current_file: str, manifest: dict, space_key: st
         if not href.endswith(".md"):
             return match.group(0)
 
-        resolved = os.path.normpath(os.path.join(current_dir, href))
+        # Handle absolute paths (relative to docs root) vs relative paths
+        if href.startswith("/"):
+            # absolute path in repo -> relative to docs root
+            # remove leading slash to make it relative to root
+            resolved = os.path.normpath(href.lstrip("/"))
+        else:
+            resolved = os.path.normpath(current_dir / href)
 
         if resolved in manifest:
             page_title = manifest[resolved]["title"]
@@ -117,7 +161,7 @@ def rewrite_md_links(html: str, current_file: str, manifest: dict, space_key: st
     return re.sub(
         r'<a href="([^"]+)">(.*?)</a>',
         replace_link,
-        html,
+        html_content,
         flags=re.DOTALL,
     )
 

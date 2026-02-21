@@ -44,6 +44,7 @@ ensure_deps({"atlassian-python-api": "atlassian", "markdownify": "markdownify"})
 
 from atlassian import Confluence  # noqa: E402
 from markdownify import markdownify as md_convert  # noqa: E402
+from transforms import preprocess_confluence_storage  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -93,6 +94,9 @@ def extract_page_id(page_ref: str) -> str:
 
 def html_to_markdown(html_content: str) -> str:
     """Convert Confluence HTML storage format to markdown."""
+    # Preprocess specific Confluence macros (like code blocks)
+    html_content = preprocess_confluence_storage(html_content)
+
     markdown_content = md_convert(
         html_content,
         heading_style="atx",

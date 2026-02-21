@@ -47,6 +47,7 @@ from transforms import (  # noqa: E402
     rewrite_md_links,
     strip_mermaid_blocks,
     normalize_remote_mermaid_macros,
+    preprocess_confluence_storage,
 )
 
 
@@ -75,6 +76,9 @@ def parse_args() -> argparse.Namespace:
 
 def storage_html_to_normalized_md(html: str) -> str:
     """Convert Confluence storage HTML to normalized markdown for diffing."""
+    # Preprocess specific Confluence macros (like code blocks)
+    html = preprocess_confluence_storage(html)
+
     markdown_content = md_convert(
         html,
         heading_style="atx",
