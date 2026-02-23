@@ -8,7 +8,7 @@ Each skill is a self-contained directory following the [Agent Skills Open Standa
 
 | Skill | Description |
 |---|---|
-| [confluence-publisher](./confluence-publisher/) | Publish markdown docs to Confluence Cloud — pages, hierarchy, cross-links, Mermaid diagrams, diff/preview, export |
+| [confluence-publisher](./confluence-publisher/) | Publish markdown docs to Confluence Cloud — pages, hierarchy, cross-links, Mermaid diagrams, diff/preview, export, fetch |
 
 ## Usage
 
