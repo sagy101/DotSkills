@@ -9,6 +9,7 @@ Each skill is a self-contained directory following the [Agent Skills Open Standa
 | Skill | Description |
 |---|---|
 | [confluence-publisher](./confluence-publisher/) | Publish markdown docs to Confluence Cloud — pages, hierarchy, cross-links, Mermaid diagrams, diff/preview, export, fetch |
+| [jira-manager](./jira-manager/) | Create, update, fetch, delete, diff, and validate Jira tickets — bulk create from markdown/JSON, field auto-discovery, estimation validation, link rewriting |
 
 ## Usage
 
