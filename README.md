@@ -31,10 +31,13 @@ Skills are automatically discovered by supported AI tools when placed in the cor
 
 ## Compatibility
 
-Skills in this repo work with:
+Skills in this repo follow the [Agent Skills Open Standard](https://agentskills.io/specification) and work with:
 - **Windsurf** (`.agents/skills/`)
 - **Claude Code** (`.agents/skills/` or `.claude/skills/`)
+- **OpenAI Codex** (`.agents/skills/`)
 - **VS Code / GitHub Copilot** (`.github/skills/`)
+- **Gemini CLI** (`.agents/skills/`)
+- **Cursor** (`.agents/skills/`)
 - **OpenCode** (`.agents/skills/`)
 
 ## Structure
@@ -51,10 +54,19 @@ skill-name/
 
 ## Adding a new skill
 
+Use the skill-creator's init script to scaffold a new skill:
+
+```bash
+python3 skill-creator/scripts/init_skill.py my-new-skill --path .
+```
+
+Or manually:
+
 1. Create a directory named after your skill (lowercase, hyphens only)
 2. Add a `SKILL.md` with YAML frontmatter (`name`, `description`) and body instructions
 3. Add scripts/references/assets as needed
-4. Update the table in this README
+4. Validate with `python3 skill-creator/scripts/quick_validate.py ./my-new-skill/`
+5. Update the table in this README
 
 ## License
 
