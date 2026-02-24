@@ -131,14 +131,26 @@ def publish_page(
             page_url = base_url + result["_links"]["webui"]
 
         if png_files:
+            import time
             print(f"  Uploading {len(png_files)} diagram attachment(s)...")
+            time.sleep(2)  # Wait for Confluence to settle after page update
             for png in png_files:
-                confluence.attach_file(
-                    filename=str(png),
-                    name=png.name,
-                    page_id=result_id,
-                    comment="Mermaid diagram (auto-generated)",
-                )
+                for attempt in range(3):
+                    try:
+                        confluence.attach_file(
+                            filename=str(png),
+                            name=png.name,
+                            page_id=result_id,
+                            comment="Mermaid diagram (auto-generated)",
+                        )
+                        break
+                    except Exception as e:
+                        if attempt < 2:
+                            wait = 3 * (attempt + 1)
+                            print(f"  Attachment upload failed (attempt {attempt + 1}/3), retrying in {wait}s: {e}")
+                            time.sleep(wait)
+                        else:
+                            raise
 
     return result_id, page_url
 
