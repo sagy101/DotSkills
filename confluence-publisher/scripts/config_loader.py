@@ -4,9 +4,11 @@ Shared configuration loader for confluence-publisher skill scripts.
 Loads .confluence.json and resolves credentials from env vars or .env file.
 """
 
+import base64
 import json
 import os
 import re
+import struct
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -192,6 +194,71 @@ def get_all_children(confluence, page_id: str) -> list:
             break
         start += limit
     return all_children
+
+
+def decode_tiny_link(tiny_id: str) -> int:
+    """Decode a Confluence tiny link ID to a numeric page ID.
+
+    Confluence tiny links encode the page ID as a little-endian unsigned 32-bit
+    integer, stripped of trailing zero bytes, then base64-encoded with URL-safe
+    altchars (_-) and padding removed.
+
+    Args:
+        tiny_id: The encoded portion after ``/x/`` in a tiny link URL.
+
+    Returns:
+        The decoded numeric page ID.
+    """
+    raw = tiny_id.encode("ascii") if isinstance(tiny_id, str) else tiny_id
+    # The encoding strips trailing 'A' chars (base64 zeros) and '=' padding.
+    # Restore to a valid base64 length: data chars mod 4 must be 0, 2, or 3.
+    remainder = len(raw) % 4
+    if remainder == 1:
+        raw += b"A"
+        remainder = 2
+    raw += b"=" * ((4 - remainder) % 4)
+    page_id_bytes = (base64.b64decode(raw, altchars=b"_-") + b"\x00\x00\x00\x00")[:4]
+    return struct.unpack("<L", page_id_bytes)[0]
+
+
+def encode_tiny_id(page_id: int) -> str:
+    """Encode a numeric page ID into a Confluence tiny link ID.
+
+    Inverse of :func:`decode_tiny_link`.
+    """
+    return (
+        base64.b64encode(struct.pack("<L", int(page_id)).rstrip(b"\x00"), altchars=b"_-")
+        .rstrip(b"=")
+        .decode("ascii")
+    )
+
+
+_TINY_LINK_RE = re.compile(r"/x/([-_A-Za-z0-9]+)")
+
+
+def extract_page_id(page_ref: str) -> str:
+    """Extract a numeric page ID from a page reference.
+
+    Accepts:
+      - A plain numeric ID (``"774112245"``)
+      - A standard Confluence URL containing ``/pages/<id>``
+      - A Confluence tiny link containing ``/x/<encoded>``
+
+    Returns:
+        The page ID as a string.
+
+    Raises:
+        ValueError: If the reference format is not recognised.
+    """
+    if page_ref.isdigit():
+        return page_ref
+    match = re.search(r"/pages/(\d+)", page_ref)
+    if match:
+        return match.group(1)
+    tiny_match = _TINY_LINK_RE.search(page_ref)
+    if tiny_match:
+        return str(decode_tiny_link(tiny_match.group(1)))
+    raise ValueError(f"Could not extract page ID from: {page_ref}")
 
 
 def resolve_title(file_path: str, md_content: str, config: ConfluenceConfig) -> str:

@@ -1,10 +1,10 @@
 ---
 name: confluence-publisher
 description: >
-  Publish, sync, diff, delete, discover, and export markdown documentation to/from Confluence Cloud.
-  Use when the user asks to publish, update, delete, preview, diff, or export markdown files
-  to Confluence, or when they want to verify existing Confluence pages against local
-  docs. Handles page creation, updates, deletion, cross-page link rewriting, Mermaid diagram
+  Publish, sync, diff, delete, discover, and export markdown documentation to/from Confluence Cloud
+  (*.atlassian.net/wiki/*). Use when the user asks to publish, update, delete, preview, diff, or
+  export markdown files to Confluence, or when they want to verify existing Confluence pages against
+  local docs. Handles page creation, updates, deletion, cross-page link rewriting, Mermaid diagram
   rendering, hierarchy verification, diff/preview, and reverse export to markdown.
 license: MIT
 metadata:

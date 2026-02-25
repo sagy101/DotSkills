@@ -38,6 +38,7 @@ from config_loader import (
     save_manifest,
     ensure_deps,
     get_all_children,
+    extract_page_id,
 )
 
 ensure_deps({"atlassian-python-api": "atlassian", "markdownify": "markdownify"})
@@ -80,16 +81,6 @@ def parse_args() -> argparse.Namespace:
         help="Output file path (only for --page mode, default: stdout)",
     )
     return parser.parse_args()
-
-
-def extract_page_id(page_ref: str) -> str:
-    """Extract page ID from a Confluence URL or return as-is if already an ID."""
-    if page_ref.isdigit():
-        return page_ref
-    match = re.search(r"/pages/(\d+)", page_ref)
-    if match:
-        return match.group(1)
-    raise ValueError(f"Could not extract page ID from: {page_ref}")
 
 
 def html_to_markdown(html_content: str) -> str:
