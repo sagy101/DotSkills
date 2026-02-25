@@ -161,17 +161,31 @@ def upload_attachments(
     attachment_paths: list,
 ) -> None:
     """Upload files as attachments to a page."""
+    import time
+
     for path in attachment_paths:
         if not path.exists():
             print(f"  WARNING: Attachment not found: {path}")
             continue
-        print(f"  Uploading attachment: {path.name}")
-        confluence.attach_file(
-            filename=str(path),
-            name=path.name,
-            page_id=page_id,
-            comment="Uploaded by confluence-publisher skill",
-        )
+        size_mb = path.stat().st_size / (1024 * 1024)
+        print(f"  Uploading attachment: {path.name} ({size_mb:.1f} MB)")
+        for attempt in range(3):
+            try:
+                confluence.attach_file(
+                    filename=str(path),
+                    name=path.name,
+                    page_id=page_id,
+                    comment="Uploaded by confluence-publisher skill",
+                )
+                break
+            except Exception as e:
+                if attempt < 2:
+                    wait = 5 * (attempt + 1)
+                    print(f"  Upload failed (attempt {attempt + 1}/3), retrying in {wait}s: {e}")
+                    time.sleep(wait)
+                else:
+                    print(f"  ERROR: Upload failed after 3 attempts: {e}")
+                    raise
 
 
 # ---------------------------------------------------------------------------

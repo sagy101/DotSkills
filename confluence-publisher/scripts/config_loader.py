@@ -175,6 +175,7 @@ def connect(config: ConfluenceConfig):
         username=username,
         password=token,
         cloud=True,
+        timeout=120,
     )
 
 
