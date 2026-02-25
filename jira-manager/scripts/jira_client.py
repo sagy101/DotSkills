@@ -160,16 +160,22 @@ class JiraClient:
         fields: Optional[List[str]] = None,
         max_results: int = 50,
         start_at: int = 0,
+        next_page_token: Optional[str] = None,
     ) -> dict:
-        """Search issues using JQL."""
-        body = {
+        """Search issues using JQL (Jira Cloud v3 API).
+
+        Note: The v3 GET /search/jql endpoint returns only issue IDs when
+        no fields are requested. Pass fields explicitly or omit to get all
+        navigable fields via ``*navigable``.
+        """
+        params = {
             "jql": jql,
-            "maxResults": max_results,
-            "startAt": start_at,
+            "maxResults": str(max_results),
         }
-        if fields:
-            body["fields"] = fields
-        return self._request("POST", "/rest/api/2/search", body)
+        if next_page_token:
+            params["nextPageToken"] = next_page_token
+        params["fields"] = ",".join(fields) if fields else "*navigable"
+        return self._request("GET", "/rest/api/3/search/jql", params=params)
 
     def search_jql_all(
         self,
@@ -179,17 +185,20 @@ class JiraClient:
     ) -> List[dict]:
         """Fetch all issues matching JQL, handling pagination automatically."""
         all_issues = []
-        start_at = 0
+        next_page_token = None
         while True:
             result = self.search_jql(
-                jql, fields=fields, max_results=batch_size, start_at=start_at
+                jql, fields=fields, max_results=batch_size,
+                next_page_token=next_page_token,
             )
             issues = result.get("issues", [])
             if not issues:
                 break
             all_issues.extend(issues)
-            start_at += len(issues)
-            if start_at >= result.get("total", 0):
+            if result.get("isLast", True):
+                break
+            next_page_token = result.get("nextPageToken")
+            if not next_page_token:
                 break
         return all_issues
 
