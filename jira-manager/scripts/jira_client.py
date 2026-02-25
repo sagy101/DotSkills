@@ -159,7 +159,6 @@ class JiraClient:
         jql: str,
         fields: Optional[List[str]] = None,
         max_results: int = 50,
-        start_at: int = 0,
         next_page_token: Optional[str] = None,
     ) -> dict:
         """Search issues using JQL (Jira Cloud v3 API).
@@ -319,6 +318,68 @@ class JiraClient:
         """Fetch all versions for the project."""
         pk = project_key or self.config.project_key
         return self._request("GET", f"/rest/api/2/project/{pk}/versions")
+
+    # -----------------------------------------------------------------
+    # Agile / Sprint
+    # -----------------------------------------------------------------
+    def get_boards(
+        self, project_key: Optional[str] = None
+    ) -> List[dict]:
+        """Fetch all boards for the project via the Agile REST API."""
+        pk = project_key or self.config.project_key
+        result = self._request(
+            "GET", "/rest/agile/1.0/board",
+            params={"projectKeyOrId": pk},
+        )
+        return result.get("values", [])
+
+    def get_sprints(
+        self,
+        board_id: int,
+        state: Optional[str] = None,
+    ) -> List[dict]:
+        """Fetch sprints for a board.
+
+        Args:
+            board_id: The Agile board ID.
+            state: Optional filter: 'active', 'future', 'closed', or comma-separated.
+        """
+        params: Dict[str, str] = {}
+        if state:
+            params["state"] = state
+        result = self._request(
+            "GET", f"/rest/agile/1.0/board/{board_id}/sprint",
+            params=params or None,
+        )
+        return result.get("values", [])
+
+    def get_issue_sprint(self, issue_key: str) -> Optional[dict]:
+        """Fetch the active/future sprint for an issue via the Agile API.
+
+        Returns the sprint dict or None if no sprint is assigned.
+        """
+        try:
+            result = self._request(
+                "GET", f"/rest/agile/1.0/issue/{issue_key}",
+                params={"fields": "sprint"},
+            )
+            return result.get("fields", {}).get("sprint")
+        except urllib.error.HTTPError:
+            return None
+
+    def move_issues_to_sprint(
+        self, sprint_id: int, issue_keys: List[str]
+    ) -> dict:
+        """Move issues into a sprint via the Agile API.
+
+        This is the recommended way to set sprints — more reliable than
+        setting the sprint custom field directly.
+        """
+        return self._request(
+            "POST",
+            f"/rest/agile/1.0/sprint/{sprint_id}/issue",
+            {"issues": issue_keys},
+        )
 
     # -----------------------------------------------------------------
     # Utility

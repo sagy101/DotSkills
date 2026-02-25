@@ -27,8 +27,10 @@ from field_resolver import (
     apply_extra_fields,
     apply_named_fields,
     apply_set_pairs,
+    handle_status_transition,
     resolve_description,
-    resolve_transition,
+    resolve_issue_type,
+    resolve_sprint_id,
     upload_attachments,
 )
 from jira_client import JiraClient
@@ -59,12 +61,7 @@ def build_fields(args, config):
         "summary": args.summary,
     }
 
-    # Issue type
-    type_id = config.get_issue_type_id(args.type)
-    if type_id:
-        fields["issuetype"] = {"id": type_id}
-    else:
-        fields["issuetype"] = {"name": args.type.capitalize()}
+    fields["issuetype"] = resolve_issue_type(config, args.type)
 
     # Description (for create, default to empty string so None means "not provided")
     description = args.description or ""
@@ -151,27 +148,18 @@ def main():
 
     # Post-create transition
     if effective_status:
-        transition_result = resolve_transition(
-            client, key, effective_status, config
-        )
-        if transition_result is None:
-            available = client.get_transitions(key)
-            names = [t["to"]["name"] for t in available if "to" in t]
-            print(
-                f"WARNING: No transition to '{effective_status}' found for {key}. "
-                f"Available: {', '.join(names) if names else '(none)'}",
-                file=sys.stderr,
-            )
-        else:
-            tid, tname, target_name = transition_result
+        handle_status_transition(client, key, effective_status, config, warn_only=True)
+
+    # Post-create sprint move
+    effective_sprint = getattr(args, "sprint", None)
+    if effective_sprint:
+        sprint_id, sprint_name = resolve_sprint_id(config, effective_sprint)
+        if sprint_id is not None:
             try:
-                client.transition_issue(key, tid)
-                print(f"  Transitioned {key} -> {target_name} (via '{tname}')")
+                client.move_issues_to_sprint(sprint_id, [key])
+                print(f"  Moved {key} to sprint: {sprint_name} (id={sprint_id})")
             except Exception:
-                print(
-                    f"  WARNING: Failed to transition {key} to {target_name}",
-                    file=sys.stderr,
-                )
+                print(f"  WARNING: Failed to move {key} to sprint {sprint_name}", file=sys.stderr)
 
     if args.manifest_id:
         _update_manifest(config, args, key)

@@ -150,7 +150,7 @@ def _discover_statuses(client: JiraClient) -> dict:
                 key = _normalize_key(sname)
                 if key not in seen:
                     seen[key] = {"id": sid, "name": sname}
-        catalog_entry["values"] = {k: v for k, v in sorted(seen.items())}
+        catalog_entry["values"] = dict(sorted(seen.items()))
     except Exception as e:
         print(f"  WARNING: Could not discover statuses: {e}", file=sys.stderr)
     return catalog_entry
@@ -261,62 +261,64 @@ def _discover_all_fields(client: JiraClient) -> dict:
     return catalog
 
 
+def _discover_sprints(client: JiraClient) -> dict:
+    """Discover sprints via the Agile REST API (boards → sprints)."""
+    catalog_entry = {
+        "id": "sprint",
+        "name": "Sprint",
+        "type": "sprint",
+        "note": "Use --sprint flag on update_ticket.py or move_issues_to_sprint in jira_client.",
+        "values": {},
+    }
+    try:
+        boards = client.get_boards()
+        if not boards:
+            return catalog_entry
+        for board in boards:
+            bid = board["id"]
+            try:
+                sprints = client.get_sprints(bid, state="active,future")
+            except Exception:
+                continue
+            for s in sprints:
+                key = _normalize_key(s["name"])
+                catalog_entry["values"][key] = {
+                    "id": s["id"],
+                    "name": s["name"],
+                    "state": s.get("state", ""),
+                    "board_id": bid,
+                }
+    except Exception as e:
+        print(f"  WARNING: Could not discover sprints: {e}", file=sys.stderr)
+    return catalog_entry
+
+
+_NONE_FOUND = "    (none found)"
+
+# Each tuple: (label, catalog_key, discover_fn)
+_CATALOG_DISCOVERERS = [
+    ("statuses", "status", _discover_statuses),
+    ("priorities", "priority", _discover_priorities),
+    ("resolutions", "resolution", _discover_resolutions),
+    ("components", "components", _discover_components),
+    ("versions", "fix_versions", _discover_versions),
+    ("sprints (Agile API)", "sprint", _discover_sprints),
+]
+
+
 def discover_full_catalog(client: JiraClient, verbose: bool = False) -> dict:
-    """Run full discovery: fields, statuses, priorities, components, versions, resolutions."""
+    """Run full discovery: fields, statuses, priorities, components, versions, resolutions, sprints."""
     catalog = {}
 
-    # Statuses
-    print("  Discovering statuses ...")
-    status_entry = _discover_statuses(client)
-    if status_entry["values"]:
-        catalog["status"] = status_entry
-        count = len(status_entry["values"])
-        print(f"    Found {count} statuses: {', '.join(status_entry['values'].keys())}")
-    else:
-        print("    (none found)")
+    for label, catalog_key, discover_fn in _CATALOG_DISCOVERERS:
+        print(f"  Discovering {label} ...")
+        entry = discover_fn(client)
+        if entry["values"]:
+            catalog[catalog_key] = entry
+            print(f"    Found {len(entry['values'])} {label}")
+        else:
+            print(_NONE_FOUND)
 
-    # Priorities
-    print("  Discovering priorities ...")
-    priority_entry = _discover_priorities(client)
-    if priority_entry["values"]:
-        catalog["priority"] = priority_entry
-        count = len(priority_entry["values"])
-        print(f"    Found {count} priorities: {', '.join(priority_entry['values'].keys())}")
-    else:
-        print("    (none found)")
-
-    # Resolutions
-    print("  Discovering resolutions ...")
-    resolution_entry = _discover_resolutions(client)
-    if resolution_entry["values"]:
-        catalog["resolution"] = resolution_entry
-        count = len(resolution_entry["values"])
-        print(f"    Found {count} resolutions: {', '.join(resolution_entry['values'].keys())}")
-    else:
-        print("    (none found)")
-
-    # Components
-    print("  Discovering components ...")
-    component_entry = _discover_components(client)
-    if component_entry["values"]:
-        catalog["components"] = component_entry
-        count = len(component_entry["values"])
-        print(f"    Found {count} components: {', '.join(component_entry['values'].keys())}")
-    else:
-        print("    (none found)")
-
-    # Versions
-    print("  Discovering versions ...")
-    version_entry = _discover_versions(client)
-    if version_entry["values"]:
-        catalog["fix_versions"] = version_entry
-        count = len(version_entry["values"])
-        active = [k for k, v in version_entry["values"].items() if not v.get("archived")]
-        print(f"    Found {count} versions ({len(active)} active)")
-    else:
-        print("    (none found)")
-
-    # All fields index (for --verbose or for reference)
     if verbose:
         print("  Discovering all fields (system + custom) ...")
         fields_index = _discover_all_fields(client)
@@ -326,6 +328,44 @@ def discover_full_catalog(client: JiraClient, verbose: bool = False) -> dict:
         print(f"    Found {system_count} system + {custom_count} custom fields")
 
     return catalog
+
+
+def _run_basic_discovery(client, verbose):
+    """Run basic field and issue type discovery. Returns (field_mappings, issue_types)."""
+    print("Discovering custom fields ...")
+    field_mappings = discover_fields(client)
+    for name, fid in field_mappings.items():
+        print(f"  {name}: {fid}")
+    if not field_mappings:
+        print("  (no well-known custom fields found)")
+
+    print("\nDiscovering issue types ...")
+    issue_types = discover_issue_types(client)
+    for name, tid in sorted(issue_types.items()):
+        print(f"  {name}: {tid}")
+    if not issue_types:
+        print("  (no issue types found)")
+
+    if verbose:
+        print("\nDiscovering required fields per issue type ...")
+        meta = discover_create_meta(client)
+        for type_name, info in sorted(meta.items()):
+            required = [f"{f['name']} ({f['id']})" for f in info["required_fields"]]
+            print(f"  {type_name} (id={info['id']}): {', '.join(required)}")
+
+    return field_mappings, issue_types
+
+
+def _print_suggestion(suggestion):
+    """Print the suggestion block, excluding verbose _fields_index."""
+    display = dict(suggestion)
+    if "field_catalog" in display:
+        display["field_catalog"] = {
+            k: v for k, v in display["field_catalog"].items()
+            if k != "_fields_index"
+        }
+    print("\n--- Suggested .jira.json additions ---")
+    print(json.dumps(display, indent=2))
 
 
 def main():
@@ -350,44 +390,19 @@ def main():
     config = load_config(args.config)
     client = JiraClient(config)
 
-    # Test connection first
     print("Testing connection ...")
     if not client.test_connection():
         print("ERROR: Could not connect to Jira. Check credentials and URL.")
         sys.exit(1)
     print("Connection OK.\n")
 
-    # Discover fields
-    print("Discovering custom fields ...")
-    field_mappings = discover_fields(client)
-    for name, fid in field_mappings.items():
-        print(f"  {name}: {fid}")
-    if not field_mappings:
-        print("  (no well-known custom fields found)")
+    field_mappings, issue_types = _run_basic_discovery(client, args.verbose)
 
-    # Discover issue types
-    print("\nDiscovering issue types ...")
-    issue_types = discover_issue_types(client)
-    for name, tid in sorted(issue_types.items()):
-        print(f"  {name}: {tid}")
-    if not issue_types:
-        print("  (no issue types found)")
-
-    # Discover create metadata
-    if args.verbose:
-        print("\nDiscovering required fields per issue type ...")
-        meta = discover_create_meta(client)
-        for type_name, info in sorted(meta.items()):
-            required = [f"{f['name']} ({f['id']})" for f in info["required_fields"]]
-            print(f"  {type_name} (id={info['id']}): {', '.join(required)}")
-
-    # Full catalog discovery
     field_catalog = {}
     if args.all:
         print("\nFull field catalog discovery ...")
         field_catalog = discover_full_catalog(client, verbose=args.verbose)
 
-    # Build suggested config block
     suggestion = {}
     if field_mappings:
         suggestion["field_mappings"] = field_mappings
@@ -397,18 +412,8 @@ def main():
         suggestion["field_catalog"] = field_catalog
 
     if suggestion:
-        print("\n--- Suggested .jira.json additions ---")
-        # For display, show a compact version (skip _fields_index)
-        display = dict(suggestion)
-        if "field_catalog" in display:
-            display_catalog = {
-                k: v for k, v in display["field_catalog"].items()
-                if k != "_fields_index"
-            }
-            display["field_catalog"] = display_catalog
-        print(json.dumps(display, indent=2))
+        _print_suggestion(suggestion)
 
-    # Apply if requested
     if args.apply:
         _apply_suggestion(args.config, suggestion)
 

@@ -1,169 +1,68 @@
 ---
 name: jira-manager
 description: >
-  Create, update, fetch, delete, diff, and validate Jira tickets from structured markdown or JSON sources.
-  Use when the user asks to create Jira tickets, update existing issues, bulk-create stories and subtasks
-  from a spec, compare local definitions against live Jira state, validate that sub-ticket estimates
-  sum to parent estimates, change ticket status, set priority/assignee/components, or rewrite markdown
-  links to git browse URLs in ticket descriptions. Supports full field discovery with --all flag to
-  discover statuses, priorities, components, versions, resolutions, and all custom fields. Any
-  discovered field can be set by friendly name using the --set flag.
-  Handles epics, stories, subtasks, bugs, tasks, custom fields, story points, status transitions,
-  and link rewriting.
+  Create, update, fetch, delete, diff, and validate Jira tickets from structured markdown or JSON sources. Supports full field discovery (statuses, priorities, components, versions, sprints, custom fields), generic --set and --filter flags, Agile board/sprint operations, status transitions, markdown/Jira markup conversion, and link rewriting. Works with any Jira Cloud instance.
 license: MIT
 metadata:
   author: sagy101
-  version: "1.1"
+  version: "1.3"
 compatibility: >
-  Requires Python 3.10+. Works with Jira Cloud (Atlassian REST API v2).
+  Python 3.10+. Jira Cloud REST API v2 + Agile REST API v1.0.
   Requires an API token with issue read/write permissions.
 ---
 
 # Jira Manager
 
-Create, update, fetch, delete, diff, and validate Jira tickets with automatic field discovery, status transitions, link rewriting, and estimation validation.
+CRUD for Jira tickets with field discovery, sprint management, status transitions, link rewriting, and estimation validation.
 
 ## When to use this skill
 
-Use this skill when the user wants to:
-- Create one or more Jira tickets (stories, subtasks, bugs, tasks)
-- Bulk-create tickets from a markdown or JSON spec file
-- Update fields on existing Jira issues
-- Fetch and display Jira issues (by key, JQL, or parent relationship)
-- Delete Jira issues (with confirmation)
-- Diff local ticket definitions against live Jira state
-- Validate that sub-ticket estimates sum to their parent's estimate
-- Discover custom field IDs and issue types for a Jira project
-- Change ticket status (workflow transitions)
-- Set any discovered field by friendly name (priority, components, fix versions, etc.)
+Use when the user wants to:
+- **Create** tickets (single or bulk from markdown/JSON spec)
+- **Update** fields, status, sprint, or attachments on existing issues
+- **Fetch** issues by key, JQL, filters (assignee, status, etc.), or parent
+- **Delete** issues (with confirmation)
+- **Diff** local definitions against live Jira
+- **Validate** sub-ticket estimate sums against parents
+- **Discover** fields, issue types, statuses, priorities, components, versions, sprints
+- **List boards** or move issues to sprints (Agile API)
 
 ## Prerequisites
 
-Before running any operation, ensure:
+1. `.jira.json` in the project root (see [CONFIG.md](references/CONFIG.md))
+2. Credentials as environment variables (configured in `.jira.json`)
+3. Python deps installed via `setup_env.py`
 
-1. A **project config file** exists at `.jira.json` in the project root (see [CONFIG.md](references/CONFIG.md) for format)
-2. **Credentials** are available as environment variables (names configured in `.jira.json`)
-3. Python dependencies are installed via the setup script
+If `.jira.json` is missing, help the user create one (Jira URL, project key, credential env var names, optional `.env` path).
 
-If `.jira.json` does not exist, help the user create one by asking for:
-- Jira base URL (e.g. `https://mycompany.atlassian.net`)
-- Project key (e.g. `API`)
-- Environment variable names for credentials (default: `JIRA_EMAIL`, `JIRA_TOKEN`)
-- Path to `.env` file if they use one
-
-## Configuration
-
-The project must contain a `.jira.json` file. See [references/CONFIG.md](references/CONFIG.md) for the full schema. Minimal example:
-
+Minimal `.jira.json`:
 ```json
 {
   "jira_url": "https://mycompany.atlassian.net",
-  "project_key": "API",
-  "credentials": {
-    "username_env": "JIRA_EMAIL",
-    "token_env": "JIRA_TOKEN"
-  },
+  "project_key": "PROJ",
+  "credentials": { "username_env": "JIRA_EMAIL", "token_env": "JIRA_TOKEN" },
   "env_file": ".env"
 }
 ```
 
 ## Pre-flight checks
 
-Before running ANY script, perform these checks proactively.
-
-### Check 1 — Python environment
-
-Verify Python 3.10+ is available:
-
-```bash
-python3 --version
-```
-
-Check if the virtual environment exists and has dependencies:
-
-```bash
-.jira-venv/bin/python -c "import markdown; import markdownify; print('OK')"
-```
-
-If missing, run the setup script:
-
-```bash
-python3 <skill_dir>/scripts/setup_env.py
-```
-
-After setup, all script commands use the venv Python:
-
-```bash
-.jira-venv/bin/python <skill_dir>/scripts/create_ticket.py ...
-```
-
-### Check 2 — Configuration file
-
-Look for `.jira.json` in the project root. If missing, do NOT proceed — help the user create one interactively.
-
-### Check 3 — Credentials
-
-Confirm credential environment variables are set:
-
-```bash
-python3 -c "import os; print('email:', 'SET' if os.environ.get('JIRA_EMAIL') else 'MISSING'); print('token:', 'SET' if os.environ.get('JIRA_TOKEN') else 'MISSING')"
-```
-
-Substitute actual env var names from `.jira.json`. If credentials load from a `.env` file, check that the file exists and contains the expected keys (without printing values).
-
-### Check 4 — Field discovery (first run)
-
-If `field_mappings` or `issue_types` are empty in `.jira.json`, run discovery:
-
-```bash
-.jira-venv/bin/python <skill_dir>/scripts/discover_fields.py --config .jira.json --apply
-```
-
-This auto-detects custom field IDs (epic link, story points, sprint) and available issue types.
-
-For full field discovery (statuses, priorities, components, versions, resolutions):
-
+1. **Python env** — verify `.jira-venv` exists: `.jira-venv/bin/python -c "import markdown; print('OK')"`. If missing: `python3 <skill_dir>/scripts/setup_env.py`
+2. **Config** — `.jira.json` must exist in project root
+3. **Credentials** — confirm env vars are set (substitute names from `.jira.json`). Never print values.
+4. **Field discovery** — if `field_mappings` or `issue_types` are empty:
 ```bash
 .jira-venv/bin/python <skill_dir>/scripts/discover_fields.py --config .jira.json --all --apply
 ```
-
-This populates the `field_catalog` in `.jira.json`, enabling the `--set` flag and named field flags
-(`--status`, `--priority`, etc.) to resolve values by friendly name.
+This populates `field_catalog` (statuses, priorities, components, versions, sprints), enabling `--set`, `--status`, `--priority`, `--sprint`, etc.
 
 ## Workflow
 
-Always follow this sequence. Never skip pre-flight checks or the plan step.
-
-### Step 1 — Validate configuration
-
-Run pre-flight checks above. Confirm all required fields are present and credentials are set.
-
-### Step 2 — Determine operation
-
-Identify what the user wants from one of these operations:
-- **Create**: single ticket or bulk from source file
-- **Update**: modify fields on existing tickets
-- **Fetch**: retrieve and display tickets
-- **Delete**: remove tickets (requires confirmation)
-- **Diff**: compare local spec against live Jira
-- **Validate estimates**: check sub-ticket sums match parents
-
-### Step 3 — Build the action plan
-
-For create, update, and delete operations, present a plan to the user (see [references/TICKET_PLAN_FORMAT.md](references/TICKET_PLAN_FORMAT.md)).
-
-**Wait for explicit user approval before proceeding.** If the user asks to change anything, update the plan and present again.
-
-### Step 4 — Execute
-
-Run the appropriate script. See operation-specific instructions below.
-
-### Step 5 — Verify
-
-After create or update operations, offer to:
-- Run estimation validation: `validate_estimates.py`
-- Run diff to confirm changes: `diff_tickets.py`
-- Fetch created tickets to display: `fetch_tickets.py`
+1. **Pre-flight** — run checks above
+2. **Determine operation** — create / update / fetch / delete / diff / validate
+3. **Plan** — for create, update, delete: show plan and **wait for user approval**
+4. **Execute** — run the appropriate script
+5. **Verify** — offer to validate estimates, diff, or fetch results
 
 ## Operations
 
@@ -171,259 +70,134 @@ After create or update operations, offer to:
 
 ```bash
 .jira-venv/bin/python <skill_dir>/scripts/create_ticket.py \
-  --config .jira.json \
-  --type story \
-  --summary "My Story Title" \
-  --description "Description text" \
-  --epic API-8291 \
-  --story-points 2 \
-  --priority "High" \
-  --status "In Progress" \
-  --rewrite-links \
-  --attachment screenshot.png \
-  --attachment design.pdf
+  --config .jira.json --type story --summary "Title" \
+  --description "Desc" --epic PROJ-100 --story-points 2 \
+  --priority "High" --status "In Progress" --sprint "Sprint 42" \
+  --rewrite-links --attachment screenshot.png
 ```
 
-For subtasks, use `--type subtask --parent API-8301` instead of `--epic`.
-The `--attachment` flag can be repeated to attach multiple files.
+For subtasks: `--type subtask --parent PROJ-101` instead of `--epic`.
 
-Additional field flags:
-- `--priority "High"` — set priority (resolved from field_catalog)
-- `--status "In Progress"` — transition to status after creation
-- `--assignee "user@example.com"` — set assignee
-- `--component "Backend"` — add component (can be repeated)
-- `--fix-version "1.0"` — add fix version (can be repeated)
-- `--set "field=value"` — set any discovered field by name (can be repeated)
+Field flags: `--priority`, `--status`, `--assignee`, `--component` (repeatable), `--fix-version` (repeatable), `--sprint`, `--labels`, `--story-points`, `--set "field=value"` (repeatable), `--attachment` (repeatable).
 
 ### Bulk create from source file
 
-Parse a structured markdown or JSON file (see [references/SOURCE_FORMAT.md](references/SOURCE_FORMAT.md)) and create all tickets in dependency order:
+See [SOURCE_FORMAT.md](references/SOURCE_FORMAT.md) for markdown/JSON format.
 
 ```bash
 .jira-venv/bin/python <skill_dir>/scripts/bulk_create.py \
-  --config .jira.json \
-  --source tickets.md \
-  --epic API-8291 \
-  --rewrite-links \
-  --dry-run
+  --config .jira.json --source tickets.md --epic PROJ-100 --rewrite-links --dry-run
 ```
 
-Remove `--dry-run` after reviewing the plan. Already-created tickets (tracked in `.jira-manifest.json`) are skipped automatically.
+Remove `--dry-run` after review. Already-created tickets (`.jira-manifest.json`) are skipped.
 
 ### Update existing tickets
 
 ```bash
+# Update fields
 .jira-venv/bin/python <skill_dir>/scripts/update_ticket.py \
-  --config .jira.json \
-  --key API-8301 \
-  --summary "Updated Title" \
-  --story-points 3 \
-  --rewrite-links
+  --config .jira.json --key PROJ-101 --summary "New Title" --story-points 3
 
-# Change status (uses workflow transitions API)
+# Status transition, sprint, priority, assignee
 .jira-venv/bin/python <skill_dir>/scripts/update_ticket.py \
-  --config .jira.json \
-  --key API-8301 \
-  --status "In Progress"
+  --config .jira.json --key PROJ-101 --status "In Progress" \
+  --sprint "Sprint 42" --priority "High" --assignee "user@example.com"
 
-# Set priority and assignee
+# Generic field by name, attachments
 .jira-venv/bin/python <skill_dir>/scripts/update_ticket.py \
-  --config .jira.json \
-  --key API-8301 \
-  --priority "High" \
-  --assignee "user@example.com"
-
-# Set any field by friendly name
-.jira-venv/bin/python <skill_dir>/scripts/update_ticket.py \
-  --config .jira.json \
-  --key API-8301 \
-  --set "priority=High" \
-  --set "components=Backend" \
-  --set "story_points=5"
-
-# Attach files to an existing ticket (no field changes required)
-.jira-venv/bin/python <skill_dir>/scripts/update_ticket.py \
-  --config .jira.json \
-  --key API-8301 \
-  --attachment report.pdf
+  --config .jira.json --key PROJ-101 --set "components=Backend" --attachment report.pdf
 ```
 
-The `--set` flag resolves field names and values through the `field_catalog` in `.jira.json`.
-Run `discover_fields.py --all --apply` first to populate the catalog.
-
-Available named flags: `--status`, `--priority`, `--assignee`, `--component`, `--fix-version`, `--labels`, `--story-points`.
+Named flags: `--status`, `--priority`, `--assignee`, `--component`, `--fix-version`, `--sprint`, `--labels`, `--story-points`, `--set "field=value"`, `--attachment`.
 
 ### Fetch tickets
 
 ```bash
-# Single ticket
+# Single ticket (detail view)
 .jira-venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
-  --config .jira.json --key API-8301 --format detail
+  --config .jira.json --key PROJ-101 --format detail
 
 # JQL search
 .jira-venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
-  --config .jira.json --jql "project=API AND type=Story" --format table
+  --config .jira.json --jql "project=PROJ AND type=Story" --format table
+
+# Filter by field values (builds JQL automatically)
+.jira-venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
+  --config .jira.json --filter assignee=currentUser() status="In Progress"
 
 # Children of epic or story
 .jira-venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
-  --config .jira.json --children-of API-8291
+  --config .jira.json --children-of PROJ-100
+
+# List Agile boards
+.jira-venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
+  --config .jira.json --boards
 ```
+
+Formats: `table` (default, includes sprint column), `detail`, `json`.
 
 ### Delete tickets
 
-Always show what will be deleted first:
-
 ```bash
-# Preview
 .jira-venv/bin/python <skill_dir>/scripts/delete_ticket.py \
-  --config .jira.json --key API-8310 --dry-run
-
-# Execute (requires --confirm)
+  --config .jira.json --key PROJ-110 --dry-run   # preview first
 .jira-venv/bin/python <skill_dir>/scripts/delete_ticket.py \
-  --config .jira.json --key API-8310 --confirm
+  --config .jira.json --key PROJ-110 --confirm    # execute
 ```
 
 **Never delete without explicit user approval.**
 
 ### Diff local vs Jira
 
-Compare manifest entries or source file against live Jira state:
-
 ```bash
-# Diff manifest entries
 .jira-venv/bin/python <skill_dir>/scripts/diff_tickets.py \
-  --config .jira.json --manifest
-
-# Diff source file
-.jira-venv/bin/python <skill_dir>/scripts/diff_tickets.py \
-  --config .jira.json --source tickets.md
-
-# Summary only
-.jira-venv/bin/python <skill_dir>/scripts/diff_tickets.py \
-  --config .jira.json --manifest --summary
+  --config .jira.json --manifest          # or --source tickets.md
 ```
 
-Exit code 1 means changes detected (informational, not an error).
+Add `--summary` for counts only, `--json` for raw output. Exit code 1 = changes detected.
 
 ### Validate estimates
 
-Check that sub-ticket story points sum to parent story points:
-
 ```bash
-# Validate epic (live Jira)
 .jira-venv/bin/python <skill_dir>/scripts/validate_estimates.py \
-  --config .jira.json --epic API-8291
-
-# Validate single story (live Jira)
-.jira-venv/bin/python <skill_dir>/scripts/validate_estimates.py \
-  --config .jira.json --story API-8301
-
-# Validate from source file (pre-creation)
-.jira-venv/bin/python <skill_dir>/scripts/validate_estimates.py \
-  --config .jira.json --source tickets.md
-
-# Validate from manifest
-.jira-venv/bin/python <skill_dir>/scripts/validate_estimates.py \
-  --config .jira.json --manifest
+  --config .jira.json --epic PROJ-100     # or --story, --source, --manifest
 ```
 
 ### Discover fields
 
-Auto-detect custom field IDs and issue types:
-
 ```bash
-# Show discovered fields
 .jira-venv/bin/python <skill_dir>/scripts/discover_fields.py \
-  --config .jira.json --verbose
-
-# Apply to config
+  --config .jira.json --all --apply          # full discovery + save
 .jira-venv/bin/python <skill_dir>/scripts/discover_fields.py \
-  --config .jira.json --apply
-
-# Full discovery: statuses, priorities, components, versions, resolutions
-.jira-venv/bin/python <skill_dir>/scripts/discover_fields.py \
-  --config .jira.json --all --apply
-
-# Full discovery with all fields index (system + custom)
-.jira-venv/bin/python <skill_dir>/scripts/discover_fields.py \
-  --config .jira.json --all --verbose --apply
+  --config .jira.json --all --verbose --apply # include all fields index
 ```
 
-The `--all` flag discovers:
-- **Statuses** — all workflow statuses in the project (e.g. Backlog, In Progress, Done)
-- **Priorities** — all priority levels (e.g. Highest, High, Medium, Low, Lowest)
-- **Resolutions** — all resolution types (e.g. Done, Won't Do, Duplicate)
-- **Components** — all project components
-- **Versions** — all project versions (fix versions)
-- **Fields index** (with `--verbose`) — all system + custom fields with IDs
+`--all` discovers: statuses, priorities, resolutions, components, versions, sprints (Agile API). Add `--verbose` for full system+custom fields index.
 
-Discovered values are stored in `field_catalog` in `.jira.json` and used by the `--set` flag
-and named field flags (`--status`, `--priority`, etc.) on create and update scripts.
+### Markup conversion & link rewriting
 
-### Markup conversion
-
-Descriptions are automatically converted between Markdown and Jira wiki markup:
-
-- **Creating/updating** tickets: Markdown descriptions are converted to Jira wiki markup before sending to the API
-- **Fetching** tickets (detail format): Jira wiki markup descriptions are converted back to Markdown for display
-
-Supported conversions: headings, bold, italic, strikethrough, code blocks, inline code, links, images, tables, lists (ordered/unordered with nesting), blockquotes, horizontal rules, panels, noformat blocks.
-
-To skip conversion, pass `--no-convert` to any create, update, or fetch script.
-
-The converter can also be used standalone:
-
-```bash
-# Markdown to Jira wiki markup
-.jira-venv/bin/python <skill_dir>/scripts/markup_converter.py \
-  --direction md2jira --file description.md
-
-# Jira wiki markup to Markdown
-.jira-venv/bin/python <skill_dir>/scripts/markup_converter.py \
-  --direction jira2md --file description.jira
-```
-
-### Rewrite links
-
-Convert relative markdown links to git browse URLs (or reverse):
-
-```bash
-.jira-venv/bin/python <skill_dir>/scripts/link_rewriter.py \
-  --config .jira.json --direction to-git --file description.md
-```
-
-This is called automatically when `--rewrite-links` is passed to create or update scripts.
+Descriptions auto-convert between Markdown ↔ Jira wiki markup. Pass `--no-convert` to skip.
+Relative markdown links auto-rewrite to git browse URLs when `--rewrite-links` is used.
 
 ## Important rules
 
-1. **Never create, update, or delete without showing the plan first and getting explicit user approval.**
-2. **Never print or log credentials.** Only confirm that environment variables are set.
-3. **Create in dependency order**: epics before stories, stories before subtasks.
-4. The manifest file (`.jira-manifest.json`) is auto-maintained by scripts. Do not edit manually.
-5. If a create fails, stop and report the error — do not continue with dependent tickets.
-6. After bulk create, offer to run estimation validation automatically.
-7. Link rewriting is best-effort: if git remote cannot be resolved, links are left as-is.
+1. **Never create/update/delete without plan + explicit user approval.**
+2. **Never print credentials.** Only confirm env vars are set.
+3. **Create in dependency order**: epics → stories → subtasks.
+4. `.jira-manifest.json` is auto-maintained. Do not edit manually.
+5. On create failure, stop immediately — do not continue with dependents.
+6. After bulk create, offer estimation validation.
+7. Link rewriting is best-effort.
 
 ## Error handling
 
-| Error | Cause | Fix |
-|---|---|---|
-| `401 Unauthorized` | Bad credentials | Verify env vars are set and token has issue write access |
-| `404 Not Found` | Wrong issue key or project | Check key exists and project_key is correct in config |
-| `400 Bad Request` | Missing required field | Run `discover_fields.py --verbose` to see required fields |
-| `Field not configured` | Missing field_mappings entry | Run `discover_fields.py --apply` to auto-detect |
-| `No transition found` | Status not reachable from current state | Check available transitions — some statuses require intermediate steps |
-| `createmeta not available` | Jira instance restriction | Configure `field_mappings` and `issue_types` manually |
-
-## Troubleshooting
-
-| Problem | Fix |
+| Error | Fix |
 |---|---|
-| `python3: command not found` | macOS: `brew install python3` / Linux: `apt install python3` |
-| `ModuleNotFoundError: markdown` | Run `python3 <skill_dir>/scripts/setup_env.py` |
-| Story points not setting | Run `discover_fields.py --apply` to detect the field ID |
-| Epic link not working | Run `discover_fields.py --apply` to detect the field ID |
-| Links not rewriting | Check `git_remote` in config or ensure you're in a git repo |
-| Manifest out of sync | Delete `.jira-manifest.json` and re-create with `bulk_create.py` |
-| Status change not working | Run `discover_fields.py --all --apply` and check available transitions |
-| `--set` field not resolving | Run `discover_fields.py --all --verbose --apply` to populate field catalog |
+| `401 Unauthorized` | Verify env vars and token permissions |
+| `404 Not Found` | Check issue key and `project_key` in config |
+| `400 Bad Request` | Run `discover_fields.py --verbose` for required fields |
+| `Field not configured` | Run `discover_fields.py --apply` |
+| `No transition found` | Some statuses need intermediate steps |
+| Sprint not setting | Run `discover_fields.py --all --apply` or use `--sprint <numeric_id>` |
+| `ModuleNotFoundError` | Run `setup_env.py` |
+| `--set` not resolving | Run `discover_fields.py --all --verbose --apply` |

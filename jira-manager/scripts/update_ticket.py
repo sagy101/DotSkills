@@ -34,8 +34,9 @@ from field_resolver import (
     apply_extra_fields,
     apply_named_fields,
     apply_set_pairs,
+    handle_status_transition,
     resolve_description,
-    resolve_transition,
+    resolve_sprint_id,
     upload_attachments,
 )
 from jira_client import JiraClient
@@ -59,6 +60,38 @@ def _build_update_fields(args, config):
     return fields, status_from_set
 
 
+def _handle_sprint(client, issue_key, sprint_value, config):
+    """Resolve and move an issue into a sprint via the Agile API."""
+    sprint_id, sprint_name = resolve_sprint_id(config, sprint_value)
+    if sprint_id is None:
+        print(
+            f"ERROR: Could not resolve sprint '{sprint_value}'. "
+            "Run discover_fields.py --all --apply to discover available sprints, "
+            "or pass a numeric sprint ID.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    try:
+        client.move_issues_to_sprint(sprint_id, [issue_key])
+        print(f"Moved {issue_key} to sprint: {sprint_name} (id={sprint_id})")
+    except Exception:
+        sys.exit(1)
+
+
+def _print_dry_run(key, fields, status, sprint, config, attachments):
+    """Print dry-run summary without making API calls."""
+    if fields:
+        print(f"DRY RUN \u2014 would update {key} with fields:")
+        print(json.dumps(fields, indent=2))
+    if status:
+        print(f"DRY RUN \u2014 would transition {key} to status: {status}")
+    if sprint:
+        sid, sname = resolve_sprint_id(config, sprint)
+        print(f"DRY RUN \u2014 would move {key} to sprint: {sname} (id={sid})")
+    if attachments:
+        print(f"Attachments: {', '.join(attachments)}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Update a Jira issue")
     parser.add_argument("--config", required=True, help="Path to .jira.json")
@@ -70,26 +103,19 @@ def main():
     config = load_config(args.config)
     fields, status_from_set = _build_update_fields(args, config)
 
-    # Merge status from --set with explicit --status flag (--status takes precedence)
     effective_status = args.status or status_from_set
+    effective_sprint = getattr(args, "sprint", None)
 
-    if not fields and not effective_status and not args.attachment:
-        print("ERROR: No fields, status, or attachments specified to update.")
+    if not fields and not effective_status and not effective_sprint and not args.attachment:
+        print("ERROR: No fields, status, sprint, or attachments specified to update.")
         sys.exit(1)
 
     if args.dry_run:
-        if fields:
-            print(f"DRY RUN — would update {args.key} with fields:")
-            print(json.dumps(fields, indent=2))
-        if effective_status:
-            print(f"DRY RUN — would transition {args.key} to status: {effective_status}")
-        if args.attachment:
-            print(f"Attachments: {', '.join(args.attachment)}")
+        _print_dry_run(args.key, fields, effective_status, effective_sprint, config, args.attachment)
         return
 
     client = JiraClient(config)
 
-    # Update fields first (before transition)
     if fields:
         try:
             client.update_issue(args.key, fields)
@@ -98,33 +124,12 @@ def main():
         except Exception:
             sys.exit(1)
 
-    # Handle status transition
     if effective_status:
-        result = resolve_transition(client, args.key, effective_status, config)
-        if result is None:
-            available = client.get_transitions(args.key)
-            names = [
-                f"{t['to']['name']}" for t in available
-                if "to" in t
-            ]
-            print(
-                f"ERROR: No transition found to status '{effective_status}' for {args.key}.",
-                file=sys.stderr,
-            )
-            print(
-                f"  Available target statuses: {', '.join(names) if names else '(none)'}",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+        handle_status_transition(client, args.key, effective_status, config)
 
-        transition_id, transition_name, target_name = result
-        try:
-            client.transition_issue(args.key, transition_id)
-            print(f"Transitioned {args.key} -> {target_name} (via '{transition_name}')")
-        except Exception:
-            sys.exit(1)
+    if effective_sprint:
+        _handle_sprint(client, args.key, effective_sprint, config)
 
-    # Attachments
     upload_attachments(client, args.key, args.attachment)
 
 

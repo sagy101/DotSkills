@@ -25,8 +25,8 @@ def format_issue_table(issues, config):
     sp_field = config.get_field_id("story_points")
 
     lines = []
-    lines.append(f"{'Key':<12} {'Type':<12} {'SP':>4}  {'Status':<14} Summary")
-    lines.append("-" * 80)
+    lines.append(f"{'Key':<12} {'Type':<12} {'SP':>4}  {'Status':<14} {'Sprint':<20} Summary")
+    lines.append("-" * 100)
 
     for issue in issues:
         key = issue["key"]
@@ -37,9 +37,33 @@ def format_issue_table(issues, config):
         sp = ""
         if sp_field and fields.get(sp_field) is not None:
             sp = str(fields[sp_field])
-        lines.append(f"{key:<12} {itype:<12} {sp:>4}  {status:<14} {summary}")
+        sprint = _extract_sprint_name(fields, config) or ""
+        if len(sprint) > 18:
+            sprint = sprint[:17] + "\u2026"
+        lines.append(f"{key:<12} {itype:<12} {sp:>4}  {status:<14} {sprint:<20} {summary}")
 
     return "\n".join(lines)
+
+
+def _extract_sprint_from_value(sprint_data):
+    """Parse a sprint value which may be a dict, list, or legacy string."""
+    if isinstance(sprint_data, dict):
+        return sprint_data.get("name")
+    if isinstance(sprint_data, list) and sprint_data:
+        return _extract_sprint_from_value(sprint_data[-1])
+    if isinstance(sprint_data, str) and "name=" in sprint_data:
+        for part in sprint_data.split(","):
+            if part.strip().startswith("name="):
+                return part.strip().split("=", 1)[1]
+    return None
+
+
+def _extract_sprint_name(fields, config):
+    """Extract sprint name from issue fields (standard API sprint custom field)."""
+    sprint_field = config.get_field_id("sprint")
+    if not sprint_field:
+        return None
+    return _extract_sprint_from_value(fields.get(sprint_field))
 
 
 def format_issue_detail(issue, config, convert_markup=True):
@@ -56,6 +80,10 @@ def format_issue_detail(issue, config, convert_markup=True):
 
     if sp_field and fields.get(sp_field) is not None:
         lines.append(f"Story Pts:   {fields[sp_field]}")
+
+    sprint_name = _extract_sprint_name(fields, config)
+    if sprint_name:
+        lines.append(f"Sprint:      {sprint_name}")
 
     labels = fields.get("labels", [])
     if labels:
@@ -135,6 +163,36 @@ def _handle_children(client, config, parent_key, format_type, fields, convert=Tr
         sys.exit(1)
 
 
+def _build_filter_jql(args, config):
+    """Build a JQL query from --filter key=value pairs."""
+    clauses = [f"project = {config.project_key}"]
+    for pair in args.filter:
+        if "=" not in pair:
+            print(f"ERROR: --filter must be 'field=value', got: {pair}", file=sys.stderr)
+            sys.exit(1)
+        field, _, value = pair.partition("=")
+        field = field.strip()
+        value = value.strip()
+        clauses.append(f'{field} = "{value}"')
+    return " AND ".join(clauses) + " ORDER BY key ASC"
+
+
+def _handle_boards(client, fmt):
+    """List Agile boards for the project."""
+    boards = client.get_boards()
+    if fmt == "json":
+        print(json.dumps(boards, indent=2))
+        return
+    if not boards:
+        print("No boards found for this project.")
+        return
+    print(f"{'ID':<8} {'Type':<12} Name")
+    print("-" * 50)
+    for b in boards:
+        print(f"{b['id']:<8} {b.get('type', '?'):<12} {b.get('name', '?')}")
+    print(f"\nTotal: {len(boards)}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Fetch Jira issues")
     parser.add_argument("--config", required=True, help="Path to .jira.json")
@@ -143,6 +201,17 @@ def main():
     group.add_argument("--key", help="Fetch a single issue by key")
     group.add_argument("--jql", help="Search using JQL query")
     group.add_argument("--children-of", help="Fetch children of an epic or story")
+    group.add_argument(
+        "--filter",
+        action="append",
+        nargs="+",
+        help="Filter tickets by field=value pairs (e.g. --filter assignee=me status='In Progress')",
+    )
+    group.add_argument(
+        "--boards",
+        action="store_true",
+        help="List Agile boards for the project",
+    )
 
     parser.add_argument(
         "--format",
@@ -167,6 +236,10 @@ def main():
     )
     args = parser.parse_args()
 
+    # Flatten --filter lists into a single list of key=value pairs
+    if args.filter:
+        args.filter = [item for sublist in args.filter for item in sublist]
+
     config = load_config(args.config)
     client = JiraClient(config)
 
@@ -176,12 +249,17 @@ def main():
 
     convert = not args.no_convert
 
-    if args.key:
+    if args.boards:
+        _handle_boards(client, args.format)
+    elif args.key:
         _handle_key(client, config, args.key, args.format, field_list, convert)
     elif args.jql:
         _handle_jql(client, config, args.jql, args.format, field_list, args.max_results, convert)
     elif args.children_of:
         _handle_children(client, config, args.children_of, args.format, field_list, convert)
+    elif args.filter:
+        jql = _build_filter_jql(args, config)
+        _handle_jql(client, config, jql, args.format, field_list, args.max_results, convert)
 
 
 if __name__ == "__main__":

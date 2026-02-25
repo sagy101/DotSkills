@@ -70,6 +70,49 @@ _ARRAY_OBJECT_TYPES = {"component", "version"}
 _ARRAY_CATALOG_KEYS = {"components", "fix_versions"}
 
 
+def _resolve_from_catalog(config, normalized, field_value, entry):
+    """Resolve a field value using a top-level catalog entry.
+
+    Returns (jira_field_id, jira_value, status_value) or None if not applicable.
+    """
+    catalog_type = entry.get("type", "")
+    jira_field_id = entry.get("id", normalized)
+
+    if catalog_type == "status":
+        return None, None, field_value
+
+    resolved = resolve_catalog_value(config, normalized, field_value)
+
+    if catalog_type in _NAME_OBJECT_TYPES:
+        name = resolved["name"] if resolved else field_value
+        return jira_field_id, {"name": name}, None
+
+    if catalog_type in _ARRAY_OBJECT_TYPES or normalized in _ARRAY_CATALOG_KEYS:
+        if resolved:
+            return jira_field_id, [{"id": resolved["id"]}], None
+        return jira_field_id, [{"name": field_value}], None
+
+    if resolved:
+        return jira_field_id, {"id": resolved["id"]}, None
+    return jira_field_id, field_value, None
+
+
+def _resolve_from_fallbacks(config, normalized, field_name, field_value):
+    """Try field_mappings, _fields_index, then use field_name as-is."""
+    mapped_id = config.get_field_id(normalized)
+    if mapped_id:
+        try:
+            return mapped_id, float(field_value), None
+        except (ValueError, TypeError):
+            return mapped_id, field_value, None
+
+    fields_index = config.field_catalog.get("_fields_index", {})
+    if normalized in fields_index:
+        return fields_index[normalized]["id"], field_value, None
+
+    return field_name, field_value, None
+
+
 def resolve_set_field(config, field_name, field_value):
     """Resolve a --set field_name=value pair into a (jira_field_id, jira_value, status_value) tuple.
 
@@ -85,50 +128,10 @@ def resolve_set_field(config, field_name, field_value):
     normalized = normalize_key(field_name)
     catalog = config.field_catalog
 
-    # 1. Check top-level catalog entries (status, priority, components, etc.)
     if normalized in catalog:
-        entry = catalog[normalized]
-        catalog_type = entry.get("type", "")
-        jira_field_id = entry.get("id", normalized)
+        return _resolve_from_catalog(config, normalized, field_value, catalog[normalized])
 
-        # Status is special — handled via transitions, not fields API
-        if catalog_type == "status":
-            return None, None, field_value  # signal to caller
-
-        # Resolve value from catalog values
-        resolved = resolve_catalog_value(config, normalized, field_value)
-
-        if catalog_type in _NAME_OBJECT_TYPES:
-            name = resolved["name"] if resolved else field_value
-            return jira_field_id, {"name": name}, None
-
-        if catalog_type in _ARRAY_OBJECT_TYPES or normalized in _ARRAY_CATALOG_KEYS:
-            if resolved:
-                return jira_field_id, [{"id": resolved["id"]}], None
-            return jira_field_id, [{"name": field_value}], None
-
-        # Generic catalog entry with values — use id
-        if resolved:
-            return jira_field_id, {"id": resolved["id"]}, None
-        return jira_field_id, field_value, None
-
-    # 2. Check field_mappings (epic_link, story_points, sprint, etc.)
-    mapped_id = config.get_field_id(normalized)
-    if mapped_id:
-        # Try to coerce numeric values
-        try:
-            return mapped_id, float(field_value), None
-        except (ValueError, TypeError):
-            return mapped_id, field_value, None
-
-    # 3. Check _fields_index in catalog
-    fields_index = catalog.get("_fields_index", {})
-    if normalized in fields_index:
-        idx_entry = fields_index[normalized]
-        return idx_entry["id"], field_value, None
-
-    # 4. Use as-is
-    return field_name, field_value, None
+    return _resolve_from_fallbacks(config, normalized, field_name, field_value)
 
 
 # ------------------------------------------------------------------
@@ -219,9 +222,28 @@ def apply_fix_versions(fields, args, config):
     fields["fixVersions"] = versions
 
 
+def resolve_sprint_id(config, sprint_value):
+    """Resolve a sprint name or ID to a numeric sprint ID.
+
+    Checks the field_catalog sprint values first, then tries int parse.
+    Returns (sprint_id, sprint_name) or (None, None) if unresolvable.
+    """
+    resolved = resolve_catalog_value(config, "sprint", sprint_value)
+    if resolved:
+        return resolved["id"], resolved["name"]
+    try:
+        return int(sprint_value), sprint_value
+    except (ValueError, TypeError):
+        return None, None
+
+
 def apply_named_fields(fields, args, config):
     """Apply all named field flags (priority, assignee, component, fix-version,
-    story-points, labels) to the fields dict."""
+    story-points, labels) to the fields dict.
+
+    Note: --sprint is NOT applied here because it uses the Agile API
+    (move_issues_to_sprint), not the standard fields API. The caller
+    must handle it separately after issue creation/update."""
     apply_story_points(fields, args, config)
     apply_labels(fields, args)
     apply_priority(fields, args, config)
@@ -303,6 +325,54 @@ def resolve_transition(client, issue_key, target_status, config):
 
 
 # ------------------------------------------------------------------
+# Issue type resolution
+# ------------------------------------------------------------------
+
+def resolve_issue_type(config, type_name):
+    """Resolve an issue type name to a Jira field dict ({id: ...} or {name: ...})."""
+    type_id = config.get_issue_type_id(type_name)
+    if type_id:
+        return {"id": type_id}
+    return {"name": type_name.capitalize()}
+
+
+# ------------------------------------------------------------------
+# Status transition execution
+# ------------------------------------------------------------------
+
+def handle_status_transition(client, issue_key, target_status, config, warn_only=False):
+    """Resolve and execute a workflow transition.
+
+    Args:
+        warn_only: If True, print a warning instead of exiting on failure.
+                   Useful for post-create transitions where the issue already exists.
+    """
+    result = resolve_transition(client, issue_key, target_status, config)
+    if result is None:
+        available = client.get_transitions(issue_key)
+        names = [t["to"]["name"] for t in available if "to" in t]
+        msg = (
+            f"No transition found to status '{target_status}' for {issue_key}. "
+            f"Available: {', '.join(names) if names else '(none)'}"
+        )
+        if warn_only:
+            print(f"WARNING: {msg}", file=sys.stderr)
+            return
+        print(f"ERROR: {msg}", file=sys.stderr)
+        sys.exit(1)
+
+    transition_id, transition_name, target_name = result
+    try:
+        client.transition_issue(issue_key, transition_id)
+        print(f"  Transitioned {issue_key} -> {target_name} (via '{transition_name}')")
+    except Exception:
+        if warn_only:
+            print(f"  WARNING: Failed to transition {issue_key} to {target_name}", file=sys.stderr)
+        else:
+            sys.exit(1)
+
+
+# ------------------------------------------------------------------
 # Attachment helper
 # ------------------------------------------------------------------
 
@@ -349,6 +419,11 @@ def add_common_field_args(parser):
         "--fix-version",
         action="append",
         help="Fix version name (can be repeated for multiple).",
+    )
+    parser.add_argument(
+        "--sprint",
+        help="Sprint name or ID. Resolved from field_catalog if discovered. "
+             "Uses Agile API to move the issue into the sprint.",
     )
     parser.add_argument(
         "--set",

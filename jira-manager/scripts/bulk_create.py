@@ -46,6 +46,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_loader import load_config, load_manifest, save_manifest
+from field_resolver import resolve_issue_type
 from jira_client import JiraClient
 from link_rewriter import rewrite_links_to_git
 from markup_converter import md_to_jira_markup
@@ -219,7 +220,7 @@ def _build_issue_fields(config, item, type_name, epic_key=None, parent_key=None,
     fields = {
         "project": {"key": config.project_key},
         "summary": item["summary"],
-        "issuetype": _resolve_issue_type(config, type_name),
+        "issuetype": resolve_issue_type(config, type_name),
     }
 
     description = item.get("description", "")
@@ -347,14 +348,6 @@ def execute_plan(data, epic_key, config, client, manifest, rewrite_links, dry_ru
                 skipped_count += 1
 
     return created_count, skipped_count
-
-
-def _resolve_issue_type(config, type_name):
-    """Resolve issue type to Jira field format."""
-    type_id = config.get_issue_type_id(type_name)
-    if type_id:
-        return {"id": type_id}
-    return {"name": type_name.capitalize()}
 
 
 def main():
