@@ -27,6 +27,35 @@ MERMAID_BLOCK_RE = re.compile(r"```mermaid\s*\n(.*?)```", re.DOTALL)
 # ---------------------------------------------------------------------------
 
 
+ATTACHMENT_LINK_RE = re.compile(
+    r'<a href="attachment:([^"]+)">(.*?)</a>', re.DOTALL
+)
+
+
+def rewrite_attachment_links(html_content: str) -> str:
+    """Replace ``attachment:filename`` links with Confluence attachment macros.
+
+    Markdown authors use the ``attachment:`` URL scheme to reference files
+    that are uploaded as page attachments::
+
+        [My Slides.pdf](attachment:My Slides.pdf)
+
+    This function converts those into Confluence storage-format
+    ``<ac:link><ri:attachment …/></ac:link>`` macros.
+    """
+    def _replace(match):
+        filename = html.unescape(match.group(1))
+        link_text = match.group(2)
+        return (
+            f'<ac:link>'
+            f'<ri:attachment ri:filename="{filename}"/>'
+            f'<ac:plain-text-link-body><![CDATA[{link_text}]]></ac:plain-text-link-body>'
+            f'</ac:link>'
+        )
+
+    return ATTACHMENT_LINK_RE.sub(_replace, html_content)
+
+
 def markdown_to_confluence_storage(md_content: str) -> str:
     """Convert Markdown to Confluence storage format (XHTML-based)."""
     html_content = md_lib.markdown(
@@ -38,6 +67,9 @@ def markdown_to_confluence_storage(md_content: str) -> str:
             "sane_lists",
         ],
     )
+
+    # Rewrite attachment: links before any other transforms
+    html_content = rewrite_attachment_links(html_content)
 
     def make_code_macro(code: str, lang: str = "") -> str:
         code = html.unescape(code)

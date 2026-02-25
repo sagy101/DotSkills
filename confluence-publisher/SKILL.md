@@ -9,7 +9,7 @@ description: >
 license: MIT
 metadata:
   author: sagy101
-  version: "2.0"
+  version: "2.1"
 compatibility: >
   Requires Python 3.10+. Optional: Node.js + npx for Mermaid diagram rendering.
   Works with Confluence Cloud (Atlassian). Requires API token with page read/write permissions.
@@ -177,13 +177,16 @@ Run the publish script for each file in hierarchical order (parents before child
   --title "<title>" \
   --mode <create|update> \
   [--page-id <id>]        # for updates, from manifest \
-  [--parent-id <id>]      # for creates, from manifest or root_page_id
+  [--parent-id <id>]      # for creates, from manifest or root_page_id \
+  [--emoji <codepoint>]   # page icon emoji, e.g. 1f399 for 🎙️
 ```
 
 The script automatically:
 - Converts markdown to Confluence storage format
 - Renders Mermaid diagrams to PNG and uploads as attachments
 - Rewrites `.md` cross-links to Confluence page-link macros using the manifest
+- Converts `attachment:` links to Confluence attachment macros
+- Sets the page emoji icon (if `--emoji` is provided)
 - Updates the manifest with the resulting page ID
 
 ### Step 5 — Verify (optional but recommended)
@@ -242,9 +245,13 @@ Present the diff output to the user before publishing so they can review what wo
 Pull Confluence pages back into local markdown files (reverse sync). Useful for bootstrapping local docs from an existing Confluence space, or for recovering content.
 
 ```bash
-# Export a single page by ID or URL
+# Export a single page by ID, URL, or tiny link
 python <skill_dir>/scripts/export_pages.py --config .confluence.json \
     --page https://mycompany.atlassian.net/wiki/spaces/DOCS/pages/123456/My+Page
+
+# Export using a Confluence tiny link (/wiki/x/...)
+python <skill_dir>/scripts/export_pages.py --config .confluence.json \
+    --page https://mycompany.atlassian.net/wiki/x/sYjwQ
 
 # Export a single page to a specific file
 python <skill_dir>/scripts/export_pages.py --config .confluence.json --page 123456 -o docs/setup.md
@@ -276,6 +283,19 @@ python <skill_dir>/scripts/publish_page.py --config .confluence.json \
 Attachment paths are relative to `docs_dir`. Multiple files are comma-separated. If an attachment file is not found, a warning is printed but the page publish still succeeds.
 
 Mermaid diagram PNGs are uploaded automatically — no need to list them in `--attachments`.
+
+### Attachment links in markdown
+
+To link to an uploaded attachment from within the page content, use the `attachment:` URL scheme:
+
+```markdown
+[My Presentation.pdf](attachment:My Presentation.pdf)
+[Architecture Diagram](attachment:arch-overview.png)
+```
+
+During publish, these are automatically converted to Confluence `<ac:link><ri:attachment …/></ac:link>` macros that link directly to the attachment on the page.
+
+The filename in `attachment:` must exactly match the filename used in `--attachments` (or the name of a previously uploaded attachment on the page).
 
 ### Delete pages
 
@@ -327,6 +347,7 @@ The publish script performs these transformations automatically:
 - **Code blocks → Confluence code macros**: Fenced code blocks with language tags become `<ac:structured-macro ac:name="code">` with proper language highlighting
 - **Mermaid diagrams → PNG attachments**: ` ```mermaid ` blocks are rendered to PNG via `mmdc` (Mermaid CLI), uploaded as page attachments, and replaced with `<ac:image>` macros. If Node.js/npx is unavailable, diagrams fall back to plain code blocks (no failure)
 - **Cross-page links → Confluence page links**: Links like `[Setup Guide](./setup.md)` are resolved via the manifest and rewritten to `<ac:link>` macros pointing to the correct Confluence page by title. Unresolvable links (target not in manifest) are left as-is
+- **Attachment links → Confluence attachment macros**: Links using the `attachment:` scheme (e.g. `[Slides](attachment:slides.pdf)`) are converted to `<ac:link><ri:attachment …/></ac:link>` macros
 
 ## Future capabilities
 
@@ -337,6 +358,7 @@ These operations can be added to this skill in the future:
 | **Bulk rename** | Rename Confluence pages when local titles change |
 | **Labels/tags** | Auto-apply Confluence labels based on directory structure or markdown frontmatter |
 | **Page permissions** | Set view/edit restrictions on published pages |
+| **Content appearance** | Set page width (full-width vs default) via content properties |
 
 ## Troubleshooting
 

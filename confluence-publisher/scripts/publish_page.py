@@ -27,8 +27,11 @@ import argparse
 import re
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+import requests
 
 # ---------------------------------------------------------------------------
 # Ensure script dir is on path for shared module imports
@@ -42,6 +45,7 @@ from config_loader import (
     load_manifest,
     save_manifest,
     resolve_title,
+    resolve_credentials,
     ensure_deps,
     ConfluenceConfig,
 )
@@ -63,6 +67,103 @@ from transforms import (  # noqa: E402
 # ---------------------------------------------------------------------------
 
 
+def _attach_with_retry(
+    confluence: Confluence,
+    page_id: str,
+    filepath: Path,
+    comment: str,
+    max_attempts: int = 3,
+    backoff: int = 5,
+) -> None:
+    """Upload a single file as an attachment with retries."""
+    for attempt in range(max_attempts):
+        try:
+            confluence.attach_file(
+                filename=str(filepath),
+                name=filepath.name,
+                page_id=page_id,
+                comment=comment,
+            )
+            return
+        except Exception as e:
+            if attempt < max_attempts - 1:
+                wait = backoff * (attempt + 1)
+                print(f"  Upload failed (attempt {attempt + 1}/{max_attempts}), retrying in {wait}s: {e}")
+                time.sleep(wait)
+            else:
+                print(f"  ERROR: Upload failed after {max_attempts} attempts: {e}")
+                raise
+
+
+def _render_and_prepare_body(
+    md_content: str,
+    tmp_path: Path,
+    current_file: str | None,
+    manifest: dict | None,
+    space_key: str,
+) -> tuple[str, list[Path]]:
+    """Convert markdown to Confluence storage format, rendering mermaid and rewriting links.
+
+    Returns (body_html, png_files).
+    """
+    png_files: list[Path] = []
+
+    if MERMAID_BLOCK_RE.search(md_content):
+        mermaid_count = len(MERMAID_BLOCK_RE.findall(md_content))
+        print(f"  Rendering {mermaid_count} Mermaid diagram(s) to PNG...")
+        md_content, png_files = render_mermaid_blocks(md_content, tmp_path)
+
+    body = markdown_to_confluence_storage(md_content)
+
+    if png_files:
+        body = inject_image_macros(body)
+
+    if manifest and current_file:
+        link_count_before = len(re.findall(r'<a href="[^"]+\.md">', body))
+        if link_count_before > 0:
+            body = rewrite_md_links(body, current_file, manifest, space_key)
+            link_count_after = len(re.findall(r'<a href="[^"]+\.md">', body))
+            rewritten = link_count_before - link_count_after
+            print(f"  Rewriting links: {rewritten}/{link_count_before} resolved to Confluence pages")
+
+    return body, png_files
+
+
+def _create_or_update(
+    confluence: Confluence,
+    config: ConfluenceConfig,
+    mode: str,
+    title: str,
+    body: str,
+    page_id: str | None,
+    parent_id: str | None,
+) -> tuple[str, str]:
+    """Create or update a page. Returns (result_id, page_url)."""
+    if mode == "update":
+        existing = confluence.get_page_by_id(page_id, expand="version")
+        if not existing:
+            print(f"  ERROR: Page {page_id} not found")
+            sys.exit(1)
+        result = confluence.update_page(
+            page_id=page_id, title=title, body=body,
+            type="page", representation="storage",
+        )
+        result_id = page_id
+    else:
+        result = confluence.create_page(
+            space=config.space_key, title=title, body=body,
+            parent_id=parent_id, type="page", representation="storage",
+        )
+        result_id = result.get("id", "")
+
+    page_url = f"{config.confluence_url}/pages/{result_id}"
+    if "_links" in result and "webui" in result["_links"]:
+        base_url = config.confluence_url.removesuffix("/wiki")
+        page_url = base_url + result["_links"]["webui"]
+
+    return str(result_id), page_url
+
+
 def publish_page(
     confluence: Confluence,
     config: ConfluenceConfig,
@@ -77,82 +178,64 @@ def publish_page(
     """Publish a single page. Returns (page_id, page_url)."""
     md_content = file_path.read_text(encoding="utf-8")
 
-    has_mermaid = bool(MERMAID_BLOCK_RE.search(md_content))
-    png_files: list = []
-
     with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_path = Path(tmp_dir)
-
-        if has_mermaid:
-            mermaid_count = len(MERMAID_BLOCK_RE.findall(md_content))
-            print(f"  Rendering {mermaid_count} Mermaid diagram(s) to PNG...")
-            md_content, png_files = render_mermaid_blocks(md_content, tmp_path)
-
-        body = markdown_to_confluence_storage(md_content)
-
+        body, png_files = _render_and_prepare_body(
+            md_content, Path(tmp_dir), current_file, manifest, config.space_key,
+        )
+        result_id, page_url = _create_or_update(
+            confluence, config, mode, title, body, page_id, parent_id,
+        )
         if png_files:
-            body = inject_image_macros(body)
-
-        if manifest and current_file:
-            link_count_before = len(re.findall(r'<a href="[^"]+\.md">', body))
-            if link_count_before > 0:
-                body = rewrite_md_links(body, current_file, manifest, config.space_key)
-                link_count_after = len(re.findall(r'<a href="[^"]+\.md">', body))
-                rewritten = link_count_before - link_count_after
-                print(f"  Rewriting links: {rewritten}/{link_count_before} resolved to Confluence pages")
-
-        if mode == "update":
-            existing = confluence.get_page_by_id(page_id, expand="version")
-            if not existing:
-                print(f"  ERROR: Page {page_id} not found")
-                sys.exit(1)
-            result = confluence.update_page(
-                page_id=page_id,
-                title=title,
-                body=body,
-                type="page",
-                representation="storage",
-            )
-            result_id = page_id
-        else:
-            result = confluence.create_page(
-                space=config.space_key,
-                title=title,
-                body=body,
-                parent_id=parent_id,
-                type="page",
-                representation="storage",
-            )
-            result_id = result.get("id", "")
-
-        page_url = f"{config.confluence_url}/pages/{result_id}"
-        if "_links" in result and "webui" in result["_links"]:
-            base_url = config.confluence_url.removesuffix("/wiki")
-            page_url = base_url + result["_links"]["webui"]
-
-        if png_files:
-            import time
             print(f"  Uploading {len(png_files)} diagram attachment(s)...")
-            time.sleep(2)  # Wait for Confluence to settle after page update
+            time.sleep(2)
             for png in png_files:
-                for attempt in range(3):
-                    try:
-                        confluence.attach_file(
-                            filename=str(png),
-                            name=png.name,
-                            page_id=result_id,
-                            comment="Mermaid diagram (auto-generated)",
-                        )
-                        break
-                    except Exception as e:
-                        if attempt < 2:
-                            wait = 3 * (attempt + 1)
-                            print(f"  Attachment upload failed (attempt {attempt + 1}/3), retrying in {wait}s: {e}")
-                            time.sleep(wait)
-                        else:
-                            raise
+                _attach_with_retry(confluence, result_id, png, "Mermaid diagram (auto-generated)", backoff=3)
 
     return result_id, page_url
+
+
+def _set_content_property(
+    base_url: str, auth: tuple, page_id: str, key: str, value: str,
+) -> bool:
+    """Set a single Confluence content property. Returns True on success."""
+    url = f"{base_url}/wiki/rest/api/content/{page_id}/property/{key}"
+    resp = requests.put(
+        url, auth=auth,
+        json={"key": key, "value": value, "version": {"number": 1}},
+        timeout=30,
+    )
+    if resp.status_code == 404:
+        url_create = f"{base_url}/wiki/rest/api/content/{page_id}/property"
+        resp = requests.post(
+            url_create, auth=auth,
+            json={"key": key, "value": value},
+            timeout=30,
+        )
+    if resp.status_code not in (200, 201):
+        print(f"  WARNING: Failed to set {key}: {resp.status_code} {resp.text[:120]}")
+        return False
+    print(f"  Set {key}: {value}")
+    return True
+
+
+def set_page_emoji(
+    config: ConfluenceConfig,
+    page_id: str,
+    emoji: str,
+) -> None:
+    """Set the page emoji icon via Confluence content properties.
+
+    Args:
+        config: Confluence configuration.
+        page_id: The page to set the emoji on.
+        emoji: Unicode codepoint (e.g. '1f399') or the emoji character itself.
+    """
+    if len(emoji) <= 2 and not all(c in '0123456789abcdefABCDEF' for c in emoji):
+        emoji = f"{ord(emoji):x}"
+
+    auth = resolve_credentials(config)
+    for prop in ['emoji-title-published', 'emoji-title-draft']:
+        _set_content_property(config.confluence_url, auth, page_id, prop, emoji)
 
 
 def upload_attachments(
@@ -161,31 +244,13 @@ def upload_attachments(
     attachment_paths: list,
 ) -> None:
     """Upload files as attachments to a page."""
-    import time
-
     for path in attachment_paths:
         if not path.exists():
             print(f"  WARNING: Attachment not found: {path}")
             continue
         size_mb = path.stat().st_size / (1024 * 1024)
         print(f"  Uploading attachment: {path.name} ({size_mb:.1f} MB)")
-        for attempt in range(3):
-            try:
-                confluence.attach_file(
-                    filename=str(path),
-                    name=path.name,
-                    page_id=page_id,
-                    comment="Uploaded by confluence-publisher skill",
-                )
-                break
-            except Exception as e:
-                if attempt < 2:
-                    wait = 5 * (attempt + 1)
-                    print(f"  Upload failed (attempt {attempt + 1}/3), retrying in {wait}s: {e}")
-                    time.sleep(wait)
-                else:
-                    print(f"  ERROR: Upload failed after 3 attempts: {e}")
-                    raise
+        _attach_with_retry(confluence, page_id, path, "Uploaded by confluence-publisher skill")
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +274,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--attachments",
         help="Comma-separated attachment paths (relative to docs_dir)",
+    )
+    parser.add_argument(
+        "--emoji",
+        help="Page emoji icon: unicode codepoint (e.g. 1f399) or emoji character",
     )
     return parser.parse_args()
 
@@ -267,6 +336,9 @@ def main():
     if args.attachments:
         att_paths = [config.docs_root / p.strip() for p in args.attachments.split(",")]
         upload_attachments(confluence, result_id, att_paths)
+
+    if args.emoji:
+        set_page_emoji(config, result_id, args.emoji)
 
     # Update manifest
     manifest[args.file] = {
