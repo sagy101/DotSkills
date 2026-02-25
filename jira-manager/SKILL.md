@@ -4,12 +4,16 @@ description: >
   Create, update, fetch, delete, diff, and validate Jira tickets from structured markdown or JSON sources.
   Use when the user asks to create Jira tickets, update existing issues, bulk-create stories and subtasks
   from a spec, compare local definitions against live Jira state, validate that sub-ticket estimates
-  sum to parent estimates, or rewrite markdown links to git browse URLs in ticket descriptions.
-  Handles epics, stories, subtasks, bugs, tasks, custom fields, story points, and link rewriting.
+  sum to parent estimates, change ticket status, set priority/assignee/components, or rewrite markdown
+  links to git browse URLs in ticket descriptions. Supports full field discovery with --all flag to
+  discover statuses, priorities, components, versions, resolutions, and all custom fields. Any
+  discovered field can be set by friendly name using the --set flag.
+  Handles epics, stories, subtasks, bugs, tasks, custom fields, story points, status transitions,
+  and link rewriting.
 license: MIT
 metadata:
   author: sagy101
-  version: "1.0"
+  version: "1.1"
 compatibility: >
   Requires Python 3.10+. Works with Jira Cloud (Atlassian REST API v2).
   Requires an API token with issue read/write permissions.
@@ -17,7 +21,7 @@ compatibility: >
 
 # Jira Manager
 
-Create, update, fetch, delete, diff, and validate Jira tickets with automatic field discovery, link rewriting, and estimation validation.
+Create, update, fetch, delete, diff, and validate Jira tickets with automatic field discovery, status transitions, link rewriting, and estimation validation.
 
 ## When to use this skill
 
@@ -30,6 +34,8 @@ Use this skill when the user wants to:
 - Diff local ticket definitions against live Jira state
 - Validate that sub-ticket estimates sum to their parent's estimate
 - Discover custom field IDs and issue types for a Jira project
+- Change ticket status (workflow transitions)
+- Set any discovered field by friendly name (priority, components, fix versions, etc.)
 
 ## Prerequisites
 
@@ -115,6 +121,15 @@ If `field_mappings` or `issue_types` are empty in `.jira.json`, run discovery:
 
 This auto-detects custom field IDs (epic link, story points, sprint) and available issue types.
 
+For full field discovery (statuses, priorities, components, versions, resolutions):
+
+```bash
+.jira-venv/bin/python <skill_dir>/scripts/discover_fields.py --config .jira.json --all --apply
+```
+
+This populates the `field_catalog` in `.jira.json`, enabling the `--set` flag and named field flags
+(`--status`, `--priority`, etc.) to resolve values by friendly name.
+
 ## Workflow
 
 Always follow this sequence. Never skip pre-flight checks or the plan step.
@@ -162,6 +177,8 @@ After create or update operations, offer to:
   --description "Description text" \
   --epic API-8291 \
   --story-points 2 \
+  --priority "High" \
+  --status "In Progress" \
   --rewrite-links \
   --attachment screenshot.png \
   --attachment design.pdf
@@ -169,6 +186,14 @@ After create or update operations, offer to:
 
 For subtasks, use `--type subtask --parent API-8301` instead of `--epic`.
 The `--attachment` flag can be repeated to attach multiple files.
+
+Additional field flags:
+- `--priority "High"` — set priority (resolved from field_catalog)
+- `--status "In Progress"` — transition to status after creation
+- `--assignee "user@example.com"` — set assignee
+- `--component "Backend"` — add component (can be repeated)
+- `--fix-version "1.0"` — add fix version (can be repeated)
+- `--set "field=value"` — set any discovered field by name (can be repeated)
 
 ### Bulk create from source file
 
@@ -195,12 +220,38 @@ Remove `--dry-run` after reviewing the plan. Already-created tickets (tracked in
   --story-points 3 \
   --rewrite-links
 
+# Change status (uses workflow transitions API)
+.jira-venv/bin/python <skill_dir>/scripts/update_ticket.py \
+  --config .jira.json \
+  --key API-8301 \
+  --status "In Progress"
+
+# Set priority and assignee
+.jira-venv/bin/python <skill_dir>/scripts/update_ticket.py \
+  --config .jira.json \
+  --key API-8301 \
+  --priority "High" \
+  --assignee "user@example.com"
+
+# Set any field by friendly name
+.jira-venv/bin/python <skill_dir>/scripts/update_ticket.py \
+  --config .jira.json \
+  --key API-8301 \
+  --set "priority=High" \
+  --set "components=Backend" \
+  --set "story_points=5"
+
 # Attach files to an existing ticket (no field changes required)
 .jira-venv/bin/python <skill_dir>/scripts/update_ticket.py \
   --config .jira.json \
   --key API-8301 \
   --attachment report.pdf
 ```
+
+The `--set` flag resolves field names and values through the `field_catalog` in `.jira.json`.
+Run `discover_fields.py --all --apply` first to populate the catalog.
+
+Available named flags: `--status`, `--priority`, `--assignee`, `--component`, `--fix-version`, `--labels`, `--story-points`.
 
 ### Fetch tickets
 
@@ -288,7 +339,26 @@ Auto-detect custom field IDs and issue types:
 # Apply to config
 .jira-venv/bin/python <skill_dir>/scripts/discover_fields.py \
   --config .jira.json --apply
+
+# Full discovery: statuses, priorities, components, versions, resolutions
+.jira-venv/bin/python <skill_dir>/scripts/discover_fields.py \
+  --config .jira.json --all --apply
+
+# Full discovery with all fields index (system + custom)
+.jira-venv/bin/python <skill_dir>/scripts/discover_fields.py \
+  --config .jira.json --all --verbose --apply
 ```
+
+The `--all` flag discovers:
+- **Statuses** — all workflow statuses in the project (e.g. Backlog, In Progress, Done)
+- **Priorities** — all priority levels (e.g. Highest, High, Medium, Low, Lowest)
+- **Resolutions** — all resolution types (e.g. Done, Won't Do, Duplicate)
+- **Components** — all project components
+- **Versions** — all project versions (fix versions)
+- **Fields index** (with `--verbose`) — all system + custom fields with IDs
+
+Discovered values are stored in `field_catalog` in `.jira.json` and used by the `--set` flag
+and named field flags (`--status`, `--priority`, etc.) on create and update scripts.
 
 ### Markup conversion
 
@@ -342,6 +412,7 @@ This is called automatically when `--rewrite-links` is passed to create or updat
 | `404 Not Found` | Wrong issue key or project | Check key exists and project_key is correct in config |
 | `400 Bad Request` | Missing required field | Run `discover_fields.py --verbose` to see required fields |
 | `Field not configured` | Missing field_mappings entry | Run `discover_fields.py --apply` to auto-detect |
+| `No transition found` | Status not reachable from current state | Check available transitions — some statuses require intermediate steps |
 | `createmeta not available` | Jira instance restriction | Configure `field_mappings` and `issue_types` manually |
 
 ## Troubleshooting
@@ -354,3 +425,5 @@ This is called automatically when `--rewrite-links` is passed to create or updat
 | Epic link not working | Run `discover_fields.py --apply` to detect the field ID |
 | Links not rewriting | Check `git_remote` in config or ensure you're in a git repo |
 | Manifest out of sync | Delete `.jira-manifest.json` and re-create with `bulk_create.py` |
+| Status change not working | Run `discover_fields.py --all --apply` and check available transitions |
+| `--set` field not resolving | Run `discover_fields.py --all --verbose --apply` to populate field catalog |

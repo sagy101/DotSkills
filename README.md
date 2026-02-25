@@ -9,7 +9,7 @@ Each skill is a self-contained directory following the [Agent Skills Open Standa
 | Skill | Description |
 |---|---|
 | [confluence-publisher](./confluence-publisher/) | Publish markdown docs to Confluence Cloud — pages, hierarchy, cross-links, Mermaid diagrams, diff/preview, export, fetch |
-| [jira-manager](./jira-manager/) | Create, update, fetch, delete, diff, and validate Jira tickets — bulk create from markdown/JSON, field auto-discovery, estimation validation, link rewriting |
+| [jira-manager](./jira-manager/) | Create, update, fetch, delete, diff, and validate Jira tickets — bulk create from markdown/JSON, full field catalog discovery (statuses, priorities, components, versions), status transitions, generic `--set` flag for any discovered field, estimation validation, link rewriting |
 | [codebase-analyzer](./codebase-analyzer/) | Analyze any codebase for structured metrics — line counts by category, language breakdown, test:code ratio, file-size distribution, TODO tracking, git churn hotspots. Terminal, JSON, and Markdown output |
 | [skill-creator](./skill-creator/) | Create polished, generic Agent Skills from use-case-specific scripts or from scratch — prompt engineering best practices, Agent Skills spec compliance, comprehensive verification (compilation, diff review, env/config checks, error handling) |
 

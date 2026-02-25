@@ -266,10 +266,59 @@ class JiraClient:
         )
         return result.get("transitions", [])
 
+    def transition_issue(
+        self,
+        issue_key: str,
+        transition_id: str,
+        fields: Optional[Dict[str, Any]] = None,
+    ) -> dict:
+        """Execute a workflow transition on an issue.
+
+        Args:
+            issue_key: The issue key (e.g. API-123)
+            transition_id: The transition ID to execute
+            fields: Optional fields to set during the transition
+        """
+        body: Dict[str, Any] = {"transition": {"id": transition_id}}
+        if fields:
+            body["fields"] = fields
+        return self._request(
+            "POST", f"/rest/api/2/issue/{issue_key}/transitions", body
+        )
+
     def get_project(self, project_key: Optional[str] = None) -> dict:
         """Fetch project metadata."""
         pk = project_key or self.config.project_key
         return self._request("GET", f"/rest/api/2/project/{pk}")
+
+    def get_statuses_for_project(
+        self, project_key: Optional[str] = None
+    ) -> List[dict]:
+        """Fetch all statuses available in the project."""
+        pk = project_key or self.config.project_key
+        return self._request("GET", f"/rest/api/2/project/{pk}/statuses")
+
+    def get_priorities(self) -> List[dict]:
+        """Fetch all priorities available on this instance."""
+        return self._request("GET", "/rest/api/2/priority")
+
+    def get_resolutions(self) -> List[dict]:
+        """Fetch all resolutions available on this instance."""
+        return self._request("GET", "/rest/api/2/resolution")
+
+    def get_components(
+        self, project_key: Optional[str] = None
+    ) -> List[dict]:
+        """Fetch all components for the project."""
+        pk = project_key or self.config.project_key
+        return self._request("GET", f"/rest/api/2/project/{pk}/components")
+
+    def get_versions(
+        self, project_key: Optional[str] = None
+    ) -> List[dict]:
+        """Fetch all versions for the project."""
+        pk = project_key or self.config.project_key
+        return self._request("GET", f"/rest/api/2/project/{pk}/versions")
 
     # -----------------------------------------------------------------
     # Utility

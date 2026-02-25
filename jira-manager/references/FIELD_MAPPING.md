@@ -80,6 +80,52 @@ These are typical values, but **always verify with discover_fields.py** for your
 | Sprint | `customfield_10430` | Agile sprint assignment |
 | Epic Name | `customfield_10631` | Name displayed on epic |
 
+## Full field catalog (`--all` mode)
+
+Beyond the well-known custom fields, the discovery script supports full catalog discovery:
+
+```bash
+.jira-venv/bin/python <skill_dir>/scripts/discover_fields.py --config .jira.json --all --apply
+```
+
+This populates a `field_catalog` section in `.jira.json` with:
+
+| Catalog key | What it discovers | Jira API used |
+|---|---|---|
+| `status` | All workflow statuses (e.g. Backlog, In Progress, Done) | `GET /project/{key}/statuses` |
+| `priority` | All priority levels (e.g. Highest, High, Medium, Low) | `GET /priority` |
+| `resolution` | All resolution types (e.g. Done, Won't Do, Duplicate) | `GET /resolution` |
+| `components` | All project components | `GET /project/{key}/components` |
+| `fix_versions` | All project versions | `GET /project/{key}/versions` |
+| `_fields_index` | All system + custom fields (with `--verbose`) | `GET /field` |
+
+Each catalog entry stores `values` as a dict mapping normalized names to `{"id": ..., "name": ...}` objects.
+
+## Using discovered fields
+
+Once the field catalog is populated, you can set any field by friendly name:
+
+```bash
+# Named flags (shortcuts for common fields)
+--status "In Progress"    # uses workflow transitions API
+--priority "High"         # resolves from catalog
+--assignee "user@co.com"  # sets assignee
+--component "Backend"     # resolves from catalog
+--fix-version "1.0"       # resolves from catalog
+
+# Generic --set flag (works with ANY discovered field)
+--set "priority=High"
+--set "components=Backend"
+--set "story_points=3"
+--set "status=In Progress"   # triggers transition
+```
+
+Resolution order for `--set`:
+1. Look up field name in `field_catalog` top-level entries (status, priority, etc.)
+2. Look up in `field_mappings` (epic_link, story_points, sprint)
+3. Look up in `field_catalog._fields_index` (all system + custom fields)
+4. Use as-is (assume it is already a Jira field ID)
+
 ## Extending field support
 
 The discovery script detects a fixed set of well-known fields. To add detection for additional fields:

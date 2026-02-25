@@ -48,6 +48,7 @@ The `.jira.json` file lives in the project root and configures the jira-manager 
 | `estimation_pattern` | No | `"Estimation:\\s*([\\d.]+)\\s*days?"` | Regex to extract story points from description text |
 | `field_mappings` | No | `{}` | Maps friendly names to Jira custom field IDs. Run `discover_fields.py --apply` to auto-populate |
 | `issue_types` | No | `{}` | Maps issue type names to Jira issue type IDs. Run `discover_fields.py --apply` to auto-populate |
+| `field_catalog` | No | `{}` | Comprehensive catalog of fields, statuses, priorities, components, versions. Run `discover_fields.py --all --apply` to auto-populate |
 
 ## Credential resolution order
 
@@ -64,6 +65,14 @@ Run the discovery script to auto-populate `field_mappings` and `issue_types`:
 ```
 
 This calls Jira's REST API to detect custom field IDs and available issue types, then updates `.jira.json` in-place.
+
+For full field catalog (statuses, priorities, components, versions, resolutions):
+
+```bash
+.jira-venv/bin/python <skill_dir>/scripts/discover_fields.py --config .jira.json --all --apply
+```
+
+This populates `field_catalog` which enables the `--set` and `--status` flags on create/update scripts.
 
 ## Manifest format
 

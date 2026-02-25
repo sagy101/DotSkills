@@ -28,6 +28,7 @@ class JiraConfig:
     estimation_pattern: str = r"Estimation:\s*([\d.]+)\s*days?"
     field_mappings: Dict[str, str] = field(default_factory=dict)
     issue_types: Dict[str, str] = field(default_factory=dict)
+    field_catalog: Dict[str, dict] = field(default_factory=dict)
 
     # Resolved at runtime
     project_root: Path = field(default_factory=lambda: Path.cwd())
@@ -168,6 +169,7 @@ def load_config(config_path: Optional[str] = None) -> JiraConfig:
         ),
         field_mappings=raw.get("field_mappings", {}),
         issue_types=raw.get("issue_types", {}),
+        field_catalog=raw.get("field_catalog", {}),
         project_root=project_root,
     )
 
