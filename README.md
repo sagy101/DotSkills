@@ -12,19 +12,30 @@ Each skill is a self-contained directory following the [Agent Skills Open Standa
 | [jira-manager](./jira-manager/) | Create, update, fetch, delete, diff, and validate Jira tickets — bulk create from markdown/JSON, full field catalog discovery (statuses, priorities, components, versions), status transitions, generic `--set` flag for any discovered field, estimation validation, link rewriting |
 | [codebase-analyzer](./codebase-analyzer/) | Analyze any codebase for structured metrics — line counts by category, language breakdown, test:code ratio, file-size distribution, TODO tracking, git churn hotspots. Terminal, JSON, and Markdown output |
 | [skill-creator](./skill-creator/) | Create polished, generic Agent Skills from use-case-specific scripts or from scratch — prompt engineering best practices, Agent Skills spec compliance, comprehensive verification (compilation, diff review, env/config checks, error handling) |
+| [skill-sync](./skill-sync/) | Sync skills from this repo to IDE skill directories (Windsurf, Claude Code, Cursor, Codex, Gemini CLI, Antigravity) — OS-agnostic, user-level or project-level, auto-detects installed IDEs |
 
 ## Usage
 
-Copy any skill directory into your project's `.agents/skills/` (or `.github/skills/`, `.claude/skills/`) folder:
+The easiest way to distribute skills is with **skill-sync**:
+
+```bash
+# Detect which IDEs are installed
+python3 skill-sync/scripts/sync.py --source . --level both --detect
+
+# Sync all skills to user-level (global) for all detected IDEs
+python3 skill-sync/scripts/sync.py --source . --level user --targets all
+
+# Sync to a specific project
+python3 skill-sync/scripts/sync.py --source . --level project --project /path/to/project
+
+# Preview first with --dry-run
+python3 skill-sync/scripts/sync.py --source . --level user --dry-run
+```
+
+Or copy manually:
 
 ```bash
 cp -r confluence-publisher /path/to/your-project/.agents/skills/
-```
-
-Or symlink for automatic updates:
-
-```bash
-ln -s /path/to/dotskills/confluence-publisher /path/to/your-project/.agents/skills/confluence-publisher
 ```
 
 Skills are automatically discovered by supported AI tools when placed in the correct directory.

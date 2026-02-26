@@ -1,0 +1,325 @@
+#!/usr/bin/env python3
+"""
+skill-sync — Sync Agent Skills to IDE skill directories.
+
+Discovers skills (directories containing SKILL.md) from a source repo and
+copies them to the user-level and/or project-level skill directories of
+supported IDEs (Windsurf, Claude Code, Cursor, Codex).
+
+OS-agnostic: uses pathlib throughout, works on macOS, Linux, and Windows.
+
+Usage:
+    python sync.py --source ~/dotskills --level user --targets all
+    python sync.py --source ~/dotskills --level project --project /my/proj
+    python sync.py --source ~/dotskills --level both --project /my/proj
+    python sync.py --detect  # Just print detected IDEs and paths
+"""
+
+import argparse
+import platform
+import shutil
+import sys
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# IDE definitions
+# ---------------------------------------------------------------------------
+
+IDES = {
+    "windsurf": {
+        "name": "Windsurf",
+        "user_dir": ".codeium/windsurf/skills",
+        "project_dir": ".windsurf/skills",
+    },
+    "claude": {
+        "name": "Claude Code",
+        "user_dir": ".claude/skills",
+        "project_dir": ".claude/skills",
+    },
+    "cursor": {
+        "name": "Cursor",
+        "user_dir": ".cursor/skills",
+        "project_dir": ".cursor/skills",
+    },
+    "codex": {
+        "name": "Codex",
+        "user_dir": ".codex/skills",
+        "project_dir": ".codex/skills",
+    },
+    "gemini": {
+        "name": "Gemini CLI",
+        "user_dir": ".gemini/skills",
+        "project_dir": ".gemini/skills",
+    },
+    "antigravity": {
+        "name": "Antigravity",
+        "user_dir": ".gemini/antigravity/skills",
+        "project_dir": ".agent/skills",
+    },
+}
+
+EXCLUDE_DIRS = {"__pycache__", ".git", ".venv", "node_modules", ".mypy_cache"}
+EXCLUDE_SUFFIXES = {".pyc", ".pyo"}
+SELF_SKILL = "skill-sync"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def discover_skills(source: Path) -> list[Path]:
+    """Find all skill directories (containing SKILL.md) under source."""
+    skills = []
+    for child in sorted(source.iterdir()):
+        if not child.is_dir():
+            continue
+        if child.name.startswith(".") or child.name in EXCLUDE_DIRS:
+            continue
+        if child.name == SELF_SKILL:
+            continue
+        if (child / "SKILL.md").exists():
+            skills.append(child)
+    return skills
+
+
+def _resolve_ide_paths(
+    info: dict, level: str, home: Path, project: Path | None,
+) -> dict | None:
+    """Resolve user/project paths for a single IDE entry. Returns None if not detected."""
+    user_path = home / info["user_dir"]
+    user_ok = user_path.parent.exists() and level in ("user", "both")
+
+    project_path = (project / info["project_dir"]) if project else None
+    project_ok = project_path is not None and project_path.parent.exists() and level in ("project", "both")
+
+    if not user_ok and not project_ok:
+        return None
+
+    return {
+        "name": info["name"],
+        "user_path": user_path if user_ok else None,
+        "project_path": project_path if project_ok else None,
+    }
+
+
+def detect_ides(level: str, project: Path | None = None) -> dict[str, dict]:
+    """Detect which IDEs have skill directories present.
+
+    Returns a dict of ide_key -> {name, user_path, project_path}.
+    A path is included if the parent directory exists (e.g. ~/.codeium/windsurf/).
+    """
+    home = Path.home()
+    detected = {}
+    for key, info in IDES.items():
+        result = _resolve_ide_paths(info, level, home, project)
+        if result:
+            detected[key] = result
+    return detected
+
+
+def _should_exclude(path: Path) -> bool:
+    """Check if a path component should be excluded from copy."""
+    return path.name in EXCLUDE_DIRS or path.suffix in EXCLUDE_SUFFIXES
+
+
+def copy_skill(skill_dir: Path, target_dir: Path, dry_run: bool = False) -> int:
+    """Copy a single skill directory to target, returning files copied."""
+    dest = target_dir / skill_dir.name
+    if dry_run:
+        print(f"    [dry-run] {skill_dir.name}/ -> {dest}")
+        return 0
+
+    if dest.exists():
+        shutil.rmtree(dest)
+
+    def _ignore(directory, contents):
+        ignored = set()
+        for item in contents:
+            p = Path(directory) / item
+            if _should_exclude(p):
+                ignored.add(item)
+        return ignored
+
+    shutil.copytree(skill_dir, dest, ignore=_ignore)
+    count = sum(1 for _ in dest.rglob("*") if _.is_file())
+    return count
+
+
+def _sync_to_target(
+    target_path: Path, label: str, ide_name: str,
+    skills: list[Path], dry_run: bool,
+) -> tuple[int, int]:
+    """Sync all skills to a single target path. Returns (synced_count, file_count)."""
+    print(f"\n  {ide_name} ({label}): {target_path}")
+    if not dry_run:
+        target_path.mkdir(parents=True, exist_ok=True)
+
+    synced, files = 0, 0
+    for skill in skills:
+        n = copy_skill(skill, target_path, dry_run=dry_run)
+        synced += 1
+        files += n
+        if not dry_run:
+            print(f"    {skill.name}/ ({n} files)")
+    return synced, files
+
+
+def sync_skills(
+    skills: list[Path],
+    detected_ides: dict,
+    targets: list[str],
+    dry_run: bool = False,
+) -> dict:
+    """Sync skills to all target IDE directories. Returns summary stats."""
+    stats = {}
+    for ide_key in targets:
+        if ide_key not in detected_ides:
+            continue
+        ide = detected_ides[ide_key]
+        stats[ide_key] = {"name": ide["name"], "synced": 0, "files": 0, "paths": []}
+
+        for label in ("user", "project"):
+            target_path = ide.get(f"{label}_path")
+            if not target_path:
+                continue
+            s, f = _sync_to_target(target_path, label, ide["name"], skills, dry_run)
+            stats[ide_key]["synced"] += s
+            stats[ide_key]["files"] += f
+            stats[ide_key]["paths"].append(str(target_path))
+
+    return stats
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Sync Agent Skills to IDE skill directories"
+    )
+    parser.add_argument(
+        "--source",
+        required=True,
+        help="Source directory containing skill folders (e.g. ~/CascadeProjects/dotskills)",
+    )
+    parser.add_argument(
+        "--level",
+        choices=["user", "project", "both"],
+        default="user",
+        help="Sync to user-level, project-level, or both (default: user)",
+    )
+    parser.add_argument(
+        "--project",
+        help="Project directory for project-level sync (default: cwd)",
+    )
+    parser.add_argument(
+        "--targets",
+        default="all",
+        help="Comma-separated IDE targets: windsurf,claude,cursor,codex or 'all' (default: all detected)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be synced without copying",
+    )
+    parser.add_argument(
+        "--detect",
+        action="store_true",
+        help="Only detect and print installed IDEs, then exit",
+    )
+    return parser.parse_args()
+
+
+def _resolve_args(args: argparse.Namespace) -> tuple[Path, Path | None]:
+    """Validate and resolve source and project paths from CLI args."""
+    source = Path(args.source).expanduser().resolve()
+    if not source.is_dir():
+        print(f"ERROR: Source directory not found: {source}")
+        sys.exit(1)
+
+    project = None
+    if args.level in ("project", "both"):
+        project = Path(args.project).expanduser().resolve() if args.project else Path.cwd()
+        if not project.is_dir():
+            print(f"ERROR: Project directory not found: {project}")
+            sys.exit(1)
+
+    return source, project
+
+
+def _print_detection(detected: dict, source: Path, project: Path | None, level: str):
+    """Print detected IDE info and exit."""
+    print(f"OS: {platform.system()} ({platform.machine()})")
+    print(f"Home: {Path.home()}")
+    print(f"Source: {source}")
+    if project:
+        print(f"Project: {project}")
+    print(f"\nDetected IDEs ({level}-level):")
+    if not detected:
+        print("  (none)")
+    for key, info in detected.items():
+        paths = []
+        if info.get("user_path"):
+            paths.append(f"user={info['user_path']}")
+        if info.get("project_path"):
+            paths.append(f"project={info['project_path']}")
+        print(f"  {info['name']:15s} [{key}]  {', '.join(paths)}")
+
+
+def _resolve_targets(args_targets: str, detected: dict) -> list[str]:
+    """Resolve target IDE keys from CLI arg, filtering to detected only."""
+    if args_targets == "all":
+        return list(detected.keys())
+    requested = [t.strip() for t in args_targets.split(",")]
+    missing = [t for t in requested if t not in detected]
+    if missing:
+        print(f"WARNING: IDEs not detected, skipping: {', '.join(missing)}")
+    return [t for t in requested if t in detected]
+
+
+def _print_summary(stats: dict, dry_run: bool):
+    """Print sync summary."""
+    total_synced = sum(s["synced"] for s in stats.values())
+    total_files = sum(s["files"] for s in stats.values())
+    prefix = "[DRY RUN] " if dry_run else ""
+    print(f"\n{prefix}Done: {total_synced} skill(s) synced, {total_files} files copied")
+    for s in stats.values():
+        for p in s["paths"]:
+            print(f"  {s['name']}: {p}")
+
+
+def main():
+    args = parse_args()
+    source, project = _resolve_args(args)
+    detected = detect_ides(args.level, project)
+
+    if args.detect:
+        _print_detection(detected, source, project, args.level)
+        sys.exit(0)
+
+    targets = _resolve_targets(args.targets, detected)
+    if not targets:
+        print("ERROR: No target IDEs detected. Install an IDE first or check --level.")
+        sys.exit(1)
+
+    skills = discover_skills(source)
+    if not skills:
+        print(f"ERROR: No skills found in {source}")
+        sys.exit(1)
+
+    action = "[DRY RUN] " if args.dry_run else ""
+    print(f"{action}Syncing {len(skills)} skill(s) from {source}")
+    print(f"  Skills: {', '.join(s.name for s in skills)}")
+    print(f"  Level: {args.level}")
+    print(f"  Targets: {', '.join(targets)}")
+    if project:
+        print(f"  Project: {project}")
+
+    stats = sync_skills(skills, detected, targets, dry_run=args.dry_run)
+    _print_summary(stats, args.dry_run)
+
+
+if __name__ == "__main__":
+    main()
