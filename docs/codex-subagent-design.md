@@ -92,26 +92,32 @@ The host agent doesn't just delegate reviews — it runs its own review AND laun
 ### How It Works
 1. **Host agent reviews** using IDE context, conversation history, user intent
 2. **Selects review focuses** based on what's being reviewed and the user's prompt (dynamic, not a fixed list)
-3. **Launches sub-agents** in parallel, each with a review prompt loaded via `--review-prompt <filepath>` — the wrapper reads the file and prepends it to stdin, so the full prompt never passes through the host agent's context
-4. **Synthesizes**: reads all outputs, cross-references with own review, de-duplicates, validates, filters false positives
-5. **Grades**: assigns an overall grade (A-F or 1-10) with per-dimension grades and justification
-6. **Presents** unified review grouped by severity with actionable recommendations
+3. **Discovers pre-configured prompts** (installed skills first, then project docs/workflows, then custom inline as fallback) and obtains complete prompt files by following the discovered skill's instructions
+4. **Launches sub-agents** in parallel, each with a review prompt file loaded via `--review-prompt <filepath>` — the wrapper reads the file and prepends it to stdin, so the full prompt never passes through the host agent's context
+5. **Synthesizes**: reads all outputs, cross-references with own review, de-duplicates, validates, filters false positives
+6. **Grades**: assigns an overall grade (A-F or 1-10) with per-dimension grades and justification
+7. **Presents** unified review grouped by severity with actionable recommendations
 
-### Companion Skill: `review-prompts` (Separate, Recommended)
+### Review Prompt Skills (Generic Pattern)
 
-Review prompt files are maintained in a **separate companion skill** — the sub-agent skill works without it, but they're designed to work together. The split keeps the sub-agent skill focused on delegation mechanics while making review prompts reusable (standalone, with sub-agents, or by other skills).
+The sub-agent skill's `--review-prompt` flag accepts **any** complete `.md` file. A separate **review prompt skill** can provide pre-configured review prompts, but this skill has no dependency on any specific one. They connect through the generic `--review-prompt <file>` interface.
 
-The companion skill provides:
-- **Short descriptions** (~50 tokens each) in its SKILL.md — all the host agent needs to pick the right type
-- **Prompt files** at `prompts/<type>.md` — the agent resolves the path and passes it to the wrapper
-- 11 review types: `code-review`, `security`, `plan-review`, `architecture`, `performance`, `testing`, `typescript`, `python`, `java`, `scala`, `javascript`
+A review prompt skill typically provides:
+- **A SKILL.md** listing available review types with short descriptions (~50 tokens each)
+- **A way to produce complete prompt files** (build script, ready-to-use `.md` files, or both)
+- **Instructions** for how to get a complete prompt file for a given review type
 
-Inspired by: [baz-scm/awesome-reviewers](https://github.com/baz-scm/awesome-reviewers) (8K+ review prompts from real OSS reviews), [anthropics/claude-code-security-review](https://github.com/anthropics/claude-code-security-review) (semantic vulnerability detection)
+**How the host agent connects them:**
+- **With a review prompt skill**: Reads its SKILL.md, picks the right type, follows instructions to get a complete `.md` file, passes it via `--review-prompt`
+- **Without any review prompt skill**: Full review prompt via stdin, or `--review-prompt ./any-custom-file.md`
+- **Adding context to a prompt**: Pipe additional context via stdin — it's appended after the review prompt file
 
-**How the agent uses them:**
-- **With companion skill**: `--review-prompt /path/to/review-prompts/prompts/security.md` — wrapper loads the file, host agent only needs the ~50 token description
-- **Without companion skill**: full review prompt via stdin, or `--review-prompt ./any-custom-file.md`
-- **Adding to a prompt**: pipe additional context via stdin — it's appended after the review prompt file
+**Prompt discovery order** (super-review Step 2):
+1. Installed skills (any skill providing review prompts)
+2. Workflows & project docs (`.windsurf/workflows/`, `docs/`, etc.)
+3. Custom inline via stdin (fallback)
+
+> The sub-agent skill never imports, calls, or depends on any specific review prompt skill. It only receives a file path.
 
 ---
 
@@ -158,4 +164,4 @@ Inspired by: [baz-scm/awesome-reviewers](https://github.com/baz-scm/awesome-revi
 
 ## Status
 
-**Experimental** — Full plan at [`codex-subagent-plan.md`](codex-subagent-plan.md). Companion `review-prompts` skill planned. All custom terms defined in the plan's Glossary (Section 1). Super-reviewed twice (Round 1: 7 parallel Codex reviews; Round 2: 6 criteria-specific passes, 11 fixes).
+**Experimental** — Full plan at [`codex-subagent-plan.md`](codex-subagent-plan.md). Review prompt integration is generic — works with any skill providing `.md` review prompts via `--review-prompt`. All custom terms defined in the plan's Glossary (Section 1). Super-reviewed twice (Round 1: 7 parallel Codex reviews; Round 2: 6 criteria-specific passes, 11 fixes).

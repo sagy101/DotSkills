@@ -1,6 +1,6 @@
 # Review Prompts Skill — Plan
 
-> Works with any AI coding agent or sub-agent system. First-class integration with [`codex-subagent`](codex-subagent-plan.md) via `--review-prompt`.
+> Works with any AI coding agent or sub-agent system. Pass prompt files to sub-agents to avoid consuming host agent context.
 
 ---
 
@@ -8,30 +8,34 @@
 
 A library of reusable, focused review prompts for AI coding agents. Each prompt is a `.md` file (~500-2000 tokens) that instructs an agent how to review a specific aspect of code, plans, or other artifacts.
 
-**Three usage modes:**
-1. **Standalone**: Any AI agent reads the prompt file and uses it directly as review instructions (no sub-agent needed)
-2. **With any sub-agent**: Any sub-agent system (Claude Code Task tool, Codex `spawn_agent`, Cursor Background Agent, etc.) can use these prompts — just include the file contents in the sub-agent's prompt
-3. **With codex-subagent skill** (first-class): Pass the file path via `--review-prompt <filepath>` — the wrapper reads and prepends it to stdin automatically, so the full prompt never consumes host agent context
+**Two usage modes:**
+1. **Standalone**: Any AI agent reads the assembled prompt and uses it directly as review instructions (no sub-agent needed)
+2. **With a sub-agent**: Any sub-agent system can use these prompts — pass the assembled `.md` file to the sub-agent to avoid consuming host agent context
 
-The `codex-subagent` skill has explicit support for these prompts, but the prompts themselves are agent-agnostic `.md` files that work anywhere.
+The prompts are agent-agnostic `.md` files. Any sub-agent system that accepts a prompt file can use them.
 
 ## File Structure
 
 ```
 review-prompts/
-├── SKILL.md              # Skill definition: descriptions of each type + how to use
+├── SKILL.md                      # Skill definition: descriptions of each type + how to build prompts
+├── REFERENCES.md                 # Attribution and licenses for all inspiration sources
+├── scripts/
+│   └── build-prompt.py           # Assembles complete prompt from _shared.md + type-specific file
 └── prompts/
-    ├── code-review.md    # General code quality, logic, style, bugs, DRY, error handling
-    ├── security.md       # OWASP top 10, injection, auth, secrets, crypto, input validation
-    ├── plan-review.md    # Structure, logic flow, completeness, consistency, implementation clarity
-    ├── architecture.md   # SOLID, coupling, cohesion, separation of concerns, extensibility
-    ├── performance.md    # N+1 queries, complexity, hot paths, memory, caching, concurrency
-    ├── testing.md        # Coverage, edge cases, mocking strategy, flaky tests, integration
-    ├── typescript.md     # Strict null, generics, type narrowing, module patterns, TS anti-patterns
-    ├── python.md         # Typing, async/await, idioms, packaging, Pythonic patterns
-    ├── java.md           # Spring Boot, enterprise patterns, Java 21+, SOLID, JPA/Hibernate
-    ├── scala.md          # Functional patterns, implicits, type classes, effect systems, concurrency
-    └── javascript.md     # ES2024+, async patterns, closures, Node.js best practices, framework idioms
+    ├── _shared.md                # Shared sections: Process, Output Format, Constraints
+    ├── code-review.md            # Type-specific: Role + Checklist (general code quality)
+    ├── security.md               # Type-specific: Role + Checklist (OWASP, injection, auth)
+    ├── plan-review.md            # Type-specific: Role + Checklist (plan/design review)
+    ├── architecture.md           # Type-specific: Role + Checklist (SOLID, coupling)
+    ├── performance.md            # Type-specific: Role + Checklist (N+1, complexity, caching)
+    ├── testing.md                # Type-specific: Role + Checklist (coverage, flaky tests)
+    ├── prompt-engineering.md     # Type-specific: Role + Checklist (prompt quality)
+    ├── typescript.md             # Type-specific: Role + Checklist (TS patterns)
+    ├── python.md                 # Type-specific: Role + Checklist (Pythonic patterns)
+    ├── java.md                   # Type-specific: Role + Checklist (Java 21+, Spring Boot)
+    ├── scala.md                  # Type-specific: Role + Checklist (FP, type classes)
+    └── javascript.md             # Type-specific: Role + Checklist (ES2024+, Node.js)
 ```
 
 ## SKILL.md Design
@@ -43,53 +47,51 @@ The SKILL.md should be small — it lists each review type with a **short descri
 name: review-prompts
 description: >
   Focused review prompts for code, security, plans, architecture, performance,
-  testing, and language-specific reviews. Use standalone or with codex-subagent
-  via --review-prompt.
+  testing, prompt engineering, and language-specific reviews. Use standalone or
+  pass assembled prompt files to any sub-agent system.
 ---
 ```
 
 The body includes:
 - A table of available review types with one-line descriptions
-- Instructions for standalone use: "Read the prompt file, then apply it to the code/plan you're reviewing"
-- Instructions for use with codex-subagent: "Pass the file path via `--review-prompt`"
-- Note that users can add custom `.md` files to the `prompts/` directory
+- Instructions for building prompts via `build-prompt.py`
+- Instructions for standalone use: "Run `build-prompt.py <type>`, read the output, apply to target"
+- Instructions for sub-agent use: "Run `build-prompt.py <type> -o <file>`, pass file to sub-agent"
+- Note that users can add custom `.md` files (Role + Checklist only) to the `prompts/` directory
 
 ## Prompt File Format
 
-Each `.md` file follows a consistent structure:
+Each type-specific `.md` file contains only **Role** and **Checklist** sections. Shared sections (Process, Output Format, Constraints) live in `prompts/_shared.md` and are assembled by `build-prompt.py`.
 
+**Type-specific file** (`prompts/<type>.md`):
 ```markdown
 # Review Type: <Name>
 
 ## Role
 You are a <focus area> reviewer. Your job is to...
 
-## Process
-Before applying the checklist:
-1. **Ensure you have the full content** — verify nothing was truncated (terminal output limits, large files, partial diffs). If content appears cut off, request or read the rest before reviewing.
-2. **Read surrounding context** — don't review changes in isolation; read the full file or document to understand intent
-3. **Cross-reference with project patterns** — does the change match existing conventions and style?
-4. **Only report high-confidence findings** — every conclusion must be grounded in the actual content, not speculation
-
 ## Checklist
 Review the provided code/artifact against these criteria:
 - [ ] Criterion 1: description
 - [ ] Criterion 2: description
 ...
+```
+
+**Shared file** (`prompts/_shared.md`):
+```markdown
+## Process
+(common pre-review steps)
 
 ## Output Format
-Provide findings in this structure:
-- **[SEVERITY: Critical/High/Medium/Low]** — [Category]
-  - **Location**: [File:Line or Section]
-  - **Issue**: [Description]
-  - **Impact**: [What could go wrong]
-  - **Recommendation**: [How to fix]
+(structured severity-based finding format)
 
 ## Constraints
-- Organize findings by severity (Critical first, then High, Medium, Low)
-- One finding per block — use the structured format above
-- If no issues found for a severity level, omit it
-- Focus on actionable findings — skip nitpicks unless nothing else is found
+(severity rubric, actionable-findings-only rules)
+```
+
+**Assembled output** (produced by `build-prompt.py`):
+```
+# Review Type + ## Role → ## Process → ## Checklist → ## Output Format → ## Constraints
 ```
 
 ## Review Types — Detail
@@ -141,27 +143,33 @@ JavaScript-specific review: ES2024+ features, async/await patterns, closure pitf
 ## Implementation Checklist
 
 ### Core Files
-- [ ] Write `SKILL.md` with review type descriptions and usage instructions (standalone + sub-agent modes)
-- [ ] Write `prompts/code-review.md`
+- [ ] Write `SKILL.md` with review type descriptions and build-prompt.py usage instructions
+- [ ] Write `scripts/build-prompt.py` (assembles _shared.md + type-specific prompt)
+- [ ] Write `prompts/_shared.md` (Process, Output Format, Constraints)
+- [ ] Write `prompts/code-review.md` (Role + Checklist)
 - [ ] Write `prompts/security.md`
 - [ ] Write `prompts/plan-review.md`
 - [ ] Write `prompts/architecture.md`
 - [ ] Write `prompts/performance.md`
 - [ ] Write `prompts/testing.md`
+- [ ] Write `prompts/prompt-engineering.md`
 - [ ] Write `prompts/typescript.md`
 - [ ] Write `prompts/python.md`
 - [ ] Write `prompts/java.md`
 - [ ] Write `prompts/scala.md`
 - [ ] Write `prompts/javascript.md`
+- [ ] Write `REFERENCES.md` with attribution and licenses
 
 ### Verification
-- [ ] Each prompt file follows the standard format (Role, Checklist, Output Format, Constraints)
-- [ ] Each prompt includes the bounded output requirement (top 10, 2000 words max)
+- [ ] Each type-specific prompt file has Role and Checklist sections only
+- [ ] `_shared.md` has Process, Output Format, and Constraints sections
+- [ ] `build-prompt.py` assembles complete prompt with all 5 sections in correct order
+- [ ] `build-prompt.py` rejects unknown types and validates required sections
+- [ ] Each prompt includes severity-ordered output format and actionable-findings constraint
 - [ ] SKILL.md descriptions are concise (~50 tokens each)
-- [ ] Test standalone usage: agent reads file and applies to sample code
-- [ ] Test with codex-subagent: `--review-prompt` loads and prepends correctly
-- [ ] Test with other sub-agent systems (Claude Task tool, etc.) — verify prompt works when included in sub-agent context
-- [ ] Prompt token counts are within 500-2000 token range
+- [ ] Test standalone usage: run `build-prompt.py <type>`, apply output to sample code
+- [ ] Test with a sub-agent system: pass assembled file, verify sub-agent follows checklist
+- [ ] Assembled prompt token counts are within 500-2000 token range
 
 ## References
 

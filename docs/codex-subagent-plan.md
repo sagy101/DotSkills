@@ -64,7 +64,7 @@ This skill introduces several terms. To avoid ambiguity, each is defined precise
 | **Operation** | A numbered workflow pattern for a specific type of delegation. Op 1: Implementation, Op 2: Analysis/Review, Op 2b: Dedicated Code Review, Op 3: Super-Review, Op 4: Structured Output, Op 5: Resume/Multi-Turn. |
 | **Mode** | The wrapper's `--mode` flag. Two values: `read-only` (sub-agent can only read files and run safe commands) or `write` (sub-agent can also write files within the workspace). |
 | **Persist** | The wrapper's `--persist` flag. When set, the wrapper omits `--ephemeral` so the Codex session is saved to disk. Required if the host agent plans to use `--resume` later for multi-turn delegation (Op 5). Without `--persist`, sessions are ephemeral and cannot be resumed. |
-| **Review Prompt** | A `.md` file containing a focused review system prompt (~500-2000 tokens). The wrapper's `--review-prompt <filepath>` flag reads the file and prepends it to stdin automatically — the full prompt never passes through the host agent's context. Review prompt files can come from the companion `review-prompts` skill, user-custom files, or any other source. The host agent only needs the short description (from the review skill's SKILL.md) to pick the right one. |
+| **Review Prompt** | A complete `.md` file containing a focused review system prompt (~500-2000 tokens) with Role, Process, Checklist, Output Format, and Constraints sections. The wrapper's `--review-prompt <filepath>` flag reads the file and prepends it to stdin automatically — the full prompt never passes through the host agent's context. Review prompt files can come from any source: a dedicated review-prompt skill, project docs, workflows, or ad-hoc files written by the host agent. |
 
 ---
 
@@ -524,18 +524,17 @@ codex-subagent/
 └── assets/
     └── output-schema-review.json     # JSON schema for structured review responses
 
-# Companion skill (separate, recommended):
-review-prompts/
-├── SKILL.md                          # Describes available review types + how to get prompt paths
+# Example: a review prompt skill that works with --review-prompt
+# (any skill/project providing complete .md review prompts can fill this role)
+example-review-skill/
+├── SKILL.md                          # Lists available review types + how to build complete prompts
+├── scripts/
+│   └── build-prompt.py               # Assembles complete prompt from shared + type-specific parts
 └── prompts/
-    ├── code-review.md                # General code quality, logic, style, bugs
-    ├── security.md                   # OWASP, injection, auth, secrets, crypto
-    ├── plan-review.md                # Structure, logic, completeness, consistency
-    ├── architecture.md               # SOLID, coupling, cohesion, extensibility
-    ├── performance.md                # N+1, complexity, hot paths, memory
-    ├── testing.md                    # Coverage, edge cases, mocking, flaky tests
-    ├── typescript.md                 # TS-specific patterns and anti-patterns
-    └── python.md                     # Python-specific idioms and patterns
+    ├── _shared.md                    # Shared sections (Process, Output Format, Constraints)
+    ├── code-review.md                # Type-specific: Role + Checklist
+    ├── security.md
+    └── ...                           # Additional review types
 ```
 
 ### Wrapper Script: `scripts/run_codex.sh`
@@ -570,7 +569,7 @@ echo "<PROMPT>" | ./scripts/run_codex.sh --mode write --collision medium -
 echo "<PROMPT>" | ./scripts/run_codex.sh --mode read-only --web-search -
 
 # Review with a review prompt file (wrapper loads + prepends it automatically):
-echo "<file paths and focus areas>" | ./scripts/run_codex.sh --mode read-only --review-prompt /path/to/review-prompts/prompts/security.md -
+echo "<file paths and focus areas>" | ./scripts/run_codex.sh --mode read-only --review-prompt /path/to/security-review.md -
 
 # Resume a previous session:
 echo "<FOLLOW-UP>" | ./scripts/run_codex.sh --resume -
@@ -582,7 +581,7 @@ echo "<FOLLOW-UP>" | ./scripts/run_codex.sh --resume -
 | `--mode` | Yes (unless `--resume`) | `read-only`, `write` | `read-only` | Sets sandbox level |
 | `--collision` | Only for `--mode write` | `high`, `medium` | `high` | Controls git worktree isolation |
 | `--web-search` | No | *(flag, no value)* | off | Enables web search for this spawn |
-| `--review-prompt` | No | file path to a `.md` review prompt | none | Reads the file and prepends it to stdin before passing to codex. Works with any `.md` file — from the companion `review-prompts` skill, user-custom prompts, or any other source |
+| `--review-prompt` | No | file path to a complete `.md` review prompt | none | Reads the file and prepends it to stdin before passing to codex. Accepts any complete `.md` file — from a review prompt skill, project docs, workflows, or an ad-hoc file |
 | `--timeout` | No | `300`, `600`, `1200`, `2400` | `600` (10 min) | Max time before killing the codex process. Host agent selects tier based on task complexity (see Guardrails) |
 | `--resume` | No | *(flag, no value)* | off | Resume last session instead of new spawn |
 | `--persist` | No | *(flag, no value)* | off | Keep session on disk (required if you plan to `--resume` later) |
@@ -760,7 +759,8 @@ PROMPT_FILE="$CODEX_TMPDIR/prompt.txt"
 if [ -n "$REVIEW_PROMPT" ]; then
   if [ ! -f "$REVIEW_PROMPT" ]; then
     echo "ERROR: Review prompt file not found: $REVIEW_PROMPT" >&2
-    echo "Pass an absolute path to a .md file, e.g.: --review-prompt /path/to/review-prompts/prompts/security.md" >&2
+    echo "Pass an absolute path to a complete .md review prompt file." >&2
+    echo "Review prompt files can come from a review skill, project docs, or any .md file you create." >&2
     exit 2
   fi
   # Prepend review prompt, then append stdin content
@@ -1315,6 +1315,11 @@ The host agent selects which review types to run based on **what is being review
 - What did the user ask to focus on?
 - What aspects are most relevant for this artifact?
 
+**Prompt discovery order** — the host agent looks for pre-configured review prompts before creating custom ones:
+1. **Installed skills**: Search for any installed skill that provides review prompts (look for skills with review-related descriptions, prompt files, or build scripts). Read the skill's SKILL.md for available review types and how to produce complete prompts.
+2. **Workflows & project docs**: Look for project-specific review prompts in the workspace (e.g., `.windsurf/workflows/`, `docs/`, or similar conventions).
+3. **Custom inline**: Only if no pre-configured prompts are found, the host agent writes a custom review prompt and passes it via stdin or creates a temp `.md` file. This works fine but uses more host context and lacks the standardized structure.
+
 **Example selections**:
 - PR with auth changes → `security`, `code-review`, `testing`
 - Architecture plan → `plan-review`, `architecture`
@@ -1322,30 +1327,21 @@ The host agent selects which review types to run based on **what is being review
 - New API endpoint → `security`, `code-review`, `architecture`
 
 #### Step 3: Launch Sub-Agent Reviews (Non-Blocking)
-For each selected review focus, the host agent launches a sub-agent via the wrapper. If the companion `review-prompts` skill is installed, the agent resolves the file path from the skill's install location and passes it via `--review-prompt`:
+For each selected review focus, the host agent obtains a complete review prompt file and launches a sub-agent via the wrapper:
 
 ```
-# With review-prompts skill installed (wrapper loads + prepends the prompt file):
-REVIEW_DIR="/path/to/review-prompts/prompts"  # resolved from review-prompts SKILL.md
-echo "Files: src/auth/*.ts" | ./scripts/run_codex.sh --mode read-only --review-prompt "$REVIEW_DIR/security.md" review --base main -
-echo "Files: src/api/users.ts" | ./scripts/run_codex.sh --mode read-only --review-prompt "$REVIEW_DIR/code-review.md" -
-echo "New endpoint at src/api/" | ./scripts/run_codex.sh --mode read-only --review-prompt "$REVIEW_DIR/architecture.md" -
+# With a review prompt file (from a skill, project docs, or custom):
+echo "Files: src/auth/*.ts" | ./scripts/run_codex.sh --mode read-only --review-prompt /tmp/sec-prompt.md review --base main -
+echo "Files: src/api/users.ts" | ./scripts/run_codex.sh --mode read-only --review-prompt /tmp/cr-prompt.md -
+echo "New endpoint at src/api/" | ./scripts/run_codex.sh --mode read-only --review-prompt /tmp/arch-prompt.md -
 
-# Without review-prompts skill (full prompt via stdin — works fine, just uses more host context):
+# Without a pre-configured prompt (full prompt via stdin — works fine, just uses more host context):
 echo "Review this code for security vulnerabilities, focusing on OWASP top 10..." | ./scripts/run_codex.sh --mode read-only -
-
-# Or point to any custom .md file:
-echo "Focus on auth module" | ./scripts/run_codex.sh --mode read-only --review-prompt ./my-custom-review.md -
 ```
 
-**Why `--review-prompt` matters**: The wrapper reads the file and prepends it to stdin — the full review prompt (~500-2000 tokens each) **never passes through the host agent's context**. The host agent only needs the short description from the review skill's SKILL.md (~50 tokens) to pick the right type.
+**Why `--review-prompt` matters**: The wrapper reads the file and prepends it to stdin — the full review prompt (~500-2000 tokens each) **never passes through the host agent's context**. The host agent only needs a short description (~50 tokens) to pick the right type from a review skill's SKILL.md.
 
-**Without the companion skill**: The agent can pass a full custom review prompt via stdin, or point `--review-prompt` at any `.md` file. The sub-agent skill works independently.
-
-**Bounded output requirement**: Each review prompt should include output constraints to prevent context overload during synthesis:
-- `"Limit findings to top 10 most critical issues"`
-- `"Maximum response length: 2000 words"`
-- `"Use structured format: one finding per paragraph with severity/file/line/description/fix"`
+**Without any review skill**: The agent can pass a full custom review prompt via stdin, or create a temp `.md` file and point `--review-prompt` at it. The sub-agent skill works independently of any review prompt skill.
 
 #### Step 4: Synthesis & Grading
 After all reviews complete, the host agent:
@@ -1366,32 +1362,22 @@ After all reviews complete, the host agent:
    - Recommended actions prioritized by impact
    - Questions for clarification (if any ambiguities)
 
-### Companion Skill: `review-prompts`
+### Review Prompt Skills (Generic Pattern)
 
-Review prompt files are maintained in a **separate companion skill** (`review-prompts/`). This keeps the sub-agent skill focused on delegation mechanics while making review prompts reusable — they can be used with sub-agents, standalone by the host agent, or by other skills. See [`review-prompts-plan.md`](review-prompts-plan.md) for the full plan.
+The sub-agent skill's `--review-prompt` flag accepts **any** complete `.md` file. A dedicated **review prompt skill** is a separate, optional skill that provides pre-configured review prompts the host agent can discover and use. This skill knows nothing about review prompt skills; review prompt skills know nothing about this skill. They connect through the generic `--review-prompt <file>` interface.
 
-The companion skill's SKILL.md provides:
-- **Short descriptions** of each review type (~50 tokens each) — this is all the host agent needs in its context to pick the right one
-- **File path pattern** — the agent resolves `<review-prompts-install-dir>/prompts/<type>.md`
-- **Instructions** for using prompts standalone (agent reads the file directly) or with sub-agents (`--review-prompt`)
+A review prompt skill typically provides:
+- **A SKILL.md** listing available review types with short descriptions (~50 tokens each) — this is all the host agent reads to pick the right type
+- **A way to produce complete prompt files** — a build script, a directory of ready-to-use `.md` files, or both
+- **Instructions** for how to get a complete prompt file for a given review type
 
-Available review types (provided by the companion skill):
+The host agent's workflow:
+1. **Discover** a review prompt skill (via prompt discovery order in Step 2)
+2. **Read its SKILL.md** to see available types and how to produce prompts
+3. **Follow the skill's instructions** to get a complete `.md` file
+4. **Pass** the file to `--review-prompt`
 
-| Type | File | Focus | Inspired By |
-|---|---|---|---|
-| `code-review` | `prompts/code-review.md` | General code quality, logic, style, bugs, DRY, error handling | [baz-scm/awesome-reviewers](https://github.com/baz-scm/awesome-reviewers) (8K+ prompts from real OSS reviews) |
-| `security` | `prompts/security.md` | OWASP top 10, injection, auth, secrets, crypto | [anthropics/claude-code-security-review](https://github.com/anthropics/claude-code-security-review) |
-| `plan-review` | `prompts/plan-review.md` | Structure, logic, completeness, consistency, implementation clarity | [google/eng-practices](https://github.com/google/eng-practices) (20K+), [joelparkerhenderson/architecture-decision-record](https://github.com/joelparkerhenderson/architecture-decision-record) (12K+), DocScope `plan-review` workflow |
-| `architecture` | `prompts/architecture.md` | SOLID, coupling, cohesion, extensibility, API contracts | [mehdihadeli/awesome-software-architecture](https://github.com/mehdihadeli/awesome-software-architecture), [sanyuan0704/code-review-expert](https://github.com/sanyuan0704/code-review-expert) (2.1K), [joelparkerhenderson/architecture-decision-record](https://github.com/joelparkerhenderson/architecture-decision-record) (12K+) |
-| `performance` | `prompts/performance.md` | N+1, complexity, hot paths, memory, caching | [google/eng-practices](https://github.com/google/eng-practices) (20K+), [analysis-tools-dev/static-analysis](https://github.com/analysis-tools-dev/static-analysis) (14K+), DocScope `review-staged` workflow |
-| `testing` | `prompts/testing.md` | Coverage, edge cases, mocking, flaky tests | [goldbergyoni/javascript-testing-best-practices](https://github.com/goldbergyoni/javascript-testing-best-practices) (24K+), [TheJambo/awesome-testing](https://github.com/TheJambo/awesome-testing) (2.1K) |
-| `typescript` | `prompts/typescript.md` | Strict null, generics, type narrowing, TS anti-patterns | [baz-scm/awesome-reviewers](https://github.com/baz-scm/awesome-reviewers) language-specific reviewers |
-| `python` | `prompts/python.md` | Typing, async, idioms, Pythonic patterns | [baz-scm/awesome-reviewers](https://github.com/baz-scm/awesome-reviewers) language-specific reviewers |
-| `java` | `prompts/java.md` | Spring Boot 3+, Java 21+, enterprise patterns, JPA/Hibernate | [google/error-prone](https://github.com/google/error-prone) (7.1K), [spring-projects/spring-boot](https://github.com/spring-projects/spring-boot) (76K+) |
-| `scala` | `prompts/scala.md` | Functional patterns, implicits, type classes, effect systems | [scalacenter/scalafix](https://github.com/scalacenter/scalafix) (Scala Center official), [analysis-tools-dev/static-analysis](https://github.com/analysis-tools-dev/static-analysis) (14K+) |
-| `javascript` | `prompts/javascript.md` | ES2024+, async, closures, Node.js, framework idioms | [airbnb/javascript](https://github.com/airbnb/javascript) (147K+), [goldbergyoni/nodebestpractices](https://github.com/goldbergyoni/nodebestpractices) (102K+) |
-
-> **Extensible**: Users can add custom `.md` files to the `prompts/` directory or point `--review-prompt` at any file on disk.
+> The sub-agent skill never imports, calls, or depends on any specific review prompt skill. It only receives a file path via `--review-prompt`.
 
 #### Example: Code Review Flow
 ```
@@ -1400,17 +1386,19 @@ User: "Review this PR for me, focus on security"
 Host agent (internally):
   1. Reads the PR diff, understands scope (auth changes + new API endpoint)
   2. Picks review focuses: security (user asked), code-review (always for PRs), architecture (new endpoint)
-  3. Resolves paths from review-prompts skill install location
-  4. Starts own review (in mind, using IDE context)
-  5. Simultaneously launches (all non-blocking via wrapper):
-     - echo "src/auth/*.ts, src/api/users.ts" | ./scripts/run_codex.sh --mode read-only --review-prompt $RP/security.md review --base main -
-     - echo "src/api/users.ts, src/middleware/auth.ts" | ./scripts/run_codex.sh --mode read-only --review-prompt $RP/code-review.md review --uncommitted -
-     - echo "New endpoint at src/api/users.ts" | ./scripts/run_codex.sh --mode read-only --review-prompt $RP/architecture.md -
-  6. Polls command_status for each until all complete
-  7. Reads all output files via read_file
-  8. Synthesizes: merges with own findings, de-duplicates, validates
-  9. Grades: "Overall: B+ — solid implementation, one medium security finding, clean architecture"
-  10. Presents unified graded review to user
+  3. Discovers review prompt skill is installed, reads its SKILL.md
+  4. Follows the skill's instructions to produce complete prompt files for each type
+     (e.g., runs build script, or reads pre-built .md files — depends on the skill)
+  5. Starts own review (in mind, using IDE context)
+  6. Simultaneously launches (all non-blocking via wrapper):
+     - echo "src/auth/*.ts, src/api/users.ts" | ./scripts/run_codex.sh --mode read-only --review-prompt /tmp/sec-prompt.md review --base main -
+     - echo "src/api/users.ts, src/middleware/auth.ts" | ./scripts/run_codex.sh --mode read-only --review-prompt /tmp/cr-prompt.md review --uncommitted -
+     - echo "New endpoint at src/api/users.ts" | ./scripts/run_codex.sh --mode read-only --review-prompt /tmp/arch-prompt.md -
+  7. Polls command_status for each until all complete
+  8. Reads all output files via read_file
+  9. Synthesizes: merges with own findings, de-duplicates, validates
+  10. Grades: "Overall: B+ — solid implementation, one medium security finding, clean architecture"
+  11. Presents unified graded review to user
 ```
 
 #### Example: Plan Review Flow
@@ -1420,11 +1408,12 @@ User: "Review this implementation plan"
 Host agent (internally):
   1. Reads the plan file(s)
   2. Picks review focuses: plan-review (primary), architecture (design elements present)
-  3. Starts own review
-  4. Launches:
-     - echo "docs/my-plan.md — 500 lines, API redesign" | ./scripts/run_codex.sh --mode read-only --review-prompt $RP/plan-review.md -
-     - echo "Focus on API contracts in sections 3-5" | ./scripts/run_codex.sh --mode read-only --review-prompt $RP/architecture.md -
-  5. Synthesizes and grades: "Overall: B — good structure, missing error handling strategy"
+  3. Discovers review prompt skill, obtains prompt files for plan-review and architecture
+  4. Starts own review
+  5. Launches:
+     - echo "docs/my-plan.md — 500 lines, API redesign" | ./scripts/run_codex.sh --mode read-only --review-prompt /tmp/plan-prompt.md -
+     - echo "Focus on API contracts in sections 3-5" | ./scripts/run_codex.sh --mode read-only --review-prompt /tmp/arch-prompt.md -
+  6. Synthesizes and grades: "Overall: B — good structure, missing error handling strategy"
 ```
 
 Note: `codex exec review` is particularly useful for code reviews — it automatically understands git diff context. For plan reviews and non-code artifacts, use standard `codex exec` with `--review-prompt`.
@@ -1573,7 +1562,7 @@ The user can configure this strictness via:
 - [ ] Write `references/PROMPT_PATTERNS.md` with templates and examples (from Section 8)
 - [ ] Write `references/PROMPT_ENGINEERING.md` with OpenAI best practices (from Section 8)
 - [ ] Write `references/OUTPUT_FORMAT.md`
-- [ ] Create companion `review-prompts/` skill with SKILL.md + 11 prompt files (from Section 9 / [review-prompts-plan](review-prompts-plan.md))
+- [ ] Create companion `review-prompts/` skill with SKILL.md + 12 prompt files + build script (from Section 9 / [review-prompts-plan](review-prompts-plan.md))
 - [ ] Create `assets/output-schema-review.json`
 - [ ] Label Section 8 raw `codex exec` examples as "raw reference only — use wrapper in practice" (deferred from Round 3, M2)
 - [ ] Add PID suffix to worktree naming fallback (`date +%s-$$`) for concurrent safety (deferred from Round 3, M6)
@@ -1630,7 +1619,7 @@ The user can configure this strictness via:
 - [ ] Test: wrapper `--mode write` explicitly passes `--sandbox write-workspace` to codex
 - [ ] Test: wrapper handles `-` stdin marker (stops arg parsing, reads pipe)
 - [ ] Test: host agent cleanup after reading result file (wrapper does NOT auto-delete)
-- [ ] Test: write all 11 review prompt files in `review-prompts/prompts/`
+- [ ] Test: write all 12 review prompt files in `review-prompts/prompts/`
 
 ---
 
