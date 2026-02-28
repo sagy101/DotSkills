@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CodeReviewOutput",
+  "description": "Structured output schema for Codex sub-agent code review tasks. Use with --output-schema flag.",
+  "type": "object",
+  "required": ["summary", "findings", "grade"],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "One-paragraph summary of the review"
+    },
+    "grade": {
+      "type": "string",
+      "enum": ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F"],
+      "description": "Overall grade for the reviewed artifact"
+    },
+    "grade_justification": {
+      "type": "string",
+      "description": "One-line justification for the overall grade"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "category", "location", "issue", "recommendation"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "high", "medium", "low"],
+            "description": "Issue severity"
+          },
+          "category": {
+            "type": "string",
+            "description": "Category of finding (e.g., security, correctness, performance, style)"
+          },
+          "location": {
+            "type": "string",
+            "description": "File path and line number (e.g., src/auth/login.ts:42)"
+          },
+          "issue": {
+            "type": "string",
+            "description": "Description of the issue found"
+          },
+          "impact": {
+            "type": "string",
+            "description": "What could go wrong if not addressed"
+          },
+          "recommendation": {
+            "type": "string",
+            "description": "How to fix the issue"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["high", "medium", "low"],
+            "description": "Reviewer's confidence in this finding"
+          }
+        }
+      }
+    },
+    "files_reviewed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of files that were reviewed"
+    },
+    "recommended_actions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Prioritized list of recommended next actions"
+    }
+  }
+}

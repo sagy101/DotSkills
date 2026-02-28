@@ -126,9 +126,13 @@ A review prompt skill typically provides:
 | Guardrail | Enforced By | Default |
 |---|---|---|
 | Dangerous sandbox block | Wrapper (script) | Always on, cannot be overridden |
+| Scope flag blocking | Wrapper (script) | Blocks `--cd`, `-C`, `--add-dir` passthrough |
+| Version gate | Wrapper (script) | Requires codex v0.106.0+ |
+| Review prompt validation | Wrapper (script) | Rejects missing/invalid prompt files |
+| Empty prompt rejection | Wrapper (script) | Rejects zero-byte prompts |
 | Timeout tiers | Wrapper (`--timeout`) | 5 / 10 / 20 / 40 min — host agent selects based on complexity. Resume on timeout with next tier up. |
 | Prompt size warning | Wrapper | Warns if > 50K chars |
-| Misused flag detection | Wrapper | Helpful errors for raw flags |
+| Misused flag detection | Wrapper | Helpful errors for raw flags and alternate syntaxes |
 | Max parallel spawns | Host agent (SKILL.md) | 6 |
 | Max retries | Host agent (SKILL.md) | 2 |
 | Result validation | Host agent | Check: file exists? non-empty? < 1MB? |

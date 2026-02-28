@@ -6,20 +6,27 @@ Each skill is a self-contained directory following the [Agent Skills Open Standa
 
 ## Available skills
 
+### Development Tools
+
+| Skill | Description |
+|---|---|
+| [codex-subagent](./codex-subagent/) | Delegate coding tasks to OpenAI Codex CLI as a sub-agent — parallel work, fresh context, second opinions. Python safety wrapper, collision confidence, super-review pattern, guardrails. POSIX-only. See [design](./docs/codex-subagent/codex-subagent-design.md). |
+| [review-prompts](./review-prompts/) | Reusable review prompt library — code review, security, plan review, architecture, performance, testing, prompt engineering, and language-specific prompts. Works standalone or as a file injection to sub-agents. |
+
+### Productivity / Integration
+
 | Skill | Description |
 |---|---|
 | [confluence-publisher](./confluence-publisher/) | Publish markdown docs to Confluence Cloud — pages, hierarchy, cross-links, Mermaid diagrams, diff/preview, export, fetch |
 | [jira-manager](./jira-manager/) | Create, update, fetch, delete, diff, and validate Jira tickets — bulk create from markdown/JSON, full field catalog discovery (statuses, priorities, components, versions), status transitions, generic `--set` flag for any discovered field, estimation validation, link rewriting |
-| [codebase-analyzer](./codebase-analyzer/) | Analyze any codebase for structured metrics — line counts by category, language breakdown, test:code ratio, file-size distribution, TODO tracking, git churn hotspots. Terminal, JSON, and Markdown output |
-| [skill-creator](./skill-creator/) | Create polished, generic Agent Skills from use-case-specific scripts or from scratch — prompt engineering best practices, Agent Skills spec compliance, comprehensive verification (compilation, diff review, env/config checks, error handling) |
-| [skill-sync](./skill-sync/) | Sync skills from this repo to IDE skill directories (Windsurf, Claude Code, Cursor, Codex, Gemini CLI, Antigravity) — OS-agnostic, user-level or project-level, auto-detects installed IDEs |
-| [review-prompts](./review-prompts/) | Reusable review prompt library — code review, security, plan review, architecture, performance, testing, prompt engineering, and language-specific prompts. Works standalone or as a file injection to sub-agents. |
 
-### Experimental
+### Meta / Tooling
 
 | Skill | Description |
 |---|---|
-| codex-subagent *(planned)* | Delegate coding tasks to OpenAI Codex CLI as a sub-agent — parallel work, fresh context, second opinions. Safety wrapper, collision confidence, guardrails. Works with any SKILL.md-compatible agent. See [plan](./docs/codex-subagent-plan.md) and [design](./docs/codex-subagent-design.md). |
+| [skill-creator](./skill-creator/) | Create polished, generic Agent Skills from use-case-specific scripts or from scratch — prompt engineering best practices, Agent Skills spec compliance, comprehensive verification (compilation, diff review, env/config checks, error handling) |
+| [skill-sync](./skill-sync/) | Sync skills from this repo to IDE skill directories (Windsurf, Claude Code, Cursor, Codex, Gemini CLI, Antigravity) — OS-agnostic, user-level or project-level, auto-detects installed IDEs |
+| [codebase-analyzer](./codebase-analyzer/) | Analyze any codebase for structured metrics — line counts by category, language breakdown, test:code ratio, file-size distribution, TODO tracking, git churn hotspots. Terminal, JSON, and Markdown output |
 
 ## Usage
 
@@ -57,6 +64,22 @@ Skills in this repo follow the [Agent Skills Open Standard](https://agentskills.
 - **Gemini CLI** (`.agents/skills/`)
 - **Cursor** (`.agents/skills/`)
 - **OpenCode** (`.agents/skills/`)
+
+## Tests
+
+Tests live in `tests/` at the repo root, organized by skill:
+
+```
+tests/
+  codex-subagent/
+    test_run_codex.py    # 83 tests — safety parsing, flag scanning, arg building
+```
+
+Run with pytest:
+
+```bash
+python3 -m pytest tests/ -v
+```
 
 ## Structure
 
