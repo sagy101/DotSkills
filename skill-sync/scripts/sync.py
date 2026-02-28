@@ -16,6 +16,7 @@ Usage:
 """
 
 import argparse
+import fnmatch
 import platform
 import shutil
 import sys
@@ -58,22 +59,47 @@ IDES = {
     },
 }
 
-EXCLUDE_DIRS = {"__pycache__", ".git", ".venv", "node_modules", ".mypy_cache"}
-EXCLUDE_SUFFIXES = {".pyc", ".pyo"}
+# Minimal always-excluded (even without .skillignore)
+_ALWAYS_EXCLUDE = {".git"}
 SELF_SKILL = "skill-sync"
+
+
+def load_skillignore(source: Path) -> list[str]:
+    """Load ignore patterns from .skillignore file.
+
+    Supports glob patterns (e.g. *-venv/, *.pyc, __pycache__/).
+    Lines starting with # are comments. Trailing slashes are stripped.
+    """
+    ignorefile = source / ".skillignore"
+    if not ignorefile.is_file():
+        return []
+    patterns = []
+    for line in ignorefile.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        patterns.append(line.rstrip("/"))
+    return patterns
+
+
+def _matches_ignore(name: str, patterns: list[str]) -> bool:
+    """Check if a file/directory name matches any ignore pattern."""
+    if name in _ALWAYS_EXCLUDE:
+        return True
+    return any(fnmatch.fnmatch(name, p) for p in patterns)
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def discover_skills(source: Path) -> list[Path]:
+def discover_skills(source: Path, patterns: list[str]) -> list[Path]:
     """Find all skill directories (containing SKILL.md) under source."""
     skills = []
     for child in sorted(source.iterdir()):
         if not child.is_dir():
             continue
-        if child.name.startswith(".") or child.name in EXCLUDE_DIRS:
+        if child.name.startswith(".") or _matches_ignore(child.name, patterns):
             continue
         if child.name == SELF_SKILL:
             continue
@@ -117,12 +143,7 @@ def detect_ides(level: str, project: Path | None = None) -> dict[str, dict]:
     return detected
 
 
-def _should_exclude(path: Path) -> bool:
-    """Check if a path component should be excluded from copy."""
-    return path.name in EXCLUDE_DIRS or path.suffix in EXCLUDE_SUFFIXES
-
-
-def copy_skill(skill_dir: Path, target_dir: Path, dry_run: bool = False) -> int:
+def copy_skill(skill_dir: Path, target_dir: Path, patterns: list[str], dry_run: bool = False) -> int:
     """Copy a single skill directory to target, returning files copied."""
     dest = target_dir / skill_dir.name
     if dry_run:
@@ -133,12 +154,7 @@ def copy_skill(skill_dir: Path, target_dir: Path, dry_run: bool = False) -> int:
         shutil.rmtree(dest)
 
     def _ignore(directory, contents):
-        ignored = set()
-        for item in contents:
-            p = Path(directory) / item
-            if _should_exclude(p):
-                ignored.add(item)
-        return ignored
+        return {item for item in contents if _matches_ignore(item, patterns)}
 
     shutil.copytree(skill_dir, dest, ignore=_ignore)
     count = sum(1 for _ in dest.rglob("*") if _.is_file())
@@ -147,7 +163,7 @@ def copy_skill(skill_dir: Path, target_dir: Path, dry_run: bool = False) -> int:
 
 def _sync_to_target(
     target_path: Path, label: str, ide_name: str,
-    skills: list[Path], dry_run: bool,
+    skills: list[Path], patterns: list[str], dry_run: bool,
 ) -> tuple[int, int]:
     """Sync all skills to a single target path. Returns (synced_count, file_count)."""
     print(f"\n  {ide_name} ({label}): {target_path}")
@@ -156,7 +172,7 @@ def _sync_to_target(
 
     synced, files = 0, 0
     for skill in skills:
-        n = copy_skill(skill, target_path, dry_run=dry_run)
+        n = copy_skill(skill, target_path, patterns, dry_run=dry_run)
         synced += 1
         files += n
         if not dry_run:
@@ -168,6 +184,7 @@ def sync_skills(
     skills: list[Path],
     detected_ides: dict,
     targets: list[str],
+    patterns: list[str],
     dry_run: bool = False,
 ) -> dict:
     """Sync skills to all target IDE directories. Returns summary stats."""
@@ -182,7 +199,7 @@ def sync_skills(
             target_path = ide.get(f"{label}_path")
             if not target_path:
                 continue
-            s, f = _sync_to_target(target_path, label, ide["name"], skills, dry_run)
+            s, f = _sync_to_target(target_path, label, ide["name"], skills, patterns, dry_run)
             stats[ide_key]["synced"] += s
             stats[ide_key]["files"] += f
             stats[ide_key]["paths"].append(str(target_path))
@@ -304,7 +321,8 @@ def main():
         print("ERROR: No target IDEs detected. Install an IDE first or check --level.")
         sys.exit(1)
 
-    skills = discover_skills(source)
+    patterns = load_skillignore(source)
+    skills = discover_skills(source, patterns)
     if not skills:
         print(f"ERROR: No skills found in {source}")
         sys.exit(1)
@@ -314,10 +332,12 @@ def main():
     print(f"  Skills: {', '.join(s.name for s in skills)}")
     print(f"  Level: {args.level}")
     print(f"  Targets: {', '.join(targets)}")
+    if patterns:
+        print(f"  Ignore: {len(patterns)} patterns from .skillignore")
     if project:
         print(f"  Project: {project}")
 
-    stats = sync_skills(skills, detected, targets, dry_run=args.dry_run)
+    stats = sync_skills(skills, detected, targets, patterns, dry_run=args.dry_run)
     _print_summary(stats, args.dry_run)
 
 
