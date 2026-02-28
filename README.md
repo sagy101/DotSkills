@@ -13,7 +13,7 @@ Each skill is a self-contained directory following the [Agent Skills Open Standa
 | [codebase-analyzer](./codebase-analyzer/) | Analyze any codebase for structured metrics — line counts by category, language breakdown, test:code ratio, file-size distribution, TODO tracking, git churn hotspots. Terminal, JSON, and Markdown output |
 | [skill-creator](./skill-creator/) | Create polished, generic Agent Skills from use-case-specific scripts or from scratch — prompt engineering best practices, Agent Skills spec compliance, comprehensive verification (compilation, diff review, env/config checks, error handling) |
 | [skill-sync](./skill-sync/) | Sync skills from this repo to IDE skill directories (Windsurf, Claude Code, Cursor, Codex, Gemini CLI, Antigravity) — OS-agnostic, user-level or project-level, auto-detects installed IDEs |
-| [review-prompts](./review-prompts/) | Reusable review prompt library — code review, security, plan review, architecture, performance, testing, prompt engineering, and language-specific prompts. Works standalone or as a file injection to sub-agents. See [plan](./docs/review-prompts-plan.md). |
+| [review-prompts](./review-prompts/) | Reusable review prompt library — code review, security, plan review, architecture, performance, testing, prompt engineering, and language-specific prompts. Works standalone or as a file injection to sub-agents. |
 
 ### Experimental
 

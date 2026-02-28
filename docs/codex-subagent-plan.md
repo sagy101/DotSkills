@@ -1562,7 +1562,7 @@ The user can configure this strictness via:
 - [ ] Write `references/PROMPT_PATTERNS.md` with templates and examples (from Section 8)
 - [ ] Write `references/PROMPT_ENGINEERING.md` with OpenAI best practices (from Section 8)
 - [ ] Write `references/OUTPUT_FORMAT.md`
-- [ ] Create companion `review-prompts/` skill with SKILL.md + 12 prompt files + build script (from Section 9 / [review-prompts-plan](review-prompts-plan.md))
+- [ ] Create companion `review-prompts/` skill with SKILL.md + 12 prompt files + build script
 - [ ] Create `assets/output-schema-review.json`
 - [ ] Label Section 8 raw `codex exec` examples as "raw reference only — use wrapper in practice" (deferred from Round 3, M2)
 - [ ] Add PID suffix to worktree naming fallback (`date +%s-$$`) for concurrent safety (deferred from Round 3, M6)
