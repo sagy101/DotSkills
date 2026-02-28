@@ -14,6 +14,13 @@ Each skill is a self-contained directory following the [Agent Skills Open Standa
 | [skill-creator](./skill-creator/) | Create polished, generic Agent Skills from use-case-specific scripts or from scratch — prompt engineering best practices, Agent Skills spec compliance, comprehensive verification (compilation, diff review, env/config checks, error handling) |
 | [skill-sync](./skill-sync/) | Sync skills from this repo to IDE skill directories (Windsurf, Claude Code, Cursor, Codex, Gemini CLI, Antigravity) — OS-agnostic, user-level or project-level, auto-detects installed IDEs |
 
+### Experimental
+
+| Skill | Description |
+|---|---|
+| codex-subagent *(planned)* | Delegate coding tasks to OpenAI Codex CLI as a sub-agent — parallel work, fresh context, second opinions. Safety wrapper, collision confidence, guardrails. Works with any SKILL.md-compatible agent. See [plan](./docs/codex-subagent-plan.md) and [design](./docs/codex-subagent-design.md). Best used with `review-prompts` |
+| review-prompts *(planned)* | Reusable review prompt library — code review, security, plan review, architecture, performance, testing, and language-specific prompts. Works standalone or as a companion to `codex-subagent` (via `--review-prompt`). See [plan](./docs/review-prompts-plan.md). Inspired by [awesome-reviewers](https://github.com/baz-scm/awesome-reviewers) and [claude-code-security-review](https://github.com/anthropics/claude-code-security-review) |
+
 ## Usage
 
 The easiest way to distribute skills is with **skill-sync**:
