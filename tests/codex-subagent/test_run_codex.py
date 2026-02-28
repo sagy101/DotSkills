@@ -214,10 +214,28 @@ class TestCheckDangerousFlag:
         with pytest.raises(SystemExit):
             _check_dangerous_flag("--output-last-message=/tmp/x", None)
 
+    def test_json_blocked(self):
+        with pytest.raises(SystemExit):
+            _check_dangerous_flag("--json", None)
+
+    def test_full_auto_blocked(self):
+        with pytest.raises(SystemExit):
+            _check_dangerous_flag("--full-auto", None)
+
     def test_safe_passthrough(self):
         _check_dangerous_flag("--model", "gpt-4")
         _check_dangerous_flag("-m", "gpt-4")
         _check_dangerous_flag("-c", "model=gpt-4")
+        _check_dangerous_flag("--skip-git-repo-check", None)
+        _check_dangerous_flag("--output-schema", "/tmp/schema.json")
+        _check_dangerous_flag("-i", "screenshot.png")
+        _check_dangerous_flag("--image", "screenshot.png")
+        _check_dangerous_flag("--oss", None)
+        _check_dangerous_flag("--local-provider", "ollama")
+        _check_dangerous_flag("-p", "fast")
+        _check_dangerous_flag("--profile", "fast")
+        _check_dangerous_flag("--enable", "streaming")
+        _check_dangerous_flag("--disable", "streaming")
 
 
 # ========== scan_for_dangerous_flags (integration) ==========
@@ -244,6 +262,22 @@ class TestScanForDangerousFlags:
 
     def test_empty_list(self):
         scan_for_dangerous_flags([])
+
+    def test_catches_json_in_list(self):
+        with pytest.raises(SystemExit):
+            scan_for_dangerous_flags(["--model", "gpt-4", "--json"])
+
+    def test_catches_full_auto_in_list(self):
+        with pytest.raises(SystemExit):
+            scan_for_dangerous_flags(["--full-auto"])
+
+    def test_safe_passthrough_flags_in_list(self):
+        scan_for_dangerous_flags([
+            "--model", "o3", "--skip-git-repo-check",
+            "--output-schema", "/tmp/schema.json",
+            "-i", "img.png", "--oss", "-p", "fast",
+            "--enable", "streaming",
+        ])
 
 
 # ========== _extract_subcommand ==========
@@ -364,6 +398,9 @@ class TestBuildCodexArgs:
         )
         assert args[:3] == ["exec", "resume", "--last"]
         assert "--sandbox" not in args
+        assert "-o" in args
+        idx = args.index("-o")
+        assert args[idx + 1] == "/tmp/r.txt"
 
     def test_review_subcommand(self):
         args = build_codex_args(

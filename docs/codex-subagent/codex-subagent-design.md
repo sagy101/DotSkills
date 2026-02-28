@@ -30,7 +30,7 @@ This skill gives **any SKILL.md-compatible agent** sub-agent capabilities via Co
 
 ## Key Design Decisions
 
-**1. Wrapper script as the only interface** — `run_codex.sh` sits between the host agent and `codex exec`. It enforces safety (blocks dangerous flags, explicitly sets `--sandbox`), adds defaults (`--ephemeral` unless `--persist`, `--full-auto` for write mode), manages temp files, handles git worktrees, and provides helpful error messages when the agent misuses raw flags. The host agent never calls `codex` directly.
+**1. Wrapper script as the only interface** — `run_codex.py` sits between the host agent and `codex exec`. It enforces safety (blocks dangerous flags, explicitly sets `--sandbox`), adds defaults (`--ephemeral` unless `--persist`, `--full-auto` for write mode), manages temp files, handles git worktrees, and provides helpful error messages when the agent misuses raw flags. The host agent never calls `codex` directly.
 
 **2. File-based output over JSONL streaming** — `-o <file>` is universally readable by all host agents. JSONL parsing is complex (881 lines in Codex source) and unnecessary for our use case.
 

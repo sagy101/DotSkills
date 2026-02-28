@@ -140,7 +140,40 @@ echo "<FOLLOW-UP>" | python3 <skill_dir>/scripts/run_codex.py --resume -
 | `--persist` | No | *(flag)* | off | Keep session on disk (required for future `--resume`) |
 | `-` | Yes | *(literal dash)* | — | Read prompt from stdin (must be last argument) |
 
-Use only wrapper flags (see table above). The wrapper will reject raw codex flags with helpful error messages.
+Wrapper flags are parsed first. Any unrecognized flags are passed through to `codex exec` after a safety scan (see Passthrough Flags below). The wrapper will reject dangerous flags with helpful error messages.
+
+### Passthrough flags
+
+Any flag not listed in the Wrapper Flags table above is forwarded directly to `codex exec` — **unless** it is blocked by the safety scanner. This is how you pass model overrides, config tweaks, feature toggles, and subcommand args.
+
+**Safe passthrough flags:**
+
+| Flag | Example | Purpose |
+|---|---|---|
+| `-m` / `--model` | `-m o3` | Override model |
+| `-c` / `--config` | `-c model_reasoning_effort="high"` | Config override (non-sandbox keys only) |
+| `--skip-git-repo-check` | `--skip-git-repo-check` | Run outside a git repository |
+| `--output-schema` | `--output-schema /path/to/schema.json` | Structured JSON output via schema |
+| `-i` / `--image` | `-i screenshot.png` | Attach image(s) to prompt |
+| `--enable` / `--disable` | `--enable streaming` | Toggle codex features |
+| `-p` / `--profile` | `-p fast` | Load a named config profile |
+| `--oss` | `--oss` | Use open-source provider |
+| `--local-provider` | `--local-provider ollama` | Specify local model provider |
+| `review --uncommitted` | `review --uncommitted` | Review subcommand: uncommitted changes |
+| `review --base` | `review --base main` | Review subcommand: diff against branch |
+
+**Blocked flags** — never pass these; the wrapper exits with an error and usage guidance if any are detected:
+
+| Flag | Reason |
+|---|---|
+| `--sandbox` / `-s` | Controlled by `--mode` |
+| `--dangerously-bypass-approvals-and-sandbox` | Not permitted by skill policy |
+| `--full-auto` | Controlled by `--mode write` |
+| `--ephemeral` | Controlled by `--persist` |
+| `-o` / `--output-last-message` | Managed by wrapper (result file) |
+| `--json` | stdout is captured internally — output would be lost |
+| `--cd` / `-C` / `--add-dir` | Wrapper controls working directory |
+| `-c sandbox*` | Sandbox config overrides not permitted |
 
 ### Wrapper output
 

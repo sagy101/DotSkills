@@ -27,7 +27,7 @@ codex exec -    # reads prompt from stdin
 | `--full-auto` | | `on-request` approvals + `workspace-write` sandbox | Wrapper sets this for `--mode write` |
 | `--ephemeral` | | Don't persist session rollout files to disk | Wrapper sets this by default (omitted with `--persist`) |
 | `--output-last-message <FILE>` | `-o` | Write final agent message to file | Wrapper always sets this |
-| `--json` | | JSONL streaming output to stdout | Not used by wrapper (prefers `-o`) |
+| `--json` | | JSONL streaming output to stdout | Blocked by wrapper (stdout is captured internally; use `-o` or `--output-schema`) |
 | `--model <MODEL>` | `-m` | Override model | Passed through by wrapper |
 | `--cd <DIR>` | `-C` | Set working directory | Blocked by wrapper (use `--collision medium` for worktrees) |
 | `--sandbox <MODE>` | `-s` | Sandbox policy: `read-only`, `workspace-write`, `danger-full-access` | Wrapper sets via `--mode`; `-s` blocked |

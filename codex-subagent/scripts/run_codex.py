@@ -52,6 +52,10 @@ BLOCKED_WRAPPER_FLAGS = {
         "ERROR: -o is added automatically by the wrapper. Output path is printed to stdout.\n"
         'USAGE: echo "<prompt>" | python3 run_codex.py --mode read-only -'
     ),
+    "--json": (
+        "ERROR: --json output is not available through the wrapper (stdout is captured internally).\n"
+        "Use the -o result file for output, or --output-schema for structured JSON."
+    ),
 }
 
 
