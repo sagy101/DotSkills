@@ -90,7 +90,7 @@ Run these checks before the first delegation in a session. If a check fails, off
 
 4. Check git repo:
    Run: git rev-parse --git-dir 2>/dev/null
-   If not in repo → Warn user, offer --skip-git-repo-check as passthrough
+   If not in repo → Warn user, offer --skip-git-repo-check flag
 
 5. Check wrapper script:
    Run: test -f <skill_dir>/scripts/run_codex.py
@@ -138,9 +138,15 @@ echo "<FOLLOW-UP>" | python3 <skill_dir>/scripts/run_codex.py --resume -
 | `--timeout` | No | `300`, `600`, `1200`, `2400` | `600` | Max seconds before kill |
 | `--resume` | No | *(flag)* | off | Resume last session |
 | `--persist` | No | *(flag)* | off | Keep session on disk (required for future `--resume`) |
+| `--skip-git-repo-check` | No | *(flag)* | off | Run outside a git repository |
 | `-` | Yes | *(literal dash)* | — | Read prompt from stdin (must be last argument) |
 
 Wrapper flags are parsed first. Any unrecognized flags are passed through to `codex exec` after a safety scan (see Passthrough Flags below). The wrapper will reject dangerous flags with helpful error messages.
+
+You can also use the standard POSIX `--` separator to explicitly mark the boundary between wrapper flags and passthrough flags:
+```bash
+echo "<PROMPT>" | python3 <skill_dir>/scripts/run_codex.py --mode read-only -- -m o3 -c model_reasoning_effort="high" -
+```
 
 ### Passthrough flags
 
@@ -152,7 +158,6 @@ Any flag not listed in the Wrapper Flags table above is forwarded directly to `c
 |---|---|---|
 | `-m` / `--model` | `-m o3` | Override model |
 | `-c` / `--config` | `-c model_reasoning_effort="high"` | Config override (non-sandbox keys only) |
-| `--skip-git-repo-check` | `--skip-git-repo-check` | Run outside a git repository |
 | `--output-schema` | `--output-schema /path/to/schema.json` | Structured JSON output via schema |
 | `-i` / `--image` | `-i screenshot.png` | Attach image(s) to prompt |
 | `--enable` / `--disable` | `--enable streaming` | Toggle codex features |

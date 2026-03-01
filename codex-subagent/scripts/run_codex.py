@@ -269,6 +269,7 @@ def build_codex_args(
     resume: bool,
     persist: bool,
     web_search: bool,
+    skip_git_repo_check: bool,
     result_file: str,
     worktree_dir: str | None,
     passthrough: list[str],
@@ -311,6 +312,10 @@ def build_codex_args(
 
         # Subcommand-specific args (e.g., --uncommitted, --base)
         args.extend(subcmd_args)
+
+    # Skip git repo check if requested
+    if skip_git_repo_check:
+        args.append("--skip-git-repo-check")
 
     # Always force no color for script parsing
     args.extend(["--color", "never"])
@@ -388,13 +393,24 @@ def parse_args_with_passthrough(argv: list[str]) -> tuple[argparse.Namespace, li
     passthrough_args = []
     i = 0
     wrapper_flags_with_value = {"--mode", "--collision", "--review-prompt", "--timeout"}
-    wrapper_flags_no_value = {"--web-search", "--resume", "--persist"}
+    wrapper_flags_no_value = {"--web-search", "--resume", "--persist", "--skip-git-repo-check"}
 
     while i < len(argv):
         arg = argv[i]
 
         if arg == "-":
             i += 1
+            break
+
+        # POSIX '--' end-of-options: consume it, route remaining to passthrough
+        if arg == "--":
+            i += 1
+            while i < len(argv):
+                if argv[i] == "-":
+                    i += 1
+                    break
+                passthrough_args.append(argv[i])
+                i += 1
             break
 
         if arg in wrapper_flags_with_value:
@@ -428,6 +444,7 @@ def parse_args_with_passthrough(argv: list[str]) -> tuple[argparse.Namespace, li
     parser.add_argument("--timeout", type=int, default=600)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--persist", action="store_true")
+    parser.add_argument("--skip-git-repo-check", action="store_true", dest="skip_git_repo_check")
 
     parsed = parser.parse_args(wrapper_args)
 
@@ -485,6 +502,7 @@ def main() -> None:
         resume=args.resume,
         persist=args.persist,
         web_search=args.web_search,
+        skip_git_repo_check=args.skip_git_repo_check,
         result_file=result_file,
         worktree_dir=worktree_dir,
         passthrough=passthrough,
