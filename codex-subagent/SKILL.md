@@ -275,7 +275,8 @@ When a review is requested, run your own review AND launch specialized sub-agent
    ```
 6. **Synthesize**: Read all outputs, cross-reference with your review, de-duplicate, validate each finding
 7. **Grade**: Use the scoring rubric and dimensions below
-8. **Present**: Use the host output template below
+8. **Before presenting**: Re-read [references/SUPER_REVIEW_TEMPLATE.md](references/SUPER_REVIEW_TEMPLATE.md) and verify your output matches every section
+9. **Present**: Use the template from step 8 exactly
 
 **Partial failure policy**: If sub-agents fail, continue with available results. Mark missing dimensions. Optionally retry once. Never present partial results as complete.
 
@@ -305,49 +306,7 @@ Use `+` / `-` modifiers (e.g., `A-`, `B+`) when between thresholds. Apply per-di
 
 #### Host Output Template
 
-Present the synthesized review in this exact structure:
-
-```markdown
-# Super-Review: <subject>
-
-## Review Passes
-| # | Pass | Source | Status | Findings |
-|---|------|--------|--------|----------|
-(one row per review pass including your own)
-
-## Findings (by severity)
-### Critical
-- **<ID>: <title>** — Sources: <which passes>
-  Location: <file:line>
-  Issue: <what's wrong>
-  Verdict: ACCEPTED / REJECTED + reason
-  Fix: <applied / deferred + reason>
-
-### High
-(same format)
-
-### Medium / Low
-(same format, may be abbreviated for Low)
-
-## Per-Dimension Grades
-| Dimension | Grade | Justification |
-|-----------|-------|---------------|
-(one row per review pass that was run)
-
-## Not Reviewed
-(list any relevant review types that were NOT run, so the user knows coverage gaps)
-
-## Overall Grade: <letter>
-
-## Changes Applied
-(list of fixes made, with file:line references)
-
-## Deferred / Rejected
-(table of findings not fixed, with rationale)
-
-## Recommended Follow-Up
-(numbered list of improvements for next iteration)
-```
+The full template is in [references/SUPER_REVIEW_TEMPLATE.md](references/SUPER_REVIEW_TEMPLATE.md). **Read that file before presenting results** (step 8 above). The template uses tables for each severity level (Critical, High, Medium, Low) with columns including an **Agreement** column where the host agent records whether it agrees with each sub-agent finding.
 
 ### Operation 4: Structured Output Task
 
