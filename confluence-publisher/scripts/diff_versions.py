@@ -37,8 +37,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from config_loader import load_config, extract_page_id
-from page_ops import (
-    fetch_page,
+from confluence_api import fetch_page
+from html_diff import (
     normalize_html,
     semantic_diff,
     section_integrity_check,

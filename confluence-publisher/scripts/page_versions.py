@@ -44,11 +44,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from config_loader import load_config, extract_page_id
-from page_ops import (
-    fetch_page,
-    list_versions,
-    update_page_body,
-)
+from confluence_api import fetch_page, list_versions, update_page_body
 
 
 def parse_args() -> argparse.Namespace:
