@@ -109,8 +109,14 @@ def load_config(config_path: Optional[str] = None) -> ConfluenceConfig:
 
     creds = raw.get("credentials", {})
 
+    url = raw["confluence_url"].rstrip("/")
+    if not url.startswith("https://"):
+        print(f"ERROR: confluence_url must use HTTPS (got: {url})")
+        print("Confluence Cloud requires HTTPS. Sending credentials over HTTP is unsafe.")
+        sys.exit(1)
+
     config = ConfluenceConfig(
-        confluence_url=raw["confluence_url"].rstrip("/"),
+        confluence_url=url,
         space_key=raw["space_key"],
         root_page_id=str(raw["root_page_id"]),
         docs_dir=raw.get("docs_dir", "."),
