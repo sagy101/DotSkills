@@ -67,6 +67,10 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Show only summary (changed/unchanged counts), no full diff",
     )
+    parser.add_argument(
+        "--output",
+        help="Save diff output to file instead of stdout (avoids terminal truncation)",
+    )
     return parser.parse_args()
 
 
@@ -205,6 +209,13 @@ def main():
 
     confluence = connect(config)
 
+    # Redirect output to file if --output specified
+    output_file = None
+    if args.output:
+        output_file = open(args.output, "w", encoding="utf-8")  # noqa: SIM115
+        original_stdout = sys.stdout
+        sys.stdout = output_file
+
     print("Diff: local docs vs Confluence (normalized)")
     print(f"  Target: {config.confluence_url} / {config.space_key}")
     print()
@@ -225,6 +236,11 @@ def main():
     print(f"Summary: {counts['changed']} changed, {counts['unchanged']} unchanged, "
           f"{counts['new']} new, {counts['no_page']} missing on Confluence, "
           f"{counts['no_file']} missing locally")
+
+    if output_file:
+        output_file.close()
+        sys.stdout = original_stdout
+        print(f"Diff report saved to {args.output}")
 
     if counts["changed"] > 0 or counts["new"] > 0:
         sys.exit(1)

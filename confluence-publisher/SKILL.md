@@ -240,9 +240,14 @@ python <skill_dir>/scripts/diff_pages.py --config .confluence.json --all
 
 # Summary only (changed/unchanged counts, no full diff)
 python <skill_dir>/scripts/diff_pages.py --config .confluence.json --all --summary
+
+# Save diff output to file (avoids terminal truncation for large pages)
+python <skill_dir>/scripts/diff_pages.py --config .confluence.json --file README.md --output /tmp/diff-report.txt
 ```
 
 **Note:** The diff script exits with code 1 if any changes or new pages are detected, and code 0 if everything is unchanged. This is informational (like the `diff` command), not an error — do not treat exit code 1 as a failure.
+
+**Output truncation:** For large pages, the diff output may exceed the terminal/tool output limit and get truncated. Use `--output /tmp/diff-report.txt` to save to a file, then read it with your file-reading tool.
 
 Present the diff output to the user before publishing so they can review what would change.
 
@@ -398,6 +403,30 @@ Replacements JSON format:
 The `--page` argument accepts a numeric page ID, a full Confluence URL, or a tiny link.
 
 **Always use `--dry-run` first** to verify the replacements before pushing. The script shows a semantic diff report and section integrity check.
+
+#### Large structural changes (tables, sections)
+
+For complex edits like adding a table column or restructuring a section, use `replace_element.py`:
+
+```bash
+# Extract: save the table after "Implementation Phases" to a file
+python <skill_dir>/scripts/replace_element.py --config .confluence.json \
+    --page 1079706804 --heading "Implementation Phases" --element table \
+    --output /tmp/table.html
+
+# (modify /tmp/table.html → /tmp/table-new.html)
+
+# Preview changes (always dry-run first)
+python <skill_dir>/scripts/replace_element.py --config .confluence.json \
+    --page 1079706804 --old /tmp/table.html --new /tmp/table-new.html --dry-run
+
+# Apply after user approval
+python <skill_dir>/scripts/replace_element.py --config .confluence.json \
+    --page 1079706804 --old /tmp/table.html --new /tmp/table-new.html \
+    --message "Updated Implementation Phases table"
+```
+
+Supported `--element` types: `table`, `ul`, `ol`, `div`, `section` (heading + content until next same-level heading). Use `--nth 2` for the 2nd occurrence after the heading. Preserve existing `ac:local-id` attributes on unchanged elements; new elements don't need them.
 
 ### Diff page versions
 
