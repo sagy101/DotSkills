@@ -9,7 +9,6 @@ import json
 import os
 import re
 import struct
-import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,7 +16,7 @@ from typing import Optional
 
 
 def ensure_deps(required_packages: dict) -> None:
-    """Install missing Python packages. required_packages maps pip name → import name."""
+    """Check that required Python packages are installed. Exits with instructions if not."""
     missing = []
     for pkg, imp in required_packages.items():
         try:
@@ -25,11 +24,11 @@ def ensure_deps(required_packages: dict) -> None:
         except ImportError:
             missing.append(pkg)
     if missing:
-        print(f"Installing: {', '.join(missing)}")
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--quiet", *missing],
-            stdout=subprocess.DEVNULL,
-        )
+        skill_dir = Path(__file__).resolve().parent.parent
+        req_file = skill_dir / "scripts" / "requirements.txt"
+        print(f"ERROR: Missing dependencies: {', '.join(missing)}")
+        print(f"Install with: pip install -r {req_file}")
+        sys.exit(1)
 
 
 @dataclass
