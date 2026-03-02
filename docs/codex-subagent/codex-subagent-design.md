@@ -59,6 +59,7 @@ The host agent follows this priority order before every task:
    - Parallel execution needed? (multiple independent tasks)
    - Isolation needed? (prototype, spike, risky changes)
    - Second opinion needed? (review, audit)
+   - Super-review needed? (parallel multi-perspective review)
    → YES to any: Delegate via this skill.
 
 4. Is the task trivially simple (< 2 min of direct work)?
@@ -94,10 +95,12 @@ The host agent doesn't just delegate reviews — it runs its own review AND laun
 1. **Host agent reviews** using IDE context, conversation history, user intent
 2. **Selects review focuses** based on what's being reviewed and the user's prompt (dynamic, not a fixed list)
 3. **Discovers pre-configured prompts** (installed skills first, then project docs/workflows, then custom inline as fallback) and obtains complete prompt files by following the discovered skill's instructions
-4. **Launches sub-agents** in parallel, each with a review prompt file loaded via `--review-prompt <filepath>` — the wrapper reads the file and prepends it to stdin, so the full prompt never passes through the host agent's context
-5. **Synthesizes**: reads all outputs, cross-references with own review, de-duplicates, validates, filters false positives
-6. **Grades**: assigns an overall grade (A-F or 1-10) with per-dimension grades and justification
-7. **Presents** unified review grouped by severity with actionable recommendations
+4. **Shows review plan** — presents the selected review types, target files, and sub-agent count to the user. Waits for explicit approval before launching.
+5. **Launches sub-agents** in parallel, each with a review prompt file loaded via `--review-prompt <filepath>` — the wrapper reads the file and prepends it to stdin, so the full prompt never passes through the host agent's context
+6. **Synthesizes**: reads all outputs, cross-references with own review, de-duplicates, validates, filters false positives
+7. **Grades**: assigns an overall grade (A-F or 1-10) with per-dimension grades and justification
+8. **Re-reads output template** and verifies the response matches every required section before presenting
+9. **Presents** unified review grouped by severity with actionable recommendations
 
 ### Review Prompt Skills (Generic Pattern)
 
@@ -138,6 +141,7 @@ A review prompt skill typically provides:
 | Max retries | Host agent (SKILL.md) | 2 |
 | Result validation | Host agent | Check: file exists? non-empty? < 1MB? |
 | Output trust boundary | Host agent | Never auto-execute sub-agent output |
+| Output scanning | Host agent | Scan result files for secrets/API keys before surfacing to user |
 | Collision confidence gate | Host agent | Low confidence → don't delegate writes |
 
 > **Note on recursion**: If the sub-agent has its own sub-agent capabilities, it's free to use them. The timeout naturally bounds any recursive cost — the entire process is killed when it expires.
