@@ -66,17 +66,21 @@ Use `+` / `-` modifiers (e.g., `A-`, `B+`) when between thresholds. Apply per-di
 
 ## Per-Dimension Grades
 
-| Dimension | Grade | Justification |
-|-----------|-------|---------------|
-| Host (self) | <letter> | <brief justification> |
-| <review type> | <letter> | <brief justification> |
+| Dimension | Before | After | Justification |
+|-----------|--------|-------|---------------|
+| Host (self) | — | <letter> | <brief justification> |
+| <review type> | — | <letter> | <brief justification> |
 (one row per review pass that was run)
+
+- **Before**: Grade from the initial review round (before fixes). Use `—` on the first round.
+- **After**: Grade after fixes have been applied and verified.
+- On follow-up review rounds, fill in **Before** with the previous round's **After** grade to show progression.
 
 ## Not Reviewed
 
 (list any relevant review types that were NOT run, so the user knows coverage gaps)
 
-## Overall Grade: <letter>
+## Overall Grade: <before> → <after>
 
 ## Changes Applied
 
