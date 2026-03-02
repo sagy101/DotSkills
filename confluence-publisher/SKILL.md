@@ -4,12 +4,14 @@ description: >
   Publish, sync, diff, delete, discover, and export markdown documentation to/from Confluence Cloud
   (*.atlassian.net/wiki/*). Use when the user asks to publish, update, delete, preview, diff, or
   export markdown files to Confluence, or when they want to verify existing Confluence pages against
-  local docs. Handles page creation, updates, deletion, cross-page link rewriting, Mermaid diagram
+  local docs. Also supports surgical HTML edits (targeted find/replace without overwriting manual
+  formatting), version comparison (diff two page versions), version history browsing, and page
+  revert. Handles page creation, updates, deletion, cross-page link rewriting, Mermaid diagram
   rendering, hierarchy verification, diff/preview, and reverse export to markdown.
 license: MIT
 metadata:
   author: sagy101
-  version: "2.1"
+  version: "3.0"
 compatibility: >
   Requires Python 3.10+. Optional: Node.js + npx for Mermaid diagram rendering.
   Works with Confluence Cloud (Atlassian). Requires API token with page read/write permissions.
@@ -28,6 +30,10 @@ Use this skill when the user wants to:
 - Verify that Confluence pages match local docs (hierarchy, titles, content)
 - Discover existing Confluence pages and build a local manifest
 - Validate that a manifest is consistent with both disk and Confluence
+- Apply targeted edits to a Confluence page without overwriting manual formatting (surgical edit)
+- Compare two versions of a Confluence page (version diff)
+- Browse page version history or fetch content from a specific version
+- Revert a page to a previous version
 
 ## Prerequisites
 
@@ -338,6 +344,9 @@ python <skill_dir>/scripts/verify_hierarchy.py --config .confluence.json
 4. The manifest file (`.confluence-manifest.json`) is auto-maintained by scripts. Do not edit it manually.
 5. If a page create fails, stop and report the error — do not continue with children of that page.
 6. Cross-page links are best-effort: if a target page is not in the manifest, the link is left as-is.
+7. **Always use `--dry-run` before surgical edits.** Review the semantic diff and section integrity check before pushing.
+8. **Never revert a page without showing the dry-run plan first** and getting explicit user approval. Revert creates a new version — the old version remains in history.
+9. When using surgical edit, prefer `--check-sections` to verify critical content survived the edit.
 
 ## Markdown transformation details
 
@@ -348,6 +357,108 @@ The publish script performs these transformations automatically:
 - **Mermaid diagrams → PNG attachments**: ` ```mermaid ` blocks are rendered to PNG via `mmdc` (Mermaid CLI), uploaded as page attachments, and replaced with `<ac:image>` macros. If Node.js/npx is unavailable, diagrams fall back to plain code blocks (no failure)
 - **Cross-page links → Confluence page links**: Links like `[Setup Guide](./setup.md)` are resolved via the manifest and rewritten to `<ac:link>` macros pointing to the correct Confluence page by title. Unresolvable links (target not in manifest) are left as-is
 - **Attachment links → Confluence attachment macros**: Links using the `attachment:` scheme (e.g. `[Slides](attachment:slides.pdf)`) are converted to `<ac:link><ri:attachment …/></ac:link>` macros
+
+### Surgical edit
+
+Apply targeted find/replace edits to a Confluence page's storage HTML without overwriting the entire page. Preserves manual formatting in untouched sections. **No markdown conversion** — operates directly on Confluence storage HTML.
+
+```bash
+# Inline single replacement
+python <skill_dir>/scripts/surgical_edit.py --config .confluence.json \
+    --page 1079706804 --find "old text" --replace "new text"
+
+# Replace all occurrences (default: first only)
+python <skill_dir>/scripts/surgical_edit.py --config .confluence.json \
+    --page 1079706804 --find "old" --replace "new" --replace-all
+
+# Apply multiple replacements from a JSON file
+python <skill_dir>/scripts/surgical_edit.py --config .confluence.json \
+    --page 1079706804 --replacements edits.json
+
+# Dry run — show diff without pushing changes
+python <skill_dir>/scripts/surgical_edit.py --config .confluence.json \
+    --page 1079706804 --replacements edits.json --dry-run
+
+# Save diff report to file and verify sections survived
+python <skill_dir>/scripts/surgical_edit.py --config .confluence.json \
+    --page 1079706804 --replacements edits.json \
+    --output /tmp/report.txt \
+    --check-sections "Problem Definition,Solution Architecture"
+```
+
+Replacements JSON format:
+```json
+[
+    {"find": "old text 1", "replace": "new text 1"},
+    {"find": "old text 2", "replace": "new text 2", "replace_all": true}
+]
+```
+
+The `--page` argument accepts a numeric page ID, a full Confluence URL, or a tiny link.
+
+**Always use `--dry-run` first** to verify the replacements before pushing. The script shows a semantic diff report and section integrity check.
+
+### Diff page versions
+
+Compare two versions of the same Confluence page to see exactly what changed. Strips Confluence noise attributes (`ac:local-id`, `local-id`, `data-table-width`) for clean comparison.
+
+```bash
+# Diff version 56 against latest
+python <skill_dir>/scripts/diff_versions.py --config .confluence.json \
+    --page 1079706804 --from-version 56
+
+# Diff two specific versions
+python <skill_dir>/scripts/diff_versions.py --config .confluence.json \
+    --page 1079706804 --from-version 56 --to-version 59
+
+# Save report to file (avoids terminal truncation)
+python <skill_dir>/scripts/diff_versions.py --config .confluence.json \
+    --page 1079706804 --from-version 56 --output /tmp/diff.txt
+
+# Verify specific sections survived edits
+python <skill_dir>/scripts/diff_versions.py --config .confluence.json \
+    --page 1079706804 --from-version 56 \
+    --check-sections "Problem Definition,Risk & Mitigation"
+```
+
+The diff report includes:
+- Per-change type (replace/insert/delete) with old and new text
+- Section integrity check (auto-detects headings if `--check-sections` is omitted)
+- HTML size comparison
+
+Exit code 1 if changes found (like the `diff` command), 0 if identical.
+
+### Page version management
+
+Browse version history, fetch content from a specific version, or revert to a previous version.
+
+```bash
+# List version history
+python <skill_dir>/scripts/page_versions.py --config .confluence.json \
+    --page 1079706804 --list
+
+# List more versions
+python <skill_dir>/scripts/page_versions.py --config .confluence.json \
+    --page 1079706804 --list --limit 50
+
+# Fetch a specific version's HTML
+python <skill_dir>/scripts/page_versions.py --config .confluence.json \
+    --page 1079706804 --fetch 56 --output /tmp/page_v56.html
+
+# Fetch as plain text (HTML tags stripped)
+python <skill_dir>/scripts/page_versions.py --config .confluence.json \
+    --page 1079706804 --fetch 56 --output /tmp/page_v56.txt --text
+
+# Revert to a previous version (dry run first)
+python <skill_dir>/scripts/page_versions.py --config .confluence.json \
+    --page 1079706804 --revert 56
+
+# Execute the revert (requires --confirm)
+python <skill_dir>/scripts/page_versions.py --config .confluence.json \
+    --page 1079706804 --revert 56 --confirm
+```
+
+**Revert is a non-destructive operation** — it creates a new version with the old content. The reverted-from version remains in history. **Never revert without showing the dry-run plan first and getting explicit user approval.**
 
 ## Future capabilities
 
