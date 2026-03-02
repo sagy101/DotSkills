@@ -39,11 +39,12 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import Optional
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config_loader import load_config, extract_page_id
+from config_loader import ConfluenceConfig, load_config, extract_page_id
 from confluence_api import fetch_page, list_versions, update_page_body
 
 
@@ -107,7 +108,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def cmd_list(config, page_id: str, limit: int) -> None:
+def cmd_list(config: ConfluenceConfig, page_id: str, limit: int) -> None:
     """List version history."""
     versions = list_versions(config, page_id, limit=limit)
 
@@ -133,7 +134,7 @@ def cmd_list(config, page_id: str, limit: int) -> None:
     print(f"\nShowing {len(versions)} of {current.version} version(s)")
 
 
-def cmd_fetch(config, page_id: str, version: int, output: str | None, text: bool) -> None:
+def cmd_fetch(config: ConfluenceConfig, page_id: str, version: int, output: Optional[str], text: bool) -> None:
     """Fetch content of a specific version."""
     print(f"Fetching version {version} of page {page_id}...")
     snapshot = fetch_page(config, page_id, version=version)
@@ -159,7 +160,7 @@ def cmd_fetch(config, page_id: str, version: int, output: str | None, text: bool
 
 
 def cmd_revert(
-    config, page_id: str, version: int, confirm: bool, message: str | None,
+    config: ConfluenceConfig, page_id: str, version: int, confirm: bool, message: Optional[str],
 ) -> None:
     """Revert page to a previous version."""
     # Fetch the target version

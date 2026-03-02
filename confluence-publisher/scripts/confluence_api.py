@@ -4,14 +4,13 @@ confluence-publisher skill — Confluence REST API Client
 Version-aware REST operations on Confluence pages. Handles authentication,
 URL normalization (/wiki prefix), and error handling for all API calls.
 
-Used by page_ops.py (facade) and indirectly by surgical_edit.py,
-diff_versions.py, and page_versions.py.
+Used by surgical_edit.py, diff_versions.py, and page_versions.py.
 """
 
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import requests
 
@@ -67,7 +66,11 @@ def _wiki_base(config: ConfluenceConfig) -> str:
     return url
 
 
-def _rest_get(config: ConfluenceConfig, path: str, params: Optional[dict] = None):
+def _rest_get(
+    config: ConfluenceConfig,
+    path: str,
+    params: Optional[dict[str, str]] = None,
+) -> dict[str, Any]:
     """Make a GET request to the Confluence REST API."""
     username, token = resolve_credentials(config)
     url = f"{_wiki_base(config)}/rest/api{path}"
@@ -86,7 +89,11 @@ def _rest_get(config: ConfluenceConfig, path: str, params: Optional[dict] = None
         sys.exit(1)
 
 
-def _rest_put(config: ConfluenceConfig, path: str, json_body: dict):
+def _rest_put(
+    config: ConfluenceConfig,
+    path: str,
+    json_body: dict[str, Any],
+) -> dict[str, Any]:
     """Make a PUT request to the Confluence REST API."""
     username, token = resolve_credentials(config)
     url = f"{_wiki_base(config)}/rest/api{path}"

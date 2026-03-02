@@ -9,7 +9,7 @@ Used by surgical_edit.py and diff_versions.py.
 
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, TypedDict
 
 
 # ---------------------------------------------------------------------------
@@ -47,6 +47,14 @@ def normalize_html(html: str) -> str:
     for pattern, replacement in _NOISE_PATTERNS:
         html = pattern.sub(replacement, html)
     return html
+
+
+class SectionStatus(TypedDict):
+    """Result of a single section integrity check."""
+    section: str
+    in_old: bool
+    in_new: bool
+    status: str  # 'ok', 'MISSING', or 'ADDED'
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +114,7 @@ def section_integrity_check(
     old_html: str,
     new_html: str,
     markers: Optional[list[str]] = None,
-) -> list[dict]:
+) -> list[SectionStatus]:
     """Check that named sections are preserved between two HTML versions.
 
     Args:
@@ -166,7 +174,7 @@ def _format_changes(changes: list[DiffChange], max_text_len: int) -> list[str]:
     return lines
 
 
-def _format_integrity(integrity: list[dict]) -> list[str]:
+def _format_integrity(integrity: list[SectionStatus]) -> list[str]:
     """Format the integrity check results into report lines."""
     lines = ["=== SECTION INTEGRITY CHECK ==="]
     for item in integrity:
@@ -178,7 +186,7 @@ def _format_integrity(integrity: list[dict]) -> list[str]:
 
 def format_diff_report(
     changes: list[DiffChange],
-    integrity: Optional[list[dict]] = None,
+    integrity: Optional[list[SectionStatus]] = None,
     max_text_len: int = 500,
 ) -> str:
     """Format a semantic diff and optional integrity check into a readable report.
