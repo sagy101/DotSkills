@@ -2,7 +2,7 @@
 name: codex-subagent
 description: >
   Delegate coding tasks to OpenAI Codex CLI as a sub-agent. Use when the user asks to delegate work,
-  run parallel coding tasks, get a code review or second opinion, explore code with fresh context, or
+  run parallel coding tasks, get a code review or second opinion, run a super-review (parallel multi-perspective review), explore code with fresh context, or
   when multiple independent subtasks can be parallelized. Use only when the task justifies delegation
   overhead (> 2 min of direct work) and benefits from fresh context or parallelism.
 license: MIT
@@ -34,6 +34,7 @@ Delegate coding tasks to OpenAI's Codex CLI (`codex exec`) as a sub-agent. This 
    - Parallel execution is needed (multiple independent tasks)
    - Task isolation adds value (prototype, spike, risky changes)
    - A second opinion or specialized review is wanted
+   - A super-review (parallel multi-perspective) is needed
 
 **Prefer direct work when:**
 - The task is trivially simple (< 2 minutes of direct work)
@@ -274,39 +275,15 @@ When a review is requested, run your own review AND launch specialized sub-agent
    echo "src/api/users.ts" | python3 <skill_dir>/scripts/run_codex.py --mode read-only --review-prompt /tmp/cr-prompt.md -
    ```
 6. **Synthesize**: Read all outputs, cross-reference with your review, de-duplicate, validate each finding
-7. **Grade**: Use the scoring rubric and dimensions below
+7. **Grade**: Use the scoring rubric and dimensions in [references/SUPER_REVIEW_TEMPLATE.md](references/SUPER_REVIEW_TEMPLATE.md)
 8. **Before presenting**: Re-read [references/SUPER_REVIEW_TEMPLATE.md](references/SUPER_REVIEW_TEMPLATE.md) and verify your output matches every section
 9. **Present**: Use the template from step 8 exactly
 
 **Partial failure policy**: If sub-agents fail, continue with available results. Mark missing dimensions. Optionally retry once. Never present partial results as complete.
 
-#### Scoring Dimensions
+#### Grading, Dimensions & Output Template
 
-Dimensions are **dynamic** — they match the review types you actually launched. Each review pass (your own + each sub-agent) becomes a dimension to grade.
-
-For example, if you launched security, python, and architecture sub-agents, your dimensions are:
-- Self-review (host)
-- Security
-- Python
-- Architecture
-
-Grade only dimensions you actually reviewed. List anything not covered under "Not Reviewed" so the user knows coverage gaps.
-
-#### Grading Rubric
-
-| Grade | Criteria |
-|-------|----------|
-| **A** | No critical/high findings. At most 2 medium findings. Production-ready. |
-| **B** | No critical findings. 1-2 high or 3-5 medium findings. Ready with minor fixes. |
-| **C** | 1 critical or 3+ high findings. Needs significant fixes before production. |
-| **D** | Multiple critical findings. Fundamental issues requiring rework. |
-| **F** | Unsafe or non-functional. Do not ship. |
-
-Use `+` / `-` modifiers (e.g., `A-`, `B+`) when between thresholds. Apply per-dimension and overall.
-
-#### Host Output Template
-
-The full template is in [references/SUPER_REVIEW_TEMPLATE.md](references/SUPER_REVIEW_TEMPLATE.md). **Read that file before presenting results** (step 8 above). The template uses tables for each severity level (Critical, High, Medium, Low) with columns including an **Agreement** column where the host agent records whether it agrees with each sub-agent finding.
+All in one file: [references/SUPER_REVIEW_TEMPLATE.md](references/SUPER_REVIEW_TEMPLATE.md). Contains scoring dimensions, grading rubric, and the full output template with per-severity tables and Agreement column. **Read that file at step 8 before presenting results.**
 
 ### Operation 4: Structured Output Task
 
@@ -379,28 +356,9 @@ The wrapper handles worktree setup automatically with `--collision medium`:
 14. **Validate result files** before reading: exists? non-empty? < 1MB?
 15. **Clean up temp dirs** after reading the result file (`rm -rf <result-dir>`)
 
-## Error handling
+## Error handling & troubleshooting
 
-| Exit Code | Contains | Action |
-|---|---|---|
-| 0 + output exists | — | Success: read output file |
-| 0 + output empty/missing | — | Anomaly: retry once, then report |
-| 1 | "rate limit" | Exponential backoff: 30s then 60s, max 2 retries |
-| 1 | "auth" / "login" | Offer to run `codex login` |
-| 1 | "model" / "unavailable" | Retry with fallback model |
-| 1 | other | Read output for partial result; report error |
-| 2 | wrapper rejection | Check stderr for "BLOCKED" or "ERROR" with usage guidance |
-| 101 | Rust panic | Do NOT retry; report to user |
-| 124 | timeout | Re-launch with next timeout tier |
-| 127 | — | `codex` not installed — offer to install |
-| 137 | OOM/SIGKILL | Resource exhaustion — retry simpler or report |
-| 143 | SIGTERM | Check output for partial result |
-
-Retry strategy:
-- Max 2 retries per delegation
-- On timeout with `--persist`: resume with next tier. Without persist: fresh run with next tier.
-- On rate limit: exponential backoff (30s, 60s)
-- On unknown error: don't retry, report to user
+When a delegation fails or returns unexpected results, read [references/ERROR_HANDLING.md](references/ERROR_HANDLING.md) for exit code reference, retry strategy, and troubleshooting table.
 
 ## Prompt construction
 
@@ -421,16 +379,3 @@ Never include these in prompts or delegate access to them:
 - `.env`, `*.pem`, `*.key`, `credentials.*`, `secrets.*`
 - Files matching API key patterns
 - Include only file paths (let Codex read them) rather than pasting contents
-
-## Troubleshooting
-
-| Problem | Cause | Fix |
-|---|---|---|
-| `codex: command not found` | CLI not installed | `npm i -g @openai/codex` |
-| Version too old | Below v0.106.0 | `npm i -g @openai/codex` |
-| `401` / auth error | Not logged in | `codex login` |
-| Wrapper rejects flag | Raw codex flag used | Use wrapper flags instead (see Wrapper flags table) |
-| Timeout | Task too complex for tier | Re-run with next timeout tier |
-| Empty output file | Codex failed silently | Check exit code and stderr; retry once |
-| Git worktree failure | Uncommitted changes or locks | Commit/stash changes, then retry |
-| Rate limit | API quota exceeded | Wait 30-60s, retry max 2 times |

@@ -1,6 +1,30 @@
 # Super-Review Output Template
 
-**Re-read this file before presenting super-review results.** Verify every section below appears in your output.
+**Re-read this file before presenting super-review results.** Apply the grading rubric, then verify every template section appears in your output.
+
+## Scoring Dimensions
+
+Dimensions are **dynamic** — they match the review types you actually launched. Each review pass (your own + each sub-agent) becomes a dimension to grade.
+
+For example, if you launched security, python, and architecture sub-agents, your dimensions are:
+- Self-review (host)
+- Security
+- Python
+- Architecture
+
+Grade only dimensions you actually reviewed. List anything not covered under "Not Reviewed" so the user knows coverage gaps.
+
+## Grading Rubric
+
+| Grade | Criteria |
+|-------|----------|
+| **A** | No critical/high findings. At most 2 medium findings. Production-ready. |
+| **B** | No critical findings. 1-2 high or 3-5 medium findings. Ready with minor fixes. |
+| **C** | 1 critical or 3+ high findings. Needs significant fixes before production. |
+| **D** | Multiple critical findings. Fundamental issues requiring rework. |
+| **F** | Unsafe or non-functional. Do not ship. |
+
+Use `+` / `-` modifiers (e.g., `A-`, `B+`) when between thresholds. Apply per-dimension and overall.
 
 ---
 
