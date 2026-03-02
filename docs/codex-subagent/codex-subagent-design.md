@@ -29,6 +29,22 @@ This skill gives **any SKILL.md-compatible agent** sub-agent capabilities via Co
 
 ---
 
+## Capabilities
+
+| Capability | Description |
+|---|---|
+| **Delegate implementation** | Run write tasks (create files, refactor code) in an isolated sub-agent with sandbox controls |
+| **Delegate analysis** | Run read-only tasks (explain code, search, summarize) with fresh context |
+| **Code review** | Dedicated `codex exec review` with git diff integration (uncommitted, branch-based) |
+| **Super-review** | Parallel multi-perspective review — host + multiple specialized sub-agents, synthesized and graded |
+| **Structured output** | Enforce JSON output shape via `--output-schema` for machine-readable results |
+| **Session resume** | Multi-turn delegation with `--persist` / `--resume` for iterative refinement |
+| **Collision-aware writes** | Automatic git worktree isolation for medium-confidence write delegations |
+| **Model routing** | Configurable model selection and reasoning effort per task complexity |
+| **Review prompt integration** | Generic `--review-prompt <file>` interface — works with any skill providing `.md` review prompts |
+
+---
+
 ## Key Design Decisions
 
 **1. Wrapper script as the only interface** — `run_codex.py` sits between the host agent and `codex exec`. It enforces safety (blocks dangerous flags, explicitly sets `--sandbox`), adds defaults (`--ephemeral` unless `--persist`, `--full-auto` for write mode), manages temp files, handles git worktrees, and provides helpful error messages when the agent misuses raw flags. The host agent never calls `codex` directly.
