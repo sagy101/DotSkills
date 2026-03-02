@@ -61,7 +61,6 @@ IDES = {
 
 # Minimal always-excluded (even without .skillignore)
 _ALWAYS_EXCLUDE = {".git"}
-SELF_SKILL = "skill-sync"
 
 
 def load_skillignore(source: Path) -> list[str]:
@@ -100,8 +99,6 @@ def discover_skills(source: Path, patterns: list[str]) -> list[Path]:
         if not child.is_dir():
             continue
         if child.name.startswith(".") or _matches_ignore(child.name, patterns):
-            continue
-        if child.name == SELF_SKILL:
             continue
         if (child / "SKILL.md").exists():
             skills.append(child)

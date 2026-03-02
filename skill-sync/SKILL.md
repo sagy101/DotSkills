@@ -109,6 +109,5 @@ python <skill_dir>/scripts/sync.py \
 
 1. **Always run --detect first** to show the user their detected IDEs and paths.
 2. **Always confirm with the user** before syncing (show dry-run or plan).
-3. The skill-sync skill itself is never synced to targets (it excludes itself).
-4. Hidden directories, `__pycache__`, `.git`, and `.pyc` files are excluded.
+3. Hidden directories, `__pycache__`, `.git`, and `.pyc` files are excluded.
 5. Existing skill directories at the target are replaced (full overwrite per skill).
