@@ -1,6 +1,7 @@
 # Codex CLI Sub-Agent Skill — Design Document
 
-> Companion to [`codex-subagent-plan.md`](codex-subagent-plan.md) (full implementation plan, ~1690 lines).
+> Companion to [`codex-flags.md`](codex-flags.md) (Codex CLI `exec` flag reference).
+
 > This document covers **why** this skill exists and the **key decisions** an implementer or reviewer needs to understand.
 
 ---
