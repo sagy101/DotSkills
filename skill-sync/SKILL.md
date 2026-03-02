@@ -1,9 +1,11 @@
 ---
 name: skill-sync
 description: >
-  Sync Agent Skills from a central source repository to IDE skill directories
-  (Windsurf, Claude Code, Cursor, Codex, Gemini CLI, Antigravity). Use when the
-  user wants to install, sync, or distribute skills across their coding tools.
+  Sync, copy, or update Agent Skills from a source repository to IDE skill
+  directories (Windsurf, Claude Code, Cursor, Codex, Gemini CLI, Antigravity).
+  Use whenever skill files need to move from a source repo to installed IDE
+  locations — whether installing, updating after edits, or distributing across
+  coding tools.
 license: MIT
 metadata:
   author: sagy101
@@ -21,6 +23,8 @@ Sync Agent Skills from a central source repo to IDE skill directories.
 Use this skill when the user wants to:
 - Sync skills to their IDEs (Windsurf, Claude Code, Cursor, Codex)
 - Install skills globally (user-level) or into a specific project
+- Update installed skill copies after editing the source repo
+- Copy skill files from one location to IDE skill directories
 - Check which IDEs are detected on their machine
 
 ## Workflow
