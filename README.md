@@ -49,7 +49,7 @@ python3 skill-sync/scripts/sync.py --source . --level user --dry-run
 Or copy manually:
 
 ```bash
-cp -r confluence-publisher /path/to/your-project/.agents/skills/
+cp -r <skill-name> /path/to/your-project/<ide-skills-dir>/
 ```
 
 Skills are automatically discovered by supported AI tools when placed in the correct directory.
@@ -57,13 +57,12 @@ Skills are automatically discovered by supported AI tools when placed in the cor
 ## Compatibility
 
 Skills in this repo follow the [Agent Skills Open Standard](https://agentskills.io/specification) and work with:
-- **Windsurf** (`.agents/skills/`)
-- **Claude Code** (`.agents/skills/` or `.claude/skills/`)
-- **OpenAI Codex** (`.agents/skills/`)
-- **VS Code / GitHub Copilot** (`.github/skills/`)
-- **Gemini CLI** (`.agents/skills/`)
-- **Cursor** (`.agents/skills/`)
-- **OpenCode** (`.agents/skills/`)
+- **Windsurf** (`.windsurf/skills/`)
+- **Claude Code** (`.claude/skills/`)
+- **Cursor** (`.cursor/skills/`)
+- **OpenAI Codex** (`.codex/skills/`)
+- **Gemini CLI** (`.gemini/skills/`)
+- **Antigravity** (`.agent/skills/`)
 
 ## Tests
 
