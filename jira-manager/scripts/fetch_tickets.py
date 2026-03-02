@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_loader import load_config
 from jira_client import JiraClient
-from markup_converter import jira_markup_to_md
+from jql_builder import build_board_jql, build_jql_from_filters
 
 
 def format_issue_table(issues, config):
@@ -163,18 +163,38 @@ def _handle_children(client, config, parent_key, format_type, fields, convert=Tr
         sys.exit(1)
 
 
+def _handle_board_issues(client, config, board_id, filter_args, format_type, fields, max_results, convert=True, fetch_all=False):
+    try:
+        jql = build_board_jql(client, board_id, filter_pairs=filter_args, fetch_all=fetch_all)
+            
+        issues = client.get_board_issues(
+            board_id, 
+            jql=jql, 
+            fields=fields, 
+            max_results=max_results
+        )
+        
+        truncated = max_results > 0 and len(issues) >= max_results
+        
+        if format_type == "json":
+            print(json.dumps(issues, indent=2))
+        elif format_type == "detail":
+            for issue in issues:
+                print(format_issue_detail(issue, config, convert_markup=convert))
+                print("-" * 40)
+        else:
+            print(format_issue_table(issues, config))
+        
+        print(f"\nTotal: {len(issues)}")
+        if truncated:
+            print(f"NOTE: Results capped at --max-results {max_results}. The board may contain more issues. Use --max-results to increase the limit.")
+    except Exception:
+        sys.exit(1)
+
+
 def _build_filter_jql(args, config):
-    """Build a JQL query from --filter key=value pairs."""
-    clauses = [f"project = {config.project_key}"]
-    for pair in args.filter:
-        if "=" not in pair:
-            print(f"ERROR: --filter must be 'field=value', got: {pair}", file=sys.stderr)
-            sys.exit(1)
-        field, _, value = pair.partition("=")
-        field = field.strip()
-        value = value.strip()
-        clauses.append(f'{field} = "{value}"')
-    return " AND ".join(clauses) + " ORDER BY key ASC"
+    """Legacy wrapper for build_jql_from_filters."""
+    return build_jql_from_filters(args.filter, config, include_project_scope=True)
 
 
 def _handle_boards(client, fmt):
@@ -197,20 +217,32 @@ def main():
     parser = argparse.ArgumentParser(description="Fetch Jira issues")
     parser.add_argument("--config", required=True, help="Path to .jira.json")
 
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--key", help="Fetch a single issue by key")
-    group.add_argument("--jql", help="Search using JQL query")
-    group.add_argument("--children-of", help="Fetch children of an epic or story")
-    group.add_argument(
+    # We use a manual check instead of mutually_exclusive_group to allow
+    # --filter to be combined with --board-id
+    parser.add_argument("--key", help="Fetch a single issue by key")
+    parser.add_argument("--jql", help="Search using JQL query")
+    parser.add_argument("--children-of", help="Fetch children of an epic or story")
+    parser.add_argument(
         "--filter",
         action="append",
         nargs="+",
         help="Filter tickets by field=value pairs (e.g. --filter assignee=me status='In Progress')",
     )
-    group.add_argument(
+    parser.add_argument(
         "--boards",
         action="store_true",
         help="List Agile boards for the project",
+    )
+    parser.add_argument(
+        "--board-id",
+        type=int,
+        help="Fetch issues from a specific Agile board (can combine with --filter)",
+    )
+    parser.add_argument(
+        "--board-all",
+        action="store_true",
+        dest="fetch_all",
+        help="With --board-id: fetch all issues instead of only the active sprint",
     )
 
     parser.add_argument(
@@ -240,6 +272,15 @@ def main():
     if args.filter:
         args.filter = [item for sublist in args.filter for item in sublist]
 
+    # Validate exclusive options
+    mode_count = sum(1 for x in [args.key, args.jql, args.children_of, args.boards, args.board_id] if x)
+    if mode_count > 1:
+        parser.error("Conflicting options: provide only one of --key, --jql, --children-of, --boards, or --board-id")
+    
+    # If filter is provided without a primary mode, it counts as a mode (Project Search)
+    if mode_count == 0 and not args.filter:
+        parser.error("Must provide one of --key, --jql, --children-of, --filter, --boards, or --board-id")
+
     config = load_config(args.config)
     client = JiraClient(config)
 
@@ -251,6 +292,8 @@ def main():
 
     if args.boards:
         _handle_boards(client, args.format)
+    elif args.board_id:
+        _handle_board_issues(client, config, args.board_id, args.filter, args.format, field_list, args.max_results, convert, fetch_all=args.fetch_all)
     elif args.key:
         _handle_key(client, config, args.key, args.format, field_list, convert)
     elif args.jql:

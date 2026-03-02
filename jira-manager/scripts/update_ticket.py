@@ -31,33 +31,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_loader import load_config
 from field_resolver import (
     add_common_field_args,
-    apply_extra_fields,
-    apply_named_fields,
-    apply_set_pairs,
-    handle_status_transition,
-    resolve_description,
+    build_update_fields,
     resolve_sprint_id,
-    upload_attachments,
 )
+from workflow_ops import handle_status_transition, upload_attachments
 from jira_client import JiraClient
-
-
-def _build_update_fields(args, config):
-    """Build the fields dict from CLI arguments."""
-    fields = {}
-
-    if args.summary:
-        fields["summary"] = args.summary
-
-    description = resolve_description(args, config)
-    if description is not None:
-        fields["description"] = description
-
-    apply_named_fields(fields, args, config)
-    status_from_set = apply_set_pairs(fields, args, config)
-    apply_extra_fields(fields, args)
-
-    return fields, status_from_set
 
 
 def _handle_sprint(client, issue_key, sprint_value, config):
@@ -101,7 +79,7 @@ def main():
     args = parser.parse_args()
 
     config = load_config(args.config)
-    fields, status_from_set = _build_update_fields(args, config)
+    fields, status_from_set = build_update_fields(args, config)
 
     effective_status = args.status or status_from_set
     effective_sprint = getattr(args, "sprint", None)

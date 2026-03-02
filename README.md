@@ -18,7 +18,7 @@ Each skill is a self-contained directory following the [Agent Skills Open Standa
 | Skill | Description |
 |---|---|
 | [confluence-publisher](./confluence-publisher/) | Publish markdown docs to Confluence Cloud — pages, hierarchy, cross-links, Mermaid diagrams, diff/preview, export, fetch. Surgical HTML edits (find/replace without overwriting formatting), version diff, version history, page revert |
-| [jira-manager](./jira-manager/) | Create, update, fetch, delete, diff, and validate Jira tickets — bulk create from markdown/JSON, full field catalog discovery (statuses, priorities, components, versions), status transitions, generic `--set` flag for any discovered field, estimation validation, link rewriting |
+| [jira-manager](./jira-manager/) | Create, update, fetch, delete, diff, and validate Jira tickets — bulk create from markdown/JSON, bulk update (list, board, JQL), full field catalog discovery (statuses, priorities, components, versions), status transitions, generic `--set` and `--filter` flags for any discovered field, estimation validation, link rewriting |
 
 ### Meta / Tooling
 

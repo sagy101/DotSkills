@@ -10,14 +10,20 @@ Based on the proven API patterns from cap-agent-kit/create_jira_tickets.py.
 import base64
 import json
 import mimetypes
+import os
+import socket
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
+
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from config_loader import JiraConfig, resolve_credentials
+
+_DEBUG = os.environ.get("JIRA_DEBUG", "").lower() in ("1", "true", "yes")
 
 
 class JiraClient:
@@ -25,7 +31,14 @@ class JiraClient:
 
     def __init__(self, config: JiraConfig):
         self.config = config
-        self.base_url = config.jira_url
+        self.base_url = config.jira_url.rstrip("/")
+        if not self.base_url.startswith("https://"):
+            print(
+                f"ERROR: Jira URL must use HTTPS (got: {self.base_url}). "
+                "Basic auth credentials would be sent in plaintext over HTTP.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         username, token = resolve_credentials(config)
         creds = base64.b64encode(f"{username}:{token}".encode()).decode()
         self._headers = {
@@ -47,7 +60,7 @@ class JiraClient:
         url = f"{self.base_url}{path}"
         if params:
             qs = "&".join(
-                f"{urllib.request.quote(k)}={urllib.request.quote(str(v))}"
+                f"{urllib.parse.quote(k)}={urllib.parse.quote(str(v))}"
                 for k, v in params.items()
             )
             url = f"{url}?{qs}"
@@ -58,11 +71,14 @@ class JiraClient:
         )
 
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urllib.request.urlopen(req, timeout=60) as resp:
                 if resp.status == 204:
                     return {}
                 raw = resp.read().decode()
                 return json.loads(raw) if raw else {}
+        except socket.timeout:
+            print(f"ERROR: Request timed out (60s) {method} {path}", file=sys.stderr)
+            raise
         except urllib.error.HTTPError as e:
             error_body = e.read().decode()
             try:
@@ -71,8 +87,14 @@ class JiraClient:
                 errors = error_json.get("errors", {})
                 detail = "; ".join(messages) if messages else json.dumps(errors)
             except (json.JSONDecodeError, AttributeError):
-                detail = error_body[:500]
+                detail = error_body[:500] if _DEBUG else "(set JIRA_DEBUG=1 for details)"
             print(f"ERROR {e.code} {method} {path}: {detail}", file=sys.stderr)
+            raise
+        except urllib.error.URLError as e:
+            if isinstance(e.reason, (socket.timeout, TimeoutError)):
+                print(f"ERROR: Request timed out (60s) {method} {path}", file=sys.stderr)
+            else:
+                print(f"ERROR: URL error {method} {path}: {e.reason}", file=sys.stderr)
             raise
 
     # -----------------------------------------------------------------
@@ -135,12 +157,13 @@ class JiraClient:
 
         req = urllib.request.Request(url, data=body, headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urllib.request.urlopen(req, timeout=30) as resp:
                 raw = resp.read().decode()
                 return json.loads(raw) if raw else []
         except urllib.error.HTTPError as e:
             error_body = e.read().decode()
-            print(f"ERROR {e.code} attaching {fp.name} to {issue_key}: {error_body[:500]}", file=sys.stderr)
+            detail = error_body[:500] if _DEBUG else "(set JIRA_DEBUG=1 for details)"
+            print(f"ERROR {e.code} attaching {fp.name} to {issue_key}: {detail}", file=sys.stderr)
             raise
 
     def add_attachments(self, issue_key: str, file_paths: List[str]) -> List[dict]:
@@ -180,20 +203,29 @@ class JiraClient:
         self,
         jql: str,
         fields: Optional[List[str]] = None,
-        batch_size: int = 100,
+        max_results: int = 0,
     ) -> List[dict]:
-        """Fetch all issues matching JQL, handling pagination automatically."""
-        all_issues = []
+        """Fetch issues matching JQL, handling pagination automatically.
+
+        Args:
+            max_results: Maximum total issues to return. Set to 0 for no limit
+                         (fetches all in batches of 100). Matches get_board_issues contract.
+        """
+        all_issues: List[dict] = []
         next_page_token = None
-        while True:
+        unlimited = max_results == 0
+        remaining = max_results if not unlimited else float("inf")
+        while remaining > 0:
+            page_size = 100 if unlimited else min(int(remaining), 100)
             result = self.search_jql(
-                jql, fields=fields, max_results=batch_size,
+                jql, fields=fields, max_results=page_size,
                 next_page_token=next_page_token,
             )
             issues = result.get("issues", [])
             if not issues:
                 break
             all_issues.extend(issues)
+            remaining -= len(issues)
             if result.get("isLast", True):
                 break
             next_page_token = result.get("nextPageToken")
@@ -352,6 +384,58 @@ class JiraClient:
             params=params or None,
         )
         return result.get("values", [])
+
+    def get_board_issues(
+        self,
+        board_id: int,
+        jql: Optional[str] = None,
+        fields: Optional[List[str]] = None,
+        max_results: int = 50,
+    ) -> List[dict]:
+        """Fetch issues from a board, optionally filtering with JQL.
+        
+        Args:
+            max_results: Maximum total issues to return. Set to 0 for no limit
+                         (fetches all in batches of 50).
+        """
+        all_issues = []
+        start_at = 0
+        unlimited = max_results == 0
+        remaining = max_results if not unlimited else float("inf")
+        
+        field_param = ",".join(fields) if fields else None
+        
+        while remaining > 0:
+            page_size = 50 if unlimited else min(remaining, 50)
+            params = {
+                "startAt": str(start_at),
+                "maxResults": str(page_size),
+            }
+            if jql:
+                params["jql"] = jql
+            if field_param:
+                params["fields"] = field_param
+                
+            result = self._request(
+                "GET", 
+                f"/rest/agile/1.0/board/{board_id}/issue",
+                params=params
+            )
+            
+            issues = result.get("issues", [])
+            if not issues:
+                break
+                
+            all_issues.extend(issues)
+            remaining -= len(issues)
+            
+            total = result.get("total", 0)
+            if start_at + len(issues) >= total:
+                break
+                
+            start_at += len(issues)
+            
+        return all_issues
 
     def get_issue_sprint(self, issue_key: str) -> Optional[dict]:
         """Fetch the active/future sprint for an issue via the Agile API.

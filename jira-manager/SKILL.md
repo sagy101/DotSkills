@@ -1,11 +1,11 @@
 ---
 name: jira-manager
 description: >
-  Create, update, fetch, delete, diff, and validate Jira tickets from structured markdown or JSON sources. Supports full field discovery (statuses, priorities, components, versions, sprints, custom fields), generic --set and --filter flags, Agile board/sprint operations, status transitions, markdown/Jira markup conversion, and link rewriting. Works with any Jira Cloud instance.
+  Create, update, fetch, delete, diff, and validate Jira tickets from structured markdown or JSON sources. Supports full field discovery (statuses, priorities, components, versions, sprints, custom fields), generic --set and --filter flags, Agile board/sprint operations (list boards, fetch board issues, bulk update by board/JQL/filter/ticket list), status transitions, markdown/Jira markup conversion, and link rewriting. Works with any Jira Cloud instance.
 license: MIT
 metadata:
   author: sagy101
-  version: "1.3"
+  version: "1.4"
 compatibility: >
   Python 3.10+. Jira Cloud REST API v2 + Agile REST API v1.0.
   Requires an API token with issue read/write permissions.
@@ -91,6 +91,34 @@ See [SOURCE_FORMAT.md](references/SOURCE_FORMAT.md) for markdown/JSON format.
 
 Remove `--dry-run` after review. Already-created tickets (`.jira-manifest.json`) are skipped.
 
+### Bulk update tickets
+
+Update multiple tickets by list, board, JQL, or filter.
+
+```bash
+# List of tickets
+.jira-venv/bin/python <skill_dir>/scripts/bulk_update.py \
+  --config .jira.json --tickets "PROJ-1,PROJ-2" --status "Done"
+
+# Board active sprint (default — only active sprint issues)
+.jira-venv/bin/python <skill_dir>/scripts/bulk_update.py \
+  --config .jira.json --board-id 123 --sprint "Sprint 5"
+
+# Board all issues (--board-all skips active sprint filter)
+.jira-venv/bin/python <skill_dir>/scripts/bulk_update.py \
+  --config .jira.json --board-id 123 --board-all --status "Done"
+
+# Filter query
+.jira-venv/bin/python <skill_dir>/scripts/bulk_update.py \
+  --config .jira.json --filter status="In Progress" --assignee "me"
+
+# JQL query
+.jira-venv/bin/python <skill_dir>/scripts/bulk_update.py \
+  --config .jira.json --jql "project=PROJ AND priority=High" --priority "Medium"
+```
+
+Requires `--confirm` to execute (defaults to dry-run preview).
+
 ### Update existing tickets
 
 ```bash
@@ -129,10 +157,24 @@ Named flags: `--status`, `--priority`, `--assignee`, `--component`, `--fix-versi
 .jira-venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
   --config .jira.json --children-of PROJ-100
 
+# Board issues — active sprint only (default)
+.jira-venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
+  --config .jira.json --board-id 123
+
+# Board issues — all (includes backlog, closed, past sprints)
+.jira-venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
+  --config .jira.json --board-id 123 --board-all --max-results 200
+
+# Board + filter (active sprint + additional filters)
+.jira-venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
+  --config .jira.json --board-id 123 --filter assignee=currentUser()
+
 # List Agile boards
 .jira-venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
   --config .jira.json --boards
 ```
+
+Board fetch defaults to **active sprint only** (matching the Scrum board UI view). Use `--board-all` to include backlog, closed, and past sprint issues. Results capped at `--max-results` (default 50) with a truncation warning.
 
 Formats: `table` (default, includes sprint column), `detail`, `json`.
 

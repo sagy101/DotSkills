@@ -27,12 +27,11 @@ from field_resolver import (
     apply_extra_fields,
     apply_named_fields,
     apply_set_pairs,
-    handle_status_transition,
     resolve_description,
     resolve_issue_type,
     resolve_sprint_id,
-    upload_attachments,
 )
+from workflow_ops import handle_status_transition, upload_attachments
 from jira_client import JiraClient
 
 

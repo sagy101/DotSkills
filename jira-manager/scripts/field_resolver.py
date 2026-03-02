@@ -6,9 +6,11 @@ Provides:
 - Generic --set field resolution
 - Named field flag resolution (priority, assignee, component, fix-version)
 - Story points, labels, description building
-- Status transition resolution
 - Argparse helpers for shared flags
-- Attachment upload helper
+- build_update_fields for shared update field building
+
+JQL building has been moved to jql_builder.py.
+Workflow operations (transitions, attachments) have been moved to workflow_ops.py.
 """
 
 import json
@@ -287,41 +289,25 @@ def apply_extra_fields(fields, args):
         fields.update(extra)
 
 
-# ------------------------------------------------------------------
-# Transition resolution
-# ------------------------------------------------------------------
-
-def resolve_transition(client, issue_key, target_status, config):
-    """Find the transition that leads to the target status.
-
-    Returns (transition_id, transition_name, target_status_name) or None.
+def build_update_fields(args, config):
+    """Build the fields dict from CLI arguments.
+    
+    Shared by update_ticket.py and bulk_update.py.
     """
-    transitions = client.get_transitions(issue_key)
-    normalized_target = normalize_key(target_status)
+    fields = {}
 
-    # Try matching by transition target status name
-    for t in transitions:
-        to_status = t.get("to", {})
-        status_name = to_status.get("name", "")
-        if normalize_key(status_name) == normalized_target:
-            return t["id"], t["name"], status_name
+    if getattr(args, "summary", None):
+        fields["summary"] = args.summary
 
-    # Also try matching by transition name itself
-    for t in transitions:
-        if normalize_key(t.get("name", "")) == normalized_target:
-            to_status = t.get("to", {})
-            return t["id"], t["name"], to_status.get("name", t["name"])
+    description = resolve_description(args, config)
+    if description is not None:
+        fields["description"] = description
 
-    # Try catalog lookup to get the canonical name, then retry
-    resolved = resolve_catalog_value(config, "status", target_status)
-    if resolved:
-        canonical = resolved["name"]
-        for t in transitions:
-            to_status = t.get("to", {})
-            if to_status.get("name", "") == canonical:
-                return t["id"], t["name"], canonical
+    apply_named_fields(fields, args, config)
+    status_from_set = apply_set_pairs(fields, args, config)
+    apply_extra_fields(fields, args)
 
-    return None
+    return fields, status_from_set
 
 
 # ------------------------------------------------------------------
@@ -334,57 +320,6 @@ def resolve_issue_type(config, type_name):
     if type_id:
         return {"id": type_id}
     return {"name": type_name.capitalize()}
-
-
-# ------------------------------------------------------------------
-# Status transition execution
-# ------------------------------------------------------------------
-
-def handle_status_transition(client, issue_key, target_status, config, warn_only=False):
-    """Resolve and execute a workflow transition.
-
-    Args:
-        warn_only: If True, print a warning instead of exiting on failure.
-                   Useful for post-create transitions where the issue already exists.
-    """
-    result = resolve_transition(client, issue_key, target_status, config)
-    if result is None:
-        available = client.get_transitions(issue_key)
-        names = [t["to"]["name"] for t in available if "to" in t]
-        msg = (
-            f"No transition found to status '{target_status}' for {issue_key}. "
-            f"Available: {', '.join(names) if names else '(none)'}"
-        )
-        if warn_only:
-            print(f"WARNING: {msg}", file=sys.stderr)
-            return
-        print(f"ERROR: {msg}", file=sys.stderr)
-        sys.exit(1)
-
-    transition_id, transition_name, target_name = result
-    try:
-        client.transition_issue(issue_key, transition_id)
-        print(f"  Transitioned {issue_key} -> {target_name} (via '{transition_name}')")
-    except Exception:
-        if warn_only:
-            print(f"  WARNING: Failed to transition {issue_key} to {target_name}", file=sys.stderr)
-        else:
-            sys.exit(1)
-
-
-# ------------------------------------------------------------------
-# Attachment helper
-# ------------------------------------------------------------------
-
-def upload_attachments(client, issue_key, file_paths):
-    """Upload attachment files to an issue."""
-    for fpath in file_paths:
-        try:
-            attached = client.add_attachment(issue_key, fpath)
-            for a in attached:
-                print(f"  Attached: {a.get('filename', fpath)}")
-        except Exception:
-            print(f"  WARNING: Failed to attach {fpath}", file=sys.stderr)
 
 
 # ------------------------------------------------------------------
