@@ -293,12 +293,12 @@ def _resolve_targets(args_targets: str, detected: dict) -> list[str]:
     return [t for t in requested if t in detected]
 
 
-def _print_summary(stats: dict, dry_run: bool):
+def _print_summary(stats: dict, skills_count: int, dry_run: bool):
     """Print sync summary."""
-    total_synced = sum(s["synced"] for s in stats.values())
+    ide_count = len(stats)
     total_files = sum(s["files"] for s in stats.values())
     prefix = "[DRY RUN] " if dry_run else ""
-    print(f"\n{prefix}Done: {total_synced} skill(s) synced, {total_files} files copied")
+    print(f"\n{prefix}Done: {skills_count} skill(s) synced to {ide_count} IDE(s), {total_files} files copied")
     for s in stats.values():
         for p in s["paths"]:
             print(f"  {s['name']}: {p}")
@@ -335,7 +335,7 @@ def main():
         print(f"  Project: {project}")
 
     stats = sync_skills(skills, detected, targets, patterns, dry_run=args.dry_run)
-    _print_summary(stats, args.dry_run)
+    _print_summary(stats, len(skills), args.dry_run)
 
 
 if __name__ == "__main__":
