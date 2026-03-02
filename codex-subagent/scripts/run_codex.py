@@ -518,6 +518,10 @@ def main() -> None:
         print(f"WORKTREE_BRANCH={worktree_branch}")
         print(f"WORKTREE_DIR={worktree_dir}")
 
+    if exit_code != 0:
+        skill_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        eprint(f"EXIT_CODE={exit_code} — see {skill_dir}/references/ERROR_HANDLING.md")
+
     sys.exit(exit_code)
 
 
