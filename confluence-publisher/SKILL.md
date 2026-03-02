@@ -347,6 +347,7 @@ python <skill_dir>/scripts/verify_hierarchy.py --config .confluence.json
 7. **Always use `--dry-run` before surgical edits.** Review the semantic diff and section integrity check before pushing.
 8. **Never revert a page without showing the dry-run plan first** and getting explicit user approval. Revert creates a new version — the old version remains in history.
 9. When using surgical edit, prefer `--check-sections` to verify critical content survived the edit.
+10. **Never use `grep` or `cat` on fetched Confluence HTML files** — they are single-line files that will truncate in the terminal and produce unreadable output. Instead, save to a file with `--output` and read it using your IDE's file-reading tool, or write a small Python script to extract the specific section you need (e.g., find a table between two headings).
 
 ## Markdown transformation details
 
@@ -444,6 +445,10 @@ python <skill_dir>/scripts/page_versions.py --config .confluence.json \
 # Fetch a specific version's HTML
 python <skill_dir>/scripts/page_versions.py --config .confluence.json \
     --page 1079706804 --fetch 56 --output /tmp/page_v56.html
+
+# Fetch the latest version's HTML
+python <skill_dir>/scripts/page_versions.py --config .confluence.json \
+    --page 1079706804 --fetch latest --output /tmp/page_latest.html
 
 # Fetch as plain text (HTML tags stripped)
 python <skill_dir>/scripts/page_versions.py --config .confluence.json \

@@ -18,6 +18,10 @@ Usage:
     python page_versions.py --config .confluence.json \
         --page 1079706804 --fetch 56
 
+    # Fetch the latest version
+    python page_versions.py --config .confluence.json \
+        --page 1079706804 --fetch latest --output /tmp/page_latest.html
+
     # Fetch and save to file
     python page_versions.py --config .confluence.json \
         --page 1079706804 --fetch 56 --output /tmp/page_v56.html
@@ -70,9 +74,9 @@ def parse_args() -> argparse.Namespace:
     )
     group.add_argument(
         "--fetch",
-        type=int,
+        type=str,
         metavar="VERSION",
-        help="Fetch content of a specific version",
+        help="Fetch content of a specific version (number or 'latest')",
     )
     group.add_argument(
         "--revert",
@@ -134,8 +138,17 @@ def cmd_list(config: ConfluenceConfig, page_id: str, limit: int) -> None:
     print(f"\nShowing {len(versions)} of {current.version} version(s)")
 
 
-def cmd_fetch(config: ConfluenceConfig, page_id: str, version: int, output: Optional[str], text: bool) -> None:
+def cmd_fetch(config: ConfluenceConfig, page_id: str, version_arg: str, output: Optional[str], text: bool) -> None:
     """Fetch content of a specific version."""
+    if version_arg.lower() == "latest":
+        current = fetch_page(config, page_id)
+        version = current.version
+    else:
+        try:
+            version = int(version_arg)
+        except ValueError:
+            print(f"Error: --fetch expects a version number or 'latest', got '{version_arg}'")
+            sys.exit(1)
     print(f"Fetching version {version} of page {page_id}...")
     snapshot = fetch_page(config, page_id, version=version)
 
