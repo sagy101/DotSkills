@@ -19,6 +19,18 @@ from run_codex import (
     _normalize_exit_code,
     build_codex_args,
     parse_args_with_passthrough,
+    _count_active_agents,
+    _register_agent,
+    _unregister_agent,
+    _is_pid_alive,
+    _ensure_pid_dir,
+    _scan_agents,
+    _read_pid_metadata,
+    _signal_cleanup,
+    enforce_parallel_limit,
+    print_status,
+    DEFAULT_MAX_PARALLEL,
+    PID_TRACKING_DIR,
 )
 
 
@@ -671,12 +683,14 @@ class TestParseArgsWithPassthrough:
         assert parsed.persist is False
         assert parsed.web_search is False
         assert parsed.review_prompt is None
+        assert parsed.max_parallel == DEFAULT_MAX_PARALLEL
 
     def test_all_wrapper_flags(self):
         parsed, passthrough = parse_args_with_passthrough([
             "--mode", "write", "--collision", "medium", "--timeout", "1200",
             "--web-search", "--resume", "--persist",
             "--skip-git-repo-check",
+            "--max-parallel", "8",
             "--review-prompt", "/tmp/p.md", "-",
         ])
         assert parsed.mode == "write"
@@ -687,7 +701,23 @@ class TestParseArgsWithPassthrough:
         assert parsed.persist is True
         assert parsed.skip_git_repo_check is True
         assert parsed.review_prompt == "/tmp/p.md"
+        assert parsed.max_parallel == 8
         assert passthrough == []
+
+    def test_max_parallel_default(self):
+        parsed, _ = parse_args_with_passthrough(["--mode", "read-only", "-"])
+        assert parsed.max_parallel == 6
+
+    def test_max_parallel_override(self):
+        parsed, _ = parse_args_with_passthrough(["--max-parallel", "10", "-"])
+        assert parsed.max_parallel == 10
+
+    def test_max_parallel_not_leaked_to_passthrough(self):
+        parsed, pt = parse_args_with_passthrough(["--max-parallel", "4", "--model", "o3", "-"])
+        assert parsed.max_parallel == 4
+        assert "--max-parallel" not in pt
+        assert "4" not in pt
+        assert pt == ["--model", "o3"]
 
     def test_mixed_wrapper_and_passthrough(self):
         parsed, pt = parse_args_with_passthrough([
@@ -764,3 +794,233 @@ class TestParseArgsWithPassthrough:
         ])
         assert parsed.mode == "write"
         assert pt == ["--model", "o3", "-c", "temperature=0"]
+
+
+# ========== Parallel Agent Tracking ==========
+
+import shutil
+import tempfile
+import unittest.mock
+import run_codex as _mod
+
+
+@pytest.fixture(autouse=False)
+def isolated_pid_dir(tmp_path, monkeypatch):
+    """Redirect PID_TRACKING_DIR to an isolated temp dir for each test."""
+    pid_dir = str(tmp_path / "codex-agent-pids")
+    monkeypatch.setattr(_mod, "PID_TRACKING_DIR", pid_dir)
+    monkeypatch.setattr(_mod, "_pid_file_path", None)
+    yield pid_dir
+
+
+class TestParallelAgentTracking:
+    def test_ensure_pid_dir_creates(self, isolated_pid_dir):
+        assert not os.path.exists(isolated_pid_dir)
+        _ensure_pid_dir()
+        assert os.path.isdir(isolated_pid_dir)
+
+    def test_ensure_pid_dir_idempotent(self, isolated_pid_dir):
+        _ensure_pid_dir()
+        _ensure_pid_dir()
+        assert os.path.isdir(isolated_pid_dir)
+
+    def test_is_pid_alive_self(self):
+        assert _is_pid_alive(os.getpid()) is True
+
+    def test_is_pid_alive_dead(self):
+        assert _is_pid_alive(999999999) is False
+
+    def test_count_active_agents_empty(self, isolated_pid_dir):
+        assert _count_active_agents() == 0
+
+    def test_register_creates_pid_file(self, isolated_pid_dir):
+        pid_file = _register_agent()
+        assert os.path.isfile(pid_file)
+        assert str(os.getpid()) in pid_file
+
+    def test_count_active_includes_self(self, isolated_pid_dir):
+        _register_agent()
+        assert _count_active_agents() == 1
+
+    def test_unregister_removes_pid_file(self, isolated_pid_dir, monkeypatch):
+        pid_file = _register_agent()
+        monkeypatch.setattr(_mod, "_pid_file_path", pid_file)
+        _unregister_agent()
+        assert not os.path.exists(pid_file)
+
+    def test_stale_pid_cleaned_on_count(self, isolated_pid_dir):
+        _ensure_pid_dir()
+        stale_pid = "999999999"
+        stale_file = os.path.join(isolated_pid_dir, stale_pid)
+        with open(stale_file, "w") as f:
+            f.write(stale_pid)
+        assert _count_active_agents() == 0
+        assert not os.path.exists(stale_file)
+
+    def test_non_numeric_files_ignored(self, isolated_pid_dir):
+        _ensure_pid_dir()
+        junk = os.path.join(isolated_pid_dir, "not-a-pid")
+        with open(junk, "w") as f:
+            f.write("junk")
+        assert _count_active_agents() == 0
+        assert os.path.exists(junk)
+
+    def test_enforce_parallel_limit_allows_under(self, isolated_pid_dir):
+        enforce_parallel_limit(6)
+
+    def test_enforce_parallel_limit_blocks_at_limit(self, isolated_pid_dir):
+        _ensure_pid_dir()
+        for i in range(6):
+            fake_pid = str(os.getpid() + 1000 + i)
+            fake_file = os.path.join(isolated_pid_dir, fake_pid)
+            with open(fake_file, "w") as f:
+                f.write(fake_pid)
+        with pytest.raises(SystemExit) as exc_info:
+            with unittest.mock.patch.object(_mod, "_is_pid_alive", return_value=True):
+                enforce_parallel_limit(6)
+        assert exc_info.value.code == 2
+
+    def test_enforce_registers_and_sets_atexit(self, isolated_pid_dir):
+        enforce_parallel_limit(6)
+        assert _mod._pid_file_path is not None
+        assert os.path.isfile(_mod._pid_file_path)
+
+    def test_default_max_parallel_is_six(self):
+        assert DEFAULT_MAX_PARALLEL == 6
+
+    def test_register_stores_json_metadata(self, isolated_pid_dir):
+        import json as _json
+        pid_file = _register_agent(mode="read-only")
+        with open(pid_file) as f:
+            data = _json.load(f)
+        assert data["pid"] == os.getpid()
+        assert data["mode"] == "read-only"
+        assert "started" in data
+        assert "started_iso" in data
+        assert isinstance(data["started"], float)
+
+    def test_register_default_mode_is_unknown(self, isolated_pid_dir):
+        import json as _json
+        pid_file = _register_agent()
+        with open(pid_file) as f:
+            data = _json.load(f)
+        assert data["mode"] == "unknown"
+
+    def test_read_pid_metadata_valid_json(self, isolated_pid_dir):
+        import json as _json
+        _ensure_pid_dir()
+        filepath = os.path.join(isolated_pid_dir, "12345")
+        with open(filepath, "w") as f:
+            _json.dump({"pid": 12345, "mode": "write", "started": 100.0}, f)
+        meta = _read_pid_metadata(filepath)
+        assert meta["pid"] == 12345
+        assert meta["mode"] == "write"
+
+    def test_read_pid_metadata_legacy_plain_text(self, isolated_pid_dir):
+        _ensure_pid_dir()
+        filepath = os.path.join(isolated_pid_dir, "12345")
+        with open(filepath, "w") as f:
+            f.write("12345")
+        meta = _read_pid_metadata(filepath)
+        assert meta == {}
+
+    def test_read_pid_metadata_corrupt_file(self, isolated_pid_dir):
+        _ensure_pid_dir()
+        filepath = os.path.join(isolated_pid_dir, "12345")
+        with open(filepath, "w") as f:
+            f.write("not json at all {{{")
+        meta = _read_pid_metadata(filepath)
+        assert meta == {}
+
+    def test_scan_agents_returns_active_and_stale_count(self, isolated_pid_dir):
+        _register_agent(mode="read-only")
+        _ensure_pid_dir()
+        stale_file = os.path.join(isolated_pid_dir, "999999999")
+        with open(stale_file, "w") as f:
+            f.write("999999999")
+        active, stale_cleaned = _scan_agents()
+        assert len(active) == 1
+        assert active[0]["pid"] == os.getpid()
+        assert stale_cleaned == 1
+        assert not os.path.exists(stale_file)
+
+    def test_scan_agents_empty_dir(self, isolated_pid_dir):
+        active, stale = _scan_agents()
+        assert active == []
+        assert stale == 0
+
+    def test_enforce_passes_mode_to_register(self, isolated_pid_dir):
+        import json as _json
+        enforce_parallel_limit(6, mode="write")
+        assert _mod._pid_file_path is not None
+        with open(_mod._pid_file_path) as f:
+            data = _json.load(f)
+        assert data["mode"] == "write"
+
+    def test_enforce_blocked_message_mentions_status(self, isolated_pid_dir, capsys):
+        _ensure_pid_dir()
+        for i in range(6):
+            fake_pid = str(os.getpid() + 1000 + i)
+            fake_file = os.path.join(isolated_pid_dir, fake_pid)
+            with open(fake_file, "w") as f:
+                f.write(fake_pid)
+        with pytest.raises(SystemExit):
+            with unittest.mock.patch.object(_mod, "_is_pid_alive", return_value=True):
+                enforce_parallel_limit(6)
+        captured = capsys.readouterr()
+        assert "--status" in captured.err
+
+
+class TestPrintStatus:
+    def test_no_agents_tracked(self, isolated_pid_dir, capsys):
+        with pytest.raises(SystemExit) as exc_info:
+            print_status()
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "No codex sub-agents tracked" in captured.out
+
+    def test_shows_active_agents(self, isolated_pid_dir, capsys):
+        _register_agent(mode="read-only")
+        with pytest.raises(SystemExit) as exc_info:
+            print_status()
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "Active agents: 1" in captured.out
+        assert f"PID {os.getpid()}" in captured.out
+        assert "mode=read-only" in captured.out
+        assert "running=" in captured.out
+
+    def test_shows_stale_cleaned(self, isolated_pid_dir, capsys):
+        _ensure_pid_dir()
+        stale_file = os.path.join(isolated_pid_dir, "999999999")
+        with open(stale_file, "w") as f:
+            f.write("999999999")
+        with pytest.raises(SystemExit) as exc_info:
+            print_status()
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "Stale PIDs cleaned: 1" in captured.out
+        assert "Active agents: 0" in captured.out
+
+    def test_shows_limit(self, isolated_pid_dir, capsys):
+        _register_agent()
+        with pytest.raises(SystemExit):
+            print_status()
+        captured = capsys.readouterr()
+        assert f"Limit: {DEFAULT_MAX_PARALLEL}" in captured.out
+
+
+class TestStatusFlag:
+    def test_status_flag_parsed(self):
+        parsed, _ = parse_args_with_passthrough(["--status"])
+        assert parsed.status is True
+
+    def test_status_default_false(self):
+        parsed, _ = parse_args_with_passthrough(["-"])
+        assert parsed.status is False
+
+    def test_status_not_leaked_to_passthrough(self):
+        parsed, pt = parse_args_with_passthrough(["--status", "--model", "o3", "-"])
+        assert parsed.status is True
+        assert "--status" not in pt
+        assert pt == ["--model", "o3"]

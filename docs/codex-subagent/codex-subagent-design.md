@@ -153,7 +153,7 @@ A review prompt skill typically provides:
 | Timeout tiers | Wrapper (`--timeout`) | 5 / 10 / 20 / 40 min — host agent selects based on complexity. Resume on timeout with next tier up. |
 | Prompt size warning | Wrapper | Warns if > 50K chars |
 | Misused flag detection | Wrapper | Helpful errors for raw flags and alternate syntaxes |
-| Max parallel spawns | Host agent (SKILL.md) | 6 |
+| Max parallel spawns | Wrapper (`--max-parallel`) | 6 (PID tracking; override with `--max-parallel N`, not recommended) |
 | Max retries | Host agent (SKILL.md) | 2 |
 | Result validation | Host agent | Check: file exists? non-empty? < 1MB? |
 | Output trust boundary | Host agent | Never auto-execute sub-agent output |
@@ -170,7 +170,7 @@ A review prompt skill typically provides:
 |---|---|---|
 | Command injection | Critical | Stdin-only prompts; wrapper script |
 | Dangerous sandbox | Critical | Wrapper blocks `danger-full-access` and `-s` at script level |
-| Runaway sub-agents | High | Timeout tiers (5-40 min), max parallel (6), process killed on expiry |
+| Runaway sub-agents | High | Timeout tiers (5-40 min), max parallel (6) via PID tracking, `--status` inspection, stale PID auto-cleanup, SIGHUP handler |
 | Secret leakage | High | Denylist paths; path-only references; output scanning |
 | File conflicts | Medium | Collision confidence framework (above) |
 | Cost overrun | Medium | Max 6 parallel, max 2 retries, timeout tiers |

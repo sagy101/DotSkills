@@ -142,6 +142,8 @@ echo "<FOLLOW-UP>" | python3 <skill_dir>/scripts/run_codex.py --resume -
 | `--resume` | No | *(flag)* | off | Resume last session |
 | `--persist` | No | *(flag)* | off | Keep session on disk (required for future `--resume`) |
 | `--skip-git-repo-check` | No | *(flag)* | off | Run outside a git repository |
+| `--max-parallel` | No | integer | `6` | Max concurrent sub-agents (override not recommended) |
+| `--status` | No | *(flag)* | off | Print active/stale agent status and exit |
 | `-` | Yes | *(literal dash)* | — | Read prompt from stdin (must be last argument) |
 
 Wrapper flags are parsed first. Any unrecognized flags are passed through to `codex exec` after a safety scan (see Passthrough Flags below). The wrapper will reject dangerous flags with helpful error messages.
@@ -271,7 +273,7 @@ When a review is requested, run your own review AND launch specialized sub-agent
    b. Workflows and project docs (`.windsurf/workflows/`, `docs/`)
    c. Custom inline via stdin (fallback)
 4. **Show review plan** — present the selected review types, target files, and sub-agent count to the user. Wait for explicit approval before launching.
-5. **Launch sub-agents** in parallel (max 6), each with `--review-prompt <file>`:
+5. **Launch sub-agents** in parallel (max 6, enforced by wrapper), each with `--review-prompt <file>`:
    ```
    echo "src/auth/*.ts" | python3 <skill_dir>/scripts/run_codex.py --mode read-only --review-prompt /tmp/sec-prompt.md review --base main -
    echo "src/api/users.ts" | python3 <skill_dir>/scripts/run_codex.py --mode read-only --review-prompt /tmp/cr-prompt.md -
@@ -353,10 +355,11 @@ The wrapper handles worktree setup automatically with `--collision medium`:
 9. **Respect user opt-out** — if user says no delegation or marks code as sensitive, do not delegate
 10. **Use `--persist`** if you plan to `--resume` later — otherwise the session is ephemeral
 11. **Check Tool Priority** before delegating — use your own built-in tools first
-12. **Max 6 parallel sub-agents** — never exceed this limit
-13. **Max 2 retries** per failed delegation
-14. **Validate result files** before reading: exists? non-empty? < 1MB?
-15. **Clean up temp dirs** after reading the result file (`rm -rf <result-dir>`)
+12. **Max 6 parallel sub-agents** — enforced by the wrapper via PID tracking. Override with `--max-parallel N` if absolutely necessary (not recommended — increases resource usage and cost)
+13. **Check agent status** before retrying or when blocked — run `python3 <skill_dir>/scripts/run_codex.py --status` to see active agents, their mode, start time, and run duration
+14. **Max 2 retries** per failed delegation
+15. **Validate result files** before reading: exists? non-empty? < 1MB?
+16. **Clean up temp dirs** after reading the result file (`rm -rf <result-dir>`)
 
 ## Error handling & troubleshooting
 

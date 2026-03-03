@@ -15,6 +15,9 @@ Usage:
 """
 
 import argparse
+import atexit
+import fcntl
+import json
 import os
 import re
 import shutil
@@ -22,6 +25,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 
 
@@ -31,6 +35,8 @@ MAX_PROMPT_CHARS = 50000
 VALID_TIMEOUTS = {300, 600, 1200, 2400}
 VALID_MODES = {"read-only", "write"}
 VALID_COLLISIONS = {"high", "medium"}
+DEFAULT_MAX_PARALLEL = 6
+PID_TRACKING_DIR = os.path.join(tempfile.gettempdir(), "codex-agent-pids")
 
 _SANDBOX_CONFIG_MSG = "BLOCKED: sandbox cannot be overridden via config. Use --mode read-only or --mode write."
 
@@ -59,9 +65,174 @@ BLOCKED_WRAPPER_FLAGS = {
 }
 
 
+# Global ref for atexit cleanup
+_pid_file_path: str | None = None
+
+
 def eprint(*args, **kwargs) -> None:
     """Print to stderr."""
     print(*args, file=sys.stderr, **kwargs)
+
+
+# ========== PARALLEL AGENT TRACKING ==========
+
+def _ensure_pid_dir() -> None:
+    """Create the PID tracking directory if it doesn't exist."""
+    os.makedirs(PID_TRACKING_DIR, mode=0o755, exist_ok=True)
+
+
+def _is_pid_alive(pid: int) -> bool:
+    """Check if a process is still running."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+
+def _read_pid_metadata(filepath: str) -> dict:
+    """Read metadata from a PID file. Returns dict with at least 'pid'."""
+    try:
+        with open(filepath, "r") as f:
+            data = json.loads(f.read())
+        if isinstance(data, dict):
+            return data
+    except (json.JSONDecodeError, OSError):
+        pass
+    # Legacy or corrupt file — extract PID from filename
+    return {}
+
+
+def _scan_agents() -> tuple[list[dict], int]:
+    """Scan PID directory and return (active_agents, stale_cleaned_count).
+
+    Each active agent dict has: pid, started, mode (if available).
+    Stale PID files are removed during the scan.
+    """
+    _ensure_pid_dir()
+    active = []
+    stale_cleaned = 0
+    for name in os.listdir(PID_TRACKING_DIR):
+        filepath = os.path.join(PID_TRACKING_DIR, name)
+        if not os.path.isfile(filepath):
+            continue
+        try:
+            pid = int(name)
+        except ValueError:
+            continue
+        if _is_pid_alive(pid):
+            meta = _read_pid_metadata(filepath)
+            meta["pid"] = pid
+            active.append(meta)
+        else:
+            try:
+                os.unlink(filepath)
+                stale_cleaned += 1
+            except OSError:
+                pass
+    return active, stale_cleaned
+
+
+def _count_active_agents() -> int:
+    """Count active codex agent processes by scanning PID files.
+
+    Removes stale PID files for processes that are no longer running.
+    """
+    active, _ = _scan_agents()
+    return len(active)
+
+
+def _register_agent(mode: str = "unknown") -> str:
+    """Register this process as an active agent. Returns the PID file path.
+
+    Stores JSON metadata: pid, start time (ISO + epoch), mode.
+    """
+    _ensure_pid_dir()
+    pid_file = os.path.join(PID_TRACKING_DIR, str(os.getpid()))
+    metadata = {
+        "pid": os.getpid(),
+        "started": time.time(),
+        "started_iso": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "mode": mode,
+    }
+    with open(pid_file, "w") as f:
+        json.dump(metadata, f)
+    return pid_file
+
+
+def _unregister_agent() -> None:
+    """Remove this process's PID file on exit."""
+    if _pid_file_path and os.path.exists(_pid_file_path):
+        try:
+            os.unlink(_pid_file_path)
+        except OSError:
+            pass
+
+
+def _signal_cleanup(signum: int, _frame) -> None:
+    """Signal handler that cleans up PID file then re-raises."""
+    _unregister_agent()
+    # Re-raise with default handler so exit code reflects the signal
+    signal.signal(signum, signal.SIG_DFL)
+    os.kill(os.getpid(), signum)
+
+
+def enforce_parallel_limit(max_parallel: int, mode: str = "unknown") -> None:
+    """Check active agent count and block if at or above the limit.
+
+    Also registers this process and sets up atexit + signal cleanup.
+    """
+    global _pid_file_path
+
+    active = _count_active_agents()
+    if active >= max_parallel:
+        eprint(
+            f"BLOCKED: {active} codex sub-agents already running (limit: {max_parallel}).\n"
+            "Wait for running agents to finish, or pass --max-parallel N to override "
+            "(not recommended — increases resource usage and cost).\n"
+            "Run with --status to see which agents are active."
+        )
+        sys.exit(2)
+
+    _pid_file_path = _register_agent(mode)
+    atexit.register(_unregister_agent)
+    # Ensure cleanup on SIGHUP (terminal close) — SIGTERM/SIGINT already trigger atexit
+    if hasattr(signal, "SIGHUP"):
+        signal.signal(signal.SIGHUP, _signal_cleanup)
+
+
+def print_status() -> None:
+    """Print status of all tracked codex sub-agents and exit."""
+    active_agents, stale_cleaned = _scan_agents()
+    now = time.time()
+
+    if not active_agents and stale_cleaned == 0:
+        print("No codex sub-agents tracked.")
+        sys.exit(0)
+
+    if active_agents:
+        print(f"Active agents: {len(active_agents)}")
+        for agent in sorted(active_agents, key=lambda a: a.get("started", 0)):
+            pid = agent["pid"]
+            mode = agent.get("mode", "unknown")
+            started = agent.get("started")
+            if started:
+                elapsed = int(now - started)
+                mins, secs = divmod(elapsed, 60)
+                duration = f"{mins}m{secs:02d}s"
+                started_str = agent.get("started_iso", "unknown")
+            else:
+                duration = "unknown"
+                started_str = "unknown"
+            print(f"  PID {pid}  mode={mode}  started={started_str}  running={duration}")
+    else:
+        print("Active agents: 0")
+
+    if stale_cleaned > 0:
+        print(f"Stale PIDs cleaned: {stale_cleaned}")
+
+    print(f"Limit: {DEFAULT_MAX_PARALLEL} (override with --max-parallel N)")
+    sys.exit(0)
 
 
 def version_gte(current: str, minimum: str) -> bool:
@@ -392,8 +563,8 @@ def parse_args_with_passthrough(argv: list[str]) -> tuple[argparse.Namespace, li
     wrapper_args = []
     passthrough_args = []
     i = 0
-    wrapper_flags_with_value = {"--mode", "--collision", "--review-prompt", "--timeout"}
-    wrapper_flags_no_value = {"--web-search", "--resume", "--persist", "--skip-git-repo-check"}
+    wrapper_flags_with_value = {"--mode", "--collision", "--review-prompt", "--timeout", "--max-parallel"}
+    wrapper_flags_no_value = {"--web-search", "--resume", "--persist", "--skip-git-repo-check", "--status"}
 
     while i < len(argv):
         arg = argv[i]
@@ -445,6 +616,8 @@ def parse_args_with_passthrough(argv: list[str]) -> tuple[argparse.Namespace, li
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--persist", action="store_true")
     parser.add_argument("--skip-git-repo-check", action="store_true", dest="skip_git_repo_check")
+    parser.add_argument("--max-parallel", type=int, default=DEFAULT_MAX_PARALLEL, dest="max_parallel")
+    parser.add_argument("--status", action="store_true")
 
     parsed = parser.parse_args(wrapper_args)
 
@@ -453,6 +626,11 @@ def parse_args_with_passthrough(argv: list[str]) -> tuple[argparse.Namespace, li
 
 def main() -> None:
     args, passthrough = parse_args_with_passthrough(sys.argv[1:])
+
+    # ========== STATUS CHECK (early exit) ==========
+    if args.status:
+        print_status()
+        return
 
     # ========== INPUT VALIDATION ==========
     if args.timeout not in VALID_TIMEOUTS:
@@ -468,6 +646,18 @@ def main() -> None:
                 "Low confidence = do NOT delegate writes. Use --mode read-only instead."
             )
             sys.exit(2)
+
+    # ========== PARALLEL LIMIT ==========
+    if args.max_parallel < 1:
+        eprint("ERROR: --max-parallel must be >= 1.")
+        sys.exit(2)
+    if args.max_parallel > DEFAULT_MAX_PARALLEL:
+        eprint(
+            f"WARNING: --max-parallel {args.max_parallel} exceeds the default limit of "
+            f"{DEFAULT_MAX_PARALLEL}. This is NOT RECOMMENDED — it increases resource usage, "
+            "cost, and system load. Proceeding anyway."
+        )
+    enforce_parallel_limit(args.max_parallel, mode=args.mode)
 
     # ========== SAFETY SCAN ==========
     scan_for_dangerous_flags(passthrough)
