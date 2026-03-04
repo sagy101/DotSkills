@@ -537,7 +537,19 @@ def run_codex(codex_args: list[str], prompt_file: str, timeout: int) -> int:
             _, stderr = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
             _kill_process_group(proc)
-            eprint(f"TIMEOUT: codex killed after {timeout}s")
+            sorted_tiers = sorted(VALID_TIMEOUTS)
+            next_tiers = [t for t in sorted_tiers if t > timeout]
+            if next_tiers:
+                next_tier = next_tiers[0]
+                eprint(
+                    f"TIMEOUT: codex killed after {timeout}s. "
+                    f"Re-launch with --persist and --timeout {next_tier} to resume with a higher tier."
+                )
+            else:
+                eprint(
+                    f"TIMEOUT: codex killed after {timeout}s (max tier). "
+                    "Task may be too complex for sub-agent delegation — report to user."
+                )
             return 124
 
         if stderr:
@@ -710,7 +722,23 @@ def main() -> None:
 
     if exit_code != 0:
         skill_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        eprint(f"EXIT_CODE={exit_code} — see {skill_dir}/references/ERROR_HANDLING.md")
+        if exit_code == 101:
+            eprint(
+                f"EXIT_CODE={exit_code} — Rust panic in codex. "
+                "Do NOT retry — report this to the user."
+            )
+        elif exit_code == 137:
+            eprint(
+                f"EXIT_CODE={exit_code} — Process killed (OOM or SIGKILL). "
+                "Retry with a simpler task or smaller context, or report to user."
+            )
+        elif exit_code == 143:
+            eprint(
+                f"EXIT_CODE={exit_code} — Process terminated (SIGTERM). "
+                "Check the result file for partial output before retrying."
+            )
+        else:
+            eprint(f"EXIT_CODE={exit_code} — see {skill_dir}/references/ERROR_HANDLING.md")
 
     sys.exit(exit_code)
 
