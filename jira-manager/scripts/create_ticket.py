@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import load_config, load_manifest, save_manifest
+from config_loader import add_config_arg, load_config, load_manifest, save_manifest
 from field_resolver import (
     add_common_field_args,
     apply_extra_fields,
@@ -105,7 +105,7 @@ def _update_manifest(config, args, key):
 
 def main():
     parser = argparse.ArgumentParser(description="Create a Jira issue")
-    parser.add_argument("--config", required=True, help="Path to .jira.json")
+    add_config_arg(parser)
     parser.add_argument(
         "--type",
         required=True,

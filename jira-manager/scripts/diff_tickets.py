@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import load_config, load_manifest
+from config_loader import add_config_arg, load_config, load_manifest
 from jira_client import JiraClient
 from link_rewriter import rewrite_links_to_git
 from markup_converter import md_to_jira_markup
@@ -239,7 +239,7 @@ def format_report(results, changed, unchanged, summary_only=False):
 
 def main():
     parser = argparse.ArgumentParser(description="Diff local vs Jira tickets")
-    parser.add_argument("--config", required=True, help="Path to .jira.json")
+    add_config_arg(parser)
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--manifest", action="store_true", help="Diff manifest entries against Jira")

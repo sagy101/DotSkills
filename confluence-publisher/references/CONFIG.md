@@ -1,6 +1,10 @@
 # Configuration Reference
 
-The `.confluence.json` file lives in the project root and configures the publisher for that project.
+The `.confluence.json` file configures the confluence-publisher skill. It can live in:
+- **Project root** — project-specific settings (e.g. `space_key`, `root_page_id`, `title_map`)
+- **Home directory** (`~/.confluence.json`) — global defaults (e.g. `confluence_url`, `credentials`)
+
+If both exist, they are **deep-merged** (project-level wins on conflicts).
 
 ## Full schema
 
@@ -43,11 +47,41 @@ The `.confluence.json` file lives in the project root and configures the publish
 | `title_map` | No | `{}` | Override titles for specific files. If not specified, titles are derived from the first `# heading` in the markdown file, or from the filename |
 | `exclude_patterns` | No | `[]` | Glob patterns for files/directories to skip when scanning for markdown files |
 
+## Config resolution order
+
+1. Walk up from CWD looking for `.confluence.json` (project-level)
+2. Check `~/.confluence.json` (global defaults)
+3. If both exist, deep-merge them (project-level wins)
+4. If neither exists, error with instructions
+
+## Global + per-project split (recommended)
+
+Put shared settings in `~/.confluence.json`:
+```json
+{
+  "confluence_url": "https://mycompany.atlassian.net/wiki",
+  "credentials": { "username_env": "CONFLUENCE_EMAIL", "token_env": "CONFLUENCE_TOKEN" }
+}
+```
+
+Then each project only needs a minimal `.confluence.json`:
+```json
+{
+  "space_key": "DOCS",
+  "root_page_id": "123456"
+}
+```
+
 ## Credential resolution order
 
 1. If `env_file` is set, load variables from that file first
 2. Then check OS environment variables
 3. The variable names are taken from `credentials.username_env` and `credentials.token_env`
+
+**Recommended**: export credentials globally in your shell profile rather than using per-project `.env` files:
+- **zsh**: `echo 'export CONFLUENCE_TOKEN="<value>"' >> ~/.zshrc && source ~/.zshrc`
+- **bash**: `echo 'export CONFLUENCE_TOKEN="<value>"' >> ~/.bashrc && source ~/.bashrc`
+- **fish**: `set -Ux CONFLUENCE_TOKEN '<value>'`
 
 ## Title resolution order
 

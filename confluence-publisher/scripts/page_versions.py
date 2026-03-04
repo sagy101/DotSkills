@@ -48,7 +48,8 @@ from typing import Optional
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config_loader import ConfluenceConfig, load_config, extract_page_id
+from config_loader import ConfluenceConfig, add_config_arg, load_config
+from page_utils import extract_page_id
 from confluence_api import fetch_page, list_versions, update_page_body
 
 
@@ -56,10 +57,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Manage Confluence page versions: list, fetch, or revert"
     )
-    parser.add_argument(
-        "--config",
-        help="Path to .confluence.json (default: auto-detect from cwd up)",
-    )
+    add_config_arg(parser)
     parser.add_argument(
         "--page",
         required=True,

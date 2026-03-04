@@ -22,7 +22,7 @@ from typing import Optional
 from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import JiraConfig, load_config
+from config_loader import JiraConfig, add_config_arg, load_config
 
 
 def _git_remote_to_browse_base(remote_url: str, branch: str) -> Optional[str]:
@@ -125,7 +125,7 @@ def rewrite_links_to_local(text: str, config: JiraConfig) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="Rewrite links in text")
-    parser.add_argument("--config", required=True, help="Path to .jira.json")
+    add_config_arg(parser)
     parser.add_argument(
         "--direction",
         choices=["to-git", "to-local"],

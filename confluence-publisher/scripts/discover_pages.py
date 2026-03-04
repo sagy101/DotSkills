@@ -20,23 +20,20 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from config_loader import (
+    add_config_arg,
     load_config,
     connect,
     load_manifest,
     save_manifest,
-    resolve_title,
-    get_all_children,
 )
+from page_utils import resolve_title, get_all_children
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Discover Confluence pages and build manifest"
     )
-    parser.add_argument(
-        "--config",
-        help="Path to .confluence.json (default: auto-detect from cwd up)",
-    )
+    add_config_arg(parser)
     parser.add_argument(
         "--dry-run",
         action="store_true",

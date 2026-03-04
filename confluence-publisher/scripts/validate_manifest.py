@@ -19,15 +19,12 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config_loader import load_config, connect, load_manifest
+from config_loader import add_config_arg, load_config, connect, load_manifest
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Validate confluence manifest")
-    parser.add_argument(
-        "--config",
-        help="Path to .confluence.json (default: auto-detect from cwd up)",
-    )
+    add_config_arg(parser)
     return parser.parse_args()
 
 

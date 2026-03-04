@@ -31,6 +31,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from config_loader import (
+    add_config_arg,
     load_config,
     load_manifest,
     save_manifest,
@@ -47,10 +48,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Delete Confluence pages and remove manifest entries"
     )
-    parser.add_argument(
-        "--config",
-        help="Path to .confluence.json (default: auto-detect from cwd up)",
-    )
+    add_config_arg(parser)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--file",

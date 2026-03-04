@@ -36,7 +36,7 @@ from typing import Optional
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config_loader import load_config, connect, load_manifest, ensure_deps
+from config_loader import add_config_arg, load_config, connect, load_manifest, ensure_deps
 
 ensure_deps({"atlassian-python-api": "atlassian", "markdownify": "markdownify", "markdown": "markdown"})
 
@@ -55,10 +55,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Diff local markdown against Confluence pages"
     )
-    parser.add_argument(
-        "--config",
-        help="Path to .confluence.json (default: auto-detect from cwd up)",
-    )
+    add_config_arg(parser)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--file", help="Single file to diff (relative to docs_dir)")
     group.add_argument("--all", action="store_true", help="Diff all manifest entries")

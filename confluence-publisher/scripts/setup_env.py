@@ -7,7 +7,7 @@ Safe to run multiple times (idempotent).
 
 Usage:
     python3 setup_env.py
-    python3 setup_env.py --venv-dir .confluence-venv
+    python3 setup_env.py --venv-dir /custom/path/.venv
 """
 
 import argparse
@@ -16,8 +16,9 @@ import sys
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+SKILL_DIR = SCRIPT_DIR.parent
 REQUIREMENTS = SCRIPT_DIR / "requirements.txt"
-DEFAULT_VENV_DIR = ".confluence-venv"
+DEFAULT_VENV_DIR = SKILL_DIR / ".venv"
 
 
 def parse_args() -> argparse.Namespace:
@@ -117,7 +118,7 @@ def main():
     print(f"Virtual environment: {venv_dir}")
     print(f"Python:             {venv_python}")
     print("\nUse this Python for all confluence-publisher scripts:")
-    print(f"  {venv_python} <skill_dir>/scripts/publish_page.py --config .confluence.json ...")
+    print(f"  {venv_python} {SCRIPT_DIR}/publish_page.py ...")
 
 
 if __name__ == "__main__":

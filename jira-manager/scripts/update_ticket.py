@@ -31,7 +31,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import load_config
+from config_loader import add_config_arg, load_config
 from field_resolver import (
     add_common_field_args,
     build_update_fields,
@@ -75,7 +75,7 @@ def _print_dry_run(key, fields, status, sprint, config, attachments):
 
 def main():
     parser = argparse.ArgumentParser(description="Update a Jira issue")
-    parser.add_argument("--config", required=True, help="Path to .jira.json")
+    add_config_arg(parser)
     parser.add_argument("--key", required=True, help="Issue key (e.g. API-123)")
     parser.add_argument("--summary", help="New summary/title")
     parser.add_argument(

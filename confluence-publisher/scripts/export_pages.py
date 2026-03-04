@@ -32,14 +32,14 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from config_loader import (
+    add_config_arg,
     load_config,
     connect,
     load_manifest,
     save_manifest,
     ensure_deps,
-    get_all_children,
-    extract_page_id,
 )
+from page_utils import get_all_children, extract_page_id
 
 ensure_deps({"atlassian-python-api": "atlassian", "markdownify": "markdownify"})
 
@@ -52,10 +52,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Export Confluence pages to local markdown"
     )
-    parser.add_argument(
-        "--config",
-        help="Path to .confluence.json (default: auto-detect from cwd up)",
-    )
+    add_config_arg(parser)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--page",

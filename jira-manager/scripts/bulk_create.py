@@ -45,7 +45,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import load_config, load_manifest, save_manifest
+from config_loader import add_config_arg, load_config, load_manifest, save_manifest
 from field_resolver import resolve_issue_type
 from jira_client import JiraClient
 from link_rewriter import rewrite_links_to_git
@@ -352,7 +352,7 @@ def execute_plan(data, epic_key, config, client, manifest, rewrite_links, dry_ru
 
 def main():
     parser = argparse.ArgumentParser(description="Bulk-create Jira tickets")
-    parser.add_argument("--config", required=True, help="Path to .jira.json")
+    add_config_arg(parser)
     parser.add_argument("--source", required=True, help="Source file (.md or .json)")
     parser.add_argument("--epic", required=True, help="Epic key to link stories to")
     parser.add_argument(

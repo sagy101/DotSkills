@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import load_config
+from config_loader import add_config_arg, load_config
 from jira_client import JiraClient
 from jql_builder import build_board_jql, build_jql_from_filters
 
@@ -215,7 +215,7 @@ def _handle_boards(client, fmt):
 
 def main():
     parser = argparse.ArgumentParser(description="Fetch Jira issues")
-    parser.add_argument("--config", required=True, help="Path to .jira.json")
+    add_config_arg(parser)
 
     # We use a manual check instead of mutually_exclusive_group to allow
     # --filter to be combined with --board-id

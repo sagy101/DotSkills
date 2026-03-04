@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import load_config
+from config_loader import add_config_arg, load_config
 from jira_client import JiraClient
 
 
@@ -370,7 +370,7 @@ def _print_suggestion(suggestion):
 
 def main():
     parser = argparse.ArgumentParser(description="Discover Jira project metadata")
-    parser.add_argument("--config", required=True, help="Path to .jira.json")
+    add_config_arg(parser)
     parser.add_argument(
         "--apply",
         action="store_true",

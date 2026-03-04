@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import load_config
+from config_loader import add_config_arg, load_config
 from field_resolver import (
     add_common_field_args,
     build_update_fields,
@@ -127,7 +127,7 @@ def execute_bulk_updates(
 
 def main():
     parser = argparse.ArgumentParser(description="Bulk update Jira issues")
-    parser.add_argument("--config", required=True, help="Path to .jira.json")
+    add_config_arg(parser)
     
     # Selection arguments
     # We use manual validation to allow combining board-id with filters

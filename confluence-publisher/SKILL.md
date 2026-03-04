@@ -39,20 +39,40 @@ Use this skill when the user wants to:
 
 Before running any publish operation, ensure:
 
-1. A **project config file** exists at `.confluence.json` in the project root (see [CONFIG.md](references/CONFIG.md) for format)
-2. **Credentials** are available as environment variables (names configured in `.confluence.json`)
-3. Python dependencies are installed: `pip install -r <skill_dir>/scripts/requirements.txt`
+1. **Config**: `.confluence.json` in project root and/or `~/.confluence.json` for global defaults (see [CONFIG.md](references/CONFIG.md))
+2. **Credentials**: `CONFLUENCE_EMAIL` and `CONFLUENCE_TOKEN` exported in shell profile (recommended) or in a `.env` file
+3. **Python deps**: installed via `setup_env.py` (shared venv in skill dir)
 
-If `.confluence.json` does not exist, help the user create one by asking for:
+Config is auto-discovered — scripts search CWD upward, then `~/.confluence.json`. If both exist, they are deep-merged (project-level wins). No `--config` flag needed.
+
+If no config is found anywhere, help the user create one. For users with one Atlassian instance, a global `~/.confluence.json` covers the shared settings:
+
+```json
+{
+  "confluence_url": "https://mycompany.atlassian.net/wiki",
+  "credentials": { "username_env": "CONFLUENCE_EMAIL", "token_env": "CONFLUENCE_TOKEN" }
+}
+```
+
+Then a minimal per-project `.confluence.json` only needs:
+```json
+{
+  "space_key": "DOCS",
+  "root_page_id": "123456"
+}
+```
+
+If `.confluence.json` does not exist anywhere, help the user create one by asking for:
 - Confluence base URL (e.g. `https://mycompany.atlassian.net/wiki`)
 - Space key
 - Root page ID (the parent page under which all docs live)
 - Which directory contains the markdown files (default: project root)
-- Environment variable names for credentials (default: `CONFLUENCE_EMAIL`, `CONFLUENCE_TOKEN`)
 
 ## Configuration
 
-The project must contain a `.confluence.json` file. See [references/CONFIG.md](references/CONFIG.md) for the full schema. Minimal example:
+Config is loaded from `.confluence.json` (project root) and/or `~/.confluence.json` (global). If both exist, they are deep-merged (project-level wins). See [references/CONFIG.md](references/CONFIG.md) for the full schema.
+
+Full single-file example:
 
 ```json
 {
@@ -79,10 +99,10 @@ Verify Python 3.10+ is available:
 python3 --version
 ```
 
-Check if the virtual environment already exists and has dependencies installed:
+Check if the shared virtual environment already exists and has dependencies installed:
 
 ```bash
-.confluence-venv/bin/python -c "import atlassian, markdown; print('OK')"
+<skill_dir>/.venv/bin/python -c "import atlassian, markdown; print('OK')"
 ```
 
 If the venv does not exist or dependencies are missing, run the setup script:
@@ -91,25 +111,21 @@ If the venv does not exist or dependencies are missing, run the setup script:
 python3 <skill_dir>/scripts/setup_env.py
 ```
 
-This creates a virtual environment at `.confluence-venv/` and installs all dependencies. If it fails, tell the user exactly what is missing and how to install it (e.g. `brew install python3` on macOS, `apt install python3` on Linux).
+This creates a shared virtual environment at `<skill_dir>/.venv/` (one venv for all projects). If it fails, tell the user exactly what is missing and how to install it (e.g. `brew install python3` on macOS, `apt install python3` on Linux).
 
 After setup, all subsequent script commands must use the venv Python:
 
 ```bash
-.confluence-venv/bin/python <skill_dir>/scripts/publish_page.py ...
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/publish_page.py ...
 ```
 
 ### Check 2 — Configuration file
 
-Look for `.confluence.json` in the project root. If missing, do NOT proceed — instead help the user create one interactively by asking for:
-- Confluence base URL (e.g. `https://mycompany.atlassian.net/wiki`)
-- Space key
-- Root page ID
-- Docs directory (default `.`)
-- Credential env var names (defaults: `CONFLUENCE_EMAIL`, `CONFLUENCE_TOKEN`)
-- Path to `.env` file if they use one
+Scripts auto-discover config by searching CWD upward, then `~/.confluence.json`. No `--config` flag needed.
 
-Write the file and confirm it with the user before proceeding.
+If no config is found anywhere, do NOT proceed — instead help the user create one. For users with one Atlassian instance, suggest a global `~/.confluence.json` with shared settings (URL, credentials) and a per-project `.confluence.json` with just `space_key` and `root_page_id`.
+
+Write the file(s) and confirm with the user before proceeding.
 
 ### Check 3 — Credentials
 
@@ -119,14 +135,17 @@ Confirm the credential environment variables are set. Run:
 python3 -c "import os; print('email:', 'SET' if os.environ.get('CONFLUENCE_EMAIL') else 'MISSING'); print('token:', 'SET' if os.environ.get('CONFLUENCE_TOKEN') else 'MISSING')"
 ```
 
-Substitute the actual env var names from `.confluence.json`. If credentials load from an `.env` file, check that the file exists and contains the expected keys (without printing values). If anything is missing, tell the user which variable to set and where.
+Substitute the actual env var names from `.confluence.json`. Never print values. If missing, advise the user to set them globally in their shell profile (recommended):
+- **zsh** (macOS default): `echo 'export CONFLUENCE_TOKEN="<value>"' >> ~/.zshrc && source ~/.zshrc`
+- **bash**: `echo 'export CONFLUENCE_TOKEN="<value>"' >> ~/.bashrc && source ~/.bashrc`
+- **fish**: `set -Ux CONFLUENCE_TOKEN '<value>'`
 
 ### Check 4 — Connectivity (optional)
 
 If this is the first publish or the user reports auth issues, test the connection:
 
 ```bash
-python3 <skill_dir>/scripts/validate_manifest.py --config .confluence.json
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/validate_manifest.py
 ```
 
 A `401` means bad credentials. A `404` on the root page means wrong `root_page_id`.
@@ -177,8 +196,7 @@ Present the plan to the user in this exact format (see [references/PUBLISH_PLAN_
 Run the publish script for each file in hierarchical order (parents before children):
 
 ```bash
-.confluence-venv/bin/python <skill_dir>/scripts/publish_page.py \
-  --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/publish_page.py \
   --file <relative_path> \
   --title "<title>" \
   --mode <create|update> \
@@ -201,10 +219,10 @@ After publishing, offer to run verification:
 
 ```bash
 # Validate manifest entries against disk and Confluence
-python <skill_dir>/scripts/validate_manifest.py --config .confluence.json
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/validate_manifest.py
 
 # Show the full page tree on Confluence
-python <skill_dir>/scripts/verify_hierarchy.py --config .confluence.json
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/verify_hierarchy.py
 ```
 
 ## Other operations
@@ -214,7 +232,7 @@ python <skill_dir>/scripts/verify_hierarchy.py --config .confluence.json
 If the user already has pages on Confluence and wants to build a manifest from them:
 
 ```bash
-python <skill_dir>/scripts/discover_pages.py --config .confluence.json
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/discover_pages.py
 ```
 
 This walks the Confluence tree under `root_page_id` and creates `.confluence-manifest.json`.
@@ -233,16 +251,16 @@ This eliminates false positives from mermaid diagrams and cross-page links. Mino
 
 ```bash
 # Diff a single file
-python <skill_dir>/scripts/diff_pages.py --config .confluence.json --file README.md
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/diff_pages.py --file README.md
 
 # Diff all manifest entries
-python <skill_dir>/scripts/diff_pages.py --config .confluence.json --all
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/diff_pages.py --all
 
 # Summary only (changed/unchanged counts, no full diff)
-python <skill_dir>/scripts/diff_pages.py --config .confluence.json --all --summary
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/diff_pages.py --all --summary
 
 # Save diff output to file (avoids terminal truncation for large pages)
-python <skill_dir>/scripts/diff_pages.py --config .confluence.json --file README.md --output /tmp/diff-report.txt
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/diff_pages.py --file README.md --output /tmp/diff-report.txt
 ```
 
 **Note:** The diff script exits with code 1 if any changes or new pages are detected, and code 0 if everything is unchanged. This is informational (like the `diff` command), not an error — do not treat exit code 1 as a failure.
@@ -257,24 +275,24 @@ Pull Confluence pages back into local markdown files (reverse sync). Useful for 
 
 ```bash
 # Export a single page by ID, URL, or tiny link
-python <skill_dir>/scripts/export_pages.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/export_pages.py \
     --page https://mycompany.atlassian.net/wiki/spaces/DOCS/pages/123456/My+Page
 
 # Export using a Confluence tiny link (/wiki/x/...)
-python <skill_dir>/scripts/export_pages.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/export_pages.py \
     --page https://mycompany.atlassian.net/wiki/x/sYjwQ
 
 # Export a single page to a specific file
-python <skill_dir>/scripts/export_pages.py --config .confluence.json --page 123456 -o docs/setup.md
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/export_pages.py --page 123456 -o docs/setup.md
 
 # Export all manifest entries (overwrites local files)
-python <skill_dir>/scripts/export_pages.py --config .confluence.json --manifest
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/export_pages.py --manifest
 
 # Export full tree under root_page_id (discovers and exports everything)
-python <skill_dir>/scripts/export_pages.py --config .confluence.json --tree
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/export_pages.py --tree
 
 # Dry run — show what would be exported without writing files
-python <skill_dir>/scripts/export_pages.py --config .confluence.json --tree --dry-run
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/export_pages.py --tree --dry-run
 ```
 
 When exporting the full tree, the script also updates the manifest with discovered pages.
@@ -286,7 +304,7 @@ When exporting the full tree, the script also updates the manifest with discover
 The publish script supports uploading file attachments alongside a page:
 
 ```bash
-python <skill_dir>/scripts/publish_page.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/publish_page.py \
     --file docs/setup.md --title "Setup Guide" --mode update --page-id 123456 \
     --attachments "docs/images/diagram.png,docs/files/schema.pdf"
 ```
@@ -314,17 +332,17 @@ Remove Confluence pages and their manifest entries. Supports deletion by manifes
 
 ```bash
 # Delete by manifest file path
-python <skill_dir>/scripts/delete_page.py --config .confluence.json --file plan/old-design.md
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/delete_page.py --file plan/old-design.md
 
 # Delete multiple files
-python <skill_dir>/scripts/delete_page.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/delete_page.py \
     --file "plan/old-design.md,plan/deprecated.md"
 
 # Delete by page ID (not in manifest)
-python <skill_dir>/scripts/delete_page.py --config .confluence.json --page-id 123456
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/delete_page.py --page-id 123456
 
 # Dry run — show what would be deleted without deleting
-python <skill_dir>/scripts/delete_page.py --config .confluence.json --file plan/old-design.md --dry-run
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/delete_page.py --file plan/old-design.md --dry-run
 ```
 
 **Never run delete without explicit user approval.** Before executing, list every page that will be deleted (title and ID) and wait for the user to confirm. Deletion is irreversible unless the page is recovered from Confluence trash. When in doubt, use `--dry-run` first.
@@ -332,13 +350,13 @@ python <skill_dir>/scripts/delete_page.py --config .confluence.json --file plan/
 ### Validate only
 
 ```bash
-python <skill_dir>/scripts/validate_manifest.py --config .confluence.json
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/validate_manifest.py
 ```
 
 ### Verify hierarchy only
 
 ```bash
-python <skill_dir>/scripts/verify_hierarchy.py --config .confluence.json
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/verify_hierarchy.py
 ```
 
 ## Important rules
@@ -370,23 +388,23 @@ Apply targeted find/replace edits to a Confluence page's storage HTML without ov
 
 ```bash
 # Inline single replacement
-python <skill_dir>/scripts/surgical_edit.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/surgical_edit.py \
     --page 1079706804 --find "old text" --replace "new text"
 
 # Replace all occurrences (default: first only)
-python <skill_dir>/scripts/surgical_edit.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/surgical_edit.py \
     --page 1079706804 --find "old" --replace "new" --replace-all
 
 # Apply multiple replacements from a JSON file
-python <skill_dir>/scripts/surgical_edit.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/surgical_edit.py \
     --page 1079706804 --replacements edits.json
 
 # Dry run — show diff without pushing changes
-python <skill_dir>/scripts/surgical_edit.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/surgical_edit.py \
     --page 1079706804 --replacements edits.json --dry-run
 
 # Save diff report to file and verify sections survived
-python <skill_dir>/scripts/surgical_edit.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/surgical_edit.py \
     --page 1079706804 --replacements edits.json \
     --output /tmp/report.txt \
     --check-sections "Problem Definition,Solution Architecture"
@@ -410,18 +428,18 @@ For complex edits like adding a table column or restructuring a section, use `re
 
 ```bash
 # Extract: save the table after "Implementation Phases" to a file
-python <skill_dir>/scripts/replace_element.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/replace_element.py \
     --page 1079706804 --heading "Implementation Phases" --element table \
     --output /tmp/table.html
 
 # (modify /tmp/table.html → /tmp/table-new.html)
 
 # Preview changes (always dry-run first)
-python <skill_dir>/scripts/replace_element.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/replace_element.py \
     --page 1079706804 --old /tmp/table.html --new /tmp/table-new.html --dry-run
 
 # Apply after user approval
-python <skill_dir>/scripts/replace_element.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/replace_element.py \
     --page 1079706804 --old /tmp/table.html --new /tmp/table-new.html \
     --message "Updated Implementation Phases table"
 ```
@@ -434,19 +452,19 @@ Compare two versions of the same Confluence page to see exactly what changed. St
 
 ```bash
 # Diff version 56 against latest
-python <skill_dir>/scripts/diff_versions.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/diff_versions.py \
     --page 1079706804 --from-version 56
 
 # Diff two specific versions
-python <skill_dir>/scripts/diff_versions.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/diff_versions.py \
     --page 1079706804 --from-version 56 --to-version 59
 
 # Save report to file (avoids terminal truncation)
-python <skill_dir>/scripts/diff_versions.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/diff_versions.py \
     --page 1079706804 --from-version 56 --output /tmp/diff.txt
 
 # Verify specific sections survived edits
-python <skill_dir>/scripts/diff_versions.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/diff_versions.py \
     --page 1079706804 --from-version 56 \
     --check-sections "Problem Definition,Risk & Mitigation"
 ```
@@ -464,31 +482,31 @@ Browse version history, fetch content from a specific version, or revert to a pr
 
 ```bash
 # List version history
-python <skill_dir>/scripts/page_versions.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/page_versions.py \
     --page 1079706804 --list
 
 # List more versions
-python <skill_dir>/scripts/page_versions.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/page_versions.py \
     --page 1079706804 --list --limit 50
 
 # Fetch a specific version's HTML
-python <skill_dir>/scripts/page_versions.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/page_versions.py \
     --page 1079706804 --fetch 56 --output /tmp/page_v56.html
 
 # Fetch the latest version's HTML
-python <skill_dir>/scripts/page_versions.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/page_versions.py \
     --page 1079706804 --fetch latest --output /tmp/page_latest.html
 
 # Fetch as plain text (HTML tags stripped)
-python <skill_dir>/scripts/page_versions.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/page_versions.py \
     --page 1079706804 --fetch 56 --output /tmp/page_v56.txt --text
 
 # Revert to a previous version (dry run first)
-python <skill_dir>/scripts/page_versions.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/page_versions.py \
     --page 1079706804 --revert 56
 
 # Execute the revert (requires --confirm)
-python <skill_dir>/scripts/page_versions.py --config .confluence.json \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/page_versions.py \
     --page 1079706804 --revert 56 --confirm
 ```
 

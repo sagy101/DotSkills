@@ -9,8 +9,8 @@ Each skill with non-trivial design decisions has a companion design document exp
 | Skill | Design Doc | Status |
 |---|---|---|
 | [codex-subagent](codex-subagent/codex-subagent-design.md) | Why, capabilities, wrapper architecture, collision confidence, super-review pattern, guardrails | Experimental |
-| [confluence-publisher](confluence-publisher/confluence-publisher-design.md) | Why, capabilities, transformation pipeline, link rewriting, Mermaid strategy, surgical edit | Stable (v3.0) |
-| [jira-manager](jira-manager/jira-manager-design.md) | Why, capabilities, discovery-first architecture, bulk update scoping, field discovery flow | Stable (v1.4) |
+| [confluence-publisher](confluence-publisher/confluence-publisher-design.md) | Why, capabilities, transformation pipeline, link rewriting, Mermaid strategy, surgical edit, module structure | Stable (v3.1) |
+| [jira-manager](jira-manager/jira-manager-design.md) | Why, capabilities, discovery-first architecture, bulk update scoping, field discovery flow, config discovery | Stable (v1.6) |
 
 ## Templates
 

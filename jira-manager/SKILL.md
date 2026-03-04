@@ -29,30 +29,39 @@ Use when the user wants to:
 
 ## Prerequisites
 
-1. `.jira.json` in the project root (see [CONFIG.md](references/CONFIG.md))
-2. Credentials as environment variables (configured in `.jira.json`)
-3. Python deps installed via `setup_env.py`
+1. **Config**: `.jira.json` in project root and/or `~/.jira.json` for global defaults (see [CONFIG.md](references/CONFIG.md))
+2. **Credentials**: `JIRA_EMAIL` and `JIRA_TOKEN` exported in shell profile (recommended) or in a `.env` file
+3. **Python deps**: installed via `setup_env.py` (shared venv in skill dir)
 
-If `.jira.json` is missing, help the user create one (Jira URL, project key, credential env var names, optional `.env` path).
+Config is auto-discovered — scripts search CWD upward, then `~/.jira.json`. If both exist, they are deep-merged (project-level wins). No `--config` flag needed.
 
-Minimal `.jira.json`:
+If no config is found anywhere, help the user create one. For users with one Atlassian instance, a global `~/.jira.json` covers the shared settings:
+
 ```json
 {
   "jira_url": "https://mycompany.atlassian.net",
-  "project_key": "PROJ",
-  "credentials": { "username_env": "JIRA_EMAIL", "token_env": "JIRA_TOKEN" },
-  "env_file": ".env"
+  "credentials": { "username_env": "JIRA_EMAIL", "token_env": "JIRA_TOKEN" }
+}
+```
+
+Then a minimal per-project `.jira.json` only needs:
+```json
+{
+  "project_key": "PROJ"
 }
 ```
 
 ## Pre-flight checks
 
-1. **Python env** — verify `.jira-venv` exists: `.jira-venv/bin/python -c "import markdown; print('OK')"`. If missing: `python3 <skill_dir>/scripts/setup_env.py`
-2. **Config** — `.jira.json` must exist in project root
-3. **Credentials** — confirm env vars are set (substitute names from `.jira.json`). Never print values.
+1. **Python env** — verify shared venv exists: `<skill_dir>/.venv/bin/python -c "import markdown; print('OK')"`. If missing: `python3 <skill_dir>/scripts/setup_env.py`
+2. **Config** — `.jira.json` must exist in project root or `~/.jira.json` for global defaults. Scripts auto-discover; no `--config` flag needed.
+3. **Credentials** — confirm env vars are set (substitute names from `.jira.json`). Never print values. If missing, advise the user to set them globally in their shell profile:
+   - **zsh** (macOS default): `echo 'export JIRA_TOKEN="<value>"' >> ~/.zshrc && source ~/.zshrc`
+   - **bash**: `echo 'export JIRA_TOKEN="<value>"' >> ~/.bashrc && source ~/.bashrc`
+   - **fish**: `set -Ux JIRA_TOKEN '<value>'`
 4. **Field discovery** — if `field_mappings` or `issue_types` are empty:
 ```bash
-.jira-venv/bin/python <skill_dir>/scripts/discover_fields.py --config .jira.json --all --apply
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/discover_fields.py --all --apply
 ```
 This populates `field_catalog` (statuses, priorities, components, versions, sprints), enabling `--set`, `--status`, `--priority`, `--sprint`, etc.
 
@@ -69,8 +78,8 @@ This populates `field_catalog` (statuses, priorities, components, versions, spri
 ### Create a single ticket
 
 ```bash
-.jira-venv/bin/python <skill_dir>/scripts/create_ticket.py \
-  --config .jira.json --type story --summary "Title" \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/create_ticket.py \
+  --type story --summary "Title" \
   --description "Desc" --epic PROJ-100 --story-points 2 \
   --priority "High" --status "In Progress" --sprint "Sprint 42" \
   --rewrite-links --attachment screenshot.png
@@ -85,8 +94,8 @@ Field flags: `--priority`, `--status`, `--assignee`, `--component` (repeatable),
 See [SOURCE_FORMAT.md](references/SOURCE_FORMAT.md) for markdown/JSON format.
 
 ```bash
-.jira-venv/bin/python <skill_dir>/scripts/bulk_create.py \
-  --config .jira.json --source tickets.md --epic PROJ-100 --rewrite-links --dry-run
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/bulk_create.py \
+  --source tickets.md --epic PROJ-100 --rewrite-links --dry-run
 ```
 
 Remove `--dry-run` after review. Already-created tickets (`.jira-manifest.json`) are skipped.
@@ -97,24 +106,24 @@ Update multiple tickets by list, board, JQL, or filter.
 
 ```bash
 # List of tickets
-.jira-venv/bin/python <skill_dir>/scripts/bulk_update.py \
-  --config .jira.json --tickets "PROJ-1,PROJ-2" --status "Done"
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/bulk_update.py \
+  --tickets "PROJ-1,PROJ-2" --status "Done"
 
 # Board active sprint (default — only active sprint issues)
-.jira-venv/bin/python <skill_dir>/scripts/bulk_update.py \
-  --config .jira.json --board-id 123 --sprint "Sprint 5"
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/bulk_update.py \
+  --board-id 123 --sprint "Sprint 5"
 
 # Board all issues (--board-all skips active sprint filter)
-.jira-venv/bin/python <skill_dir>/scripts/bulk_update.py \
-  --config .jira.json --board-id 123 --board-all --status "Done"
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/bulk_update.py \
+  --board-id 123 --board-all --status "Done"
 
 # Filter query
-.jira-venv/bin/python <skill_dir>/scripts/bulk_update.py \
-  --config .jira.json --filter status="In Progress" --assignee "me"
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/bulk_update.py \
+  --filter status="In Progress" --assignee "me"
 
 # JQL query
-.jira-venv/bin/python <skill_dir>/scripts/bulk_update.py \
-  --config .jira.json --jql "project=PROJ AND priority=High" --priority "Medium"
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/bulk_update.py \
+  --jql "project=PROJ AND priority=High" --priority "Medium"
 ```
 
 Requires `--confirm` to execute (defaults to dry-run preview).
@@ -123,33 +132,33 @@ Requires `--confirm` to execute (defaults to dry-run preview).
 
 ```bash
 # Update fields
-.jira-venv/bin/python <skill_dir>/scripts/update_ticket.py \
-  --config .jira.json --key PROJ-101 --summary "New Title" --story-points 3
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/update_ticket.py \
+  --key PROJ-101 --summary "New Title" --story-points 3
 
 # Status transition, sprint, priority, assignee
-.jira-venv/bin/python <skill_dir>/scripts/update_ticket.py \
-  --config .jira.json --key PROJ-101 --status "In Progress" \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/update_ticket.py \
+  --key PROJ-101 --status "In Progress" \
   --sprint "Sprint 42" --priority "High" --assignee "user@example.com"
 
 # Generic field by name, attachments
-.jira-venv/bin/python <skill_dir>/scripts/update_ticket.py \
-  --config .jira.json --key PROJ-101 --set "components=Backend" --attachment report.pdf
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/update_ticket.py \
+  --key PROJ-101 --set "components=Backend" --attachment report.pdf
 
 # Add a comment
-.jira-venv/bin/python <skill_dir>/scripts/update_ticket.py \
-  --config .jira.json --key PROJ-101 --comment "Completed code review."
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/update_ticket.py \
+  --key PROJ-101 --comment "Completed code review."
 
 # Add an issue link (blocker)
-.jira-venv/bin/python <skill_dir>/scripts/update_ticket.py \
-  --config .jira.json --key PROJ-101 --link "Blocks:PROJ-200"
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/update_ticket.py \
+  --key PROJ-101 --link "Blocks:PROJ-200"
 
 # Add a reverse link ("is blocked by" swaps direction automatically)
-.jira-venv/bin/python <skill_dir>/scripts/update_ticket.py \
-  --config .jira.json --key PROJ-101 --link "is blocked by:PROJ-50"
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/update_ticket.py \
+  --key PROJ-101 --link "is blocked by:PROJ-50"
 
 # Multiple links + comment in one call
-.jira-venv/bin/python <skill_dir>/scripts/update_ticket.py \
-  --config .jira.json --key PROJ-101 --link "Blocks:PROJ-200" --link "Duplicate:PROJ-300" \
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/update_ticket.py \
+  --key PROJ-101 --link "Blocks:PROJ-200" --link "Duplicate:PROJ-300" \
   --comment "Linking related issues."
 ```
 
@@ -159,36 +168,36 @@ Named flags: `--status`, `--priority`, `--assignee`, `--component`, `--fix-versi
 
 ```bash
 # Single ticket (detail view)
-.jira-venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
-  --config .jira.json --key PROJ-101 --format detail
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
+  --key PROJ-101 --format detail
 
 # JQL search
-.jira-venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
-  --config .jira.json --jql "project=PROJ AND type=Story" --format table
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
+  --jql "project=PROJ AND type=Story" --format table
 
 # Filter by field values (builds JQL automatically)
-.jira-venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
-  --config .jira.json --filter assignee=currentUser() status="In Progress"
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
+  --filter assignee=currentUser() status="In Progress"
 
 # Children of epic or story
-.jira-venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
-  --config .jira.json --children-of PROJ-100
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
+  --children-of PROJ-100
 
 # Board issues — active sprint only (default)
-.jira-venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
-  --config .jira.json --board-id 123
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
+  --board-id 123
 
 # Board issues — all (includes backlog, closed, past sprints)
-.jira-venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
-  --config .jira.json --board-id 123 --board-all --max-results 200
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
+  --board-id 123 --board-all --max-results 200
 
 # Board + filter (active sprint + additional filters)
-.jira-venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
-  --config .jira.json --board-id 123 --filter assignee=currentUser()
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
+  --board-id 123 --filter assignee=currentUser()
 
 # List Agile boards
-.jira-venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
-  --config .jira.json --boards
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/fetch_tickets.py \
+  --boards
 ```
 
 Board fetch defaults to **active sprint only** (matching the Scrum board UI view). Use `--board-all` to include backlog, closed, and past sprint issues. Results capped at `--max-results` (default 50) with a truncation warning.
@@ -198,10 +207,10 @@ Formats: `table` (default, includes sprint column), `detail`, `json`.
 ### Delete tickets
 
 ```bash
-.jira-venv/bin/python <skill_dir>/scripts/delete_ticket.py \
-  --config .jira.json --key PROJ-110 --dry-run   # preview first
-.jira-venv/bin/python <skill_dir>/scripts/delete_ticket.py \
-  --config .jira.json --key PROJ-110 --confirm    # execute
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/delete_ticket.py \
+  --key PROJ-110 --dry-run   # preview first
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/delete_ticket.py \
+  --key PROJ-110 --confirm    # execute
 ```
 
 **Never delete without explicit user approval.**
@@ -209,8 +218,8 @@ Formats: `table` (default, includes sprint column), `detail`, `json`.
 ### Diff local vs Jira
 
 ```bash
-.jira-venv/bin/python <skill_dir>/scripts/diff_tickets.py \
-  --config .jira.json --manifest          # or --source tickets.md
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/diff_tickets.py \
+  --manifest          # or --source tickets.md
 ```
 
 Add `--summary` for counts only, `--json` for raw output. Exit code 1 = changes detected.
@@ -218,17 +227,17 @@ Add `--summary` for counts only, `--json` for raw output. Exit code 1 = changes 
 ### Validate estimates
 
 ```bash
-.jira-venv/bin/python <skill_dir>/scripts/validate_estimates.py \
-  --config .jira.json --epic PROJ-100     # or --story, --source, --manifest
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/validate_estimates.py \
+  --epic PROJ-100     # or --story, --source, --manifest
 ```
 
 ### Discover fields
 
 ```bash
-.jira-venv/bin/python <skill_dir>/scripts/discover_fields.py \
-  --config .jira.json --all --apply          # full discovery + save
-.jira-venv/bin/python <skill_dir>/scripts/discover_fields.py \
-  --config .jira.json --all --verbose --apply # include all fields index
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/discover_fields.py \
+  --all --apply          # full discovery + save
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/discover_fields.py \
+  --all --verbose --apply # include all fields index
 ```
 
 `--all` discovers: statuses, priorities, resolutions, components, versions, sprints (Agile API). Add `--verbose` for full system+custom fields index.

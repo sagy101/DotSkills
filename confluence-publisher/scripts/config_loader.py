@@ -1,18 +1,20 @@
 """
 Shared configuration loader for confluence-publisher skill scripts.
 
-Loads .confluence.json and resolves credentials from env vars or .env file.
+Loads .confluence.json and resolves credentials from env vars or shell environment.
+Supports global config (~/.confluence.json) merged with per-project config.
 """
 
-import base64
+import argparse
 import json
 import os
 import re
-import struct
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
+
+_ENV_VAR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def ensure_deps(required_packages: dict) -> None:
@@ -56,16 +58,112 @@ class ConfluenceConfig:
         return self.project_root / self.manifest_path
 
 
-def find_config(start_dir: Optional[str] = None) -> Path:
-    """Walk up from start_dir looking for .confluence.json."""
-    current = Path(start_dir) if start_dir else Path.cwd()
+CONFIG_FILENAME = ".confluence.json"
+
+
+def add_config_arg(parser: argparse.ArgumentParser) -> None:
+    """Add the standard --config argument to any script's parser.
+    Centralised here so every script shares the same definition."""
+    parser.add_argument(
+        "--config",
+        help="Path to .confluence.json (omit to auto-discover from project root or ~/.confluence.json)",
+    )
+
+
+def detect_shell() -> tuple[str, str]:
+    """Detect user's shell and rc file path.
+    Returns (shell_name, rc_file_path).
+
+    Handles macOS, Linux, Windows, and common shells (zsh, bash, fish, pwsh, cmd).
+    Falls back to (~/.profile) for unknown Unix shells."""
+    if sys.platform == "win32":
+        comspec = os.environ.get("COMSPEC", "")
+        if "pwsh" in comspec.lower() or "powershell" in comspec.lower():
+            return "pwsh", "$PROFILE"
+        if os.environ.get("PSModulePath"):
+            return "pwsh", "$PROFILE"
+        return "cmd", "%USERPROFILE%\\.env"
+
+    shell = os.environ.get("SHELL", "")
+    shell_name = Path(shell).name if shell else "sh"
+    rc_files = {
+        "zsh": "~/.zshrc",
+        "bash": "~/.bash_profile" if sys.platform == "darwin" else "~/.bashrc",
+        "fish": "~/.config/fish/config.fish",
+    }
+    return shell_name, rc_files.get(shell_name, "~/.profile")
+
+
+def _credential_hint(var_name: str) -> str:
+    """Return a shell-specific hint for setting a credential env var."""
+    if not _ENV_VAR_RE.match(var_name):
+        return f"  Set environment variable '{var_name}' in your shell profile."
+    shell_name, rc_file = detect_shell()
+    if shell_name == "fish":
+        return f"  set -Ux {var_name} '<value>'  # or add to {rc_file}"
+    if shell_name == "pwsh":
+        return f"  [Environment]::SetEnvironmentVariable('{var_name}', '<value>', 'User')  # persists across sessions"
+    if shell_name == "cmd":
+        return f'  setx {var_name} "<value>"  # persists across sessions'
+    return f"  echo 'export {var_name}=\"<value>\"' >> {rc_file} && . {rc_file}"
+
+
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Deep-merge two dicts. override wins on conflicts."""
+    merged = base.copy()
+    for key, val in override.items():
+        if key in merged and isinstance(merged[key], dict) and isinstance(val, dict):
+            merged[key] = _deep_merge(merged[key], val)
+        else:
+            merged[key] = val
+    return merged
+
+
+def _find_git_root(start_dir: Path) -> Optional[Path]:
+    """Find the nearest .git directory walking up from start_dir."""
+    current = start_dir
     while current != current.parent:
-        candidate = current / ".confluence.json"
-        if candidate.exists():
-            return candidate
+        if (current / ".git").exists():
+            return current
         current = current.parent
-    print("ERROR: .confluence.json not found in any parent directory")
-    print("Create one in your project root. See references/CONFIG.md for format.")
+    return None
+
+
+def _find_project_config(start_dir: Optional[str] = None) -> Optional[Path]:
+    """Walk up from start_dir looking for .confluence.json.
+    Stops at the git repo root (if any) to avoid picking up configs from
+    unrelated parent directories. Returns None if not found."""
+    current = Path(start_dir) if start_dir else Path.cwd()
+    home = Path.home()
+    git_root = _find_git_root(current)
+    while current != current.parent:
+        candidate = current / CONFIG_FILENAME
+        if candidate.exists() and current != home:
+            return candidate
+        if git_root and current == git_root:
+            break
+        current = current.parent
+    return None
+
+
+def _find_global_config() -> Optional[Path]:
+    """Check for ~/.confluence.json."""
+    candidate = Path.home() / CONFIG_FILENAME
+    return candidate if candidate.exists() else None
+
+
+def find_config(start_dir: Optional[str] = None) -> Path:
+    """Find .confluence.json \u2014 project-level first, then global.
+    Returns the path to the primary config (project if it exists, else global)."""
+    project = _find_project_config(start_dir)
+    global_cfg = _find_global_config()
+    if project:
+        return project
+    if global_cfg:
+        return global_cfg
+    print(f"ERROR: {CONFIG_FILENAME} not found in any parent directory or ~/.")
+    print("Create one in your project root or at ~/.confluence.json for global defaults.")
+    print("See references/CONFIG.md for format.")
     sys.exit(1)
 
 
@@ -86,27 +184,61 @@ def load_env_file(env_path: Path) -> dict:
     return env
 
 
-def load_config(config_path: Optional[str] = None) -> ConfluenceConfig:
-    """Load and validate .confluence.json, resolve credentials."""
+def _resolve_raw_config(config_path: Optional[str] = None) -> tuple[dict[str, Any], Path]:
+    """Resolve raw config dict and project root.
+
+    If config_path is explicit, load it directly.
+    Otherwise, discover project-level and global configs and deep-merge them.
+    Returns (raw_dict, project_root).
+    """
     if config_path:
         path = Path(config_path)
-    else:
-        path = find_config()
+        if not path.exists():
+            print(f"ERROR: Config file not found: {path}")
+            sys.exit(1)
+        return json.loads(path.read_text(encoding="utf-8")), path.parent
 
-    if not path.exists():
-        print(f"ERROR: Config file not found: {path}")
+    project_cfg = _find_project_config()
+    global_cfg = _find_global_config()
+
+    if not project_cfg and not global_cfg:
+        print(f"ERROR: {CONFIG_FILENAME} not found in any parent directory or ~/.")
+        print("Create one in your project root or at ~/.confluence.json for global defaults.")
+        print("See references/CONFIG.md for format.")
         sys.exit(1)
 
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    project_root = path.parent
+    global_raw = json.loads(global_cfg.read_text(encoding="utf-8")) if global_cfg else {}
+    project_raw = json.loads(project_cfg.read_text(encoding="utf-8")) if project_cfg else {}
 
-    # Required fields
+    raw = _deep_merge(global_raw, project_raw)
+    project_root = project_cfg.parent if project_cfg else Path.cwd()
+    return raw, project_root
+
+
+def load_config(config_path: Optional[str] = None) -> ConfluenceConfig:
+    """Load and validate .confluence.json.
+
+    Resolution order:
+    1. If config_path is given explicitly, use it.
+    2. Otherwise, search for project-level config (CWD walk-up) and global (~/.confluence.json).
+    3. If both exist, deep-merge them (project-level wins).
+    """
+    raw, project_root = _resolve_raw_config(config_path)
+
     for field_name in ("confluence_url", "space_key", "root_page_id"):
         if field_name not in raw:
-            print(f"ERROR: Missing required field '{field_name}' in {path}")
+            print(f"ERROR: Missing required field '{field_name}' in merged config")
+            if not _find_project_config():
+                print("Hint: create a project-level .confluence.json with at least space_key and root_page_id.")
+            sys.exit(1)
+        if not isinstance(raw[field_name], (str, int)) or not str(raw[field_name]).strip():
+            print(f"ERROR: '{field_name}' must be a non-empty string or number (got {type(raw[field_name]).__name__})")
             sys.exit(1)
 
     creds = raw.get("credentials", {})
+    if not isinstance(creds, dict):
+        print(f"ERROR: 'credentials' must be an object (got {type(creds).__name__})")
+        sys.exit(1)
 
     url = raw["confluence_url"].rstrip("/")
     if not url.startswith("https://"):
@@ -131,24 +263,32 @@ def load_config(config_path: Optional[str] = None) -> ConfluenceConfig:
     return config
 
 
-def resolve_credentials(config: ConfluenceConfig) -> tuple:
+def resolve_credentials(config: ConfluenceConfig) -> tuple[str, str]:
     """Resolve username and API token from env file or environment variables.
-    Returns (username, token). Exits on failure."""
+    Returns (username, token). Exits on failure with shell-specific advice."""
     env_vars = {}
 
     # Load .env file if configured
     if config.env_file:
-        env_path = config.project_root / config.env_file
+        env_path = (config.project_root / config.env_file).resolve()
+        root_resolved = config.project_root.resolve()
+        if not str(env_path).startswith(str(root_resolved) + os.sep) and env_path != root_resolved:
+            print(f"ERROR: env_file escapes project root: {config.env_file}")
+            sys.exit(1)
         env_vars = load_env_file(env_path)
 
     username = env_vars.get(config.username_env) or os.environ.get(config.username_env)
     token = env_vars.get(config.token_env) or os.environ.get(config.token_env)
 
     if not username:
-        print(f"ERROR: Credential not found: set {config.username_env} as an environment variable or in your env_file")
+        print(f"ERROR: Credential not found: {config.username_env}")
+        print("Set it globally in your shell profile (recommended):")
+        print(_credential_hint(config.username_env))
         sys.exit(1)
     if not token:
-        print(f"ERROR: Credential not found: set {config.token_env} as an environment variable or in your env_file")
+        print(f"ERROR: Credential not found: {config.token_env}")
+        print("Set it globally in your shell profile (recommended):")
+        print(_credential_hint(config.token_env))
         sys.exit(1)
 
     return username, token
@@ -184,105 +324,13 @@ def connect(config: ConfluenceConfig):
     )
 
 
-def get_all_children(confluence, page_id: str) -> list:
-    """Fetch all child pages with pagination (handles >100 children)."""
-    all_children = []
-    start = 0
-    limit = 100
-    while True:
-        batch = confluence.get_page_child_by_type(
-            page_id=page_id, type="page", start=start, limit=limit
-        )
-        if not batch:
-            break
-        all_children.extend(batch)
-        if len(batch) < limit:
-            break
-        start += limit
-    return all_children
-
-
-def decode_tiny_link(tiny_id: str) -> int:
-    """Decode a Confluence tiny link ID to a numeric page ID.
-
-    Confluence tiny links encode the page ID as a little-endian unsigned 32-bit
-    integer, stripped of trailing zero bytes, then base64-encoded with URL-safe
-    altchars (_-) and padding removed.
-
-    Args:
-        tiny_id: The encoded portion after ``/x/`` in a tiny link URL.
-
-    Returns:
-        The decoded numeric page ID.
-    """
-    raw = tiny_id.encode("ascii") if isinstance(tiny_id, str) else tiny_id
-    # The encoding strips trailing 'A' chars (base64 zeros) and '=' padding.
-    # Restore to a valid base64 length: data chars mod 4 must be 0, 2, or 3.
-    remainder = len(raw) % 4
-    if remainder == 1:
-        raw += b"A"
-        remainder = 2
-    raw += b"=" * ((4 - remainder) % 4)
-    page_id_bytes = (base64.b64decode(raw, altchars=b"_-") + b"\x00\x00\x00\x00")[:4]
-    return struct.unpack("<L", page_id_bytes)[0]
-
-
-def encode_tiny_id(page_id: int) -> str:
-    """Encode a numeric page ID into a Confluence tiny link ID.
-
-    Inverse of :func:`decode_tiny_link`.
-    """
-    return (
-        base64.b64encode(struct.pack("<L", int(page_id)).rstrip(b"\x00"), altchars=b"_-")
-        .rstrip(b"=")
-        .decode("ascii")
-    )
-
-
-_TINY_LINK_RE = re.compile(r"/x/([-_A-Za-z0-9]+)")
-
-
-def extract_page_id(page_ref: str) -> str:
-    """Extract a numeric page ID from a page reference.
-
-    Accepts:
-      - A plain numeric ID (``"774112245"``)
-      - A standard Confluence URL containing ``/pages/<id>``
-      - A Confluence tiny link containing ``/x/<encoded>``
-
-    Returns:
-        The page ID as a string.
-
-    Raises:
-        ValueError: If the reference format is not recognised.
-    """
-    if page_ref.isdigit():
-        return page_ref
-    match = re.search(r"/pages/(\d+)", page_ref)
-    if match:
-        return match.group(1)
-    tiny_match = _TINY_LINK_RE.search(page_ref)
-    if tiny_match:
-        return str(decode_tiny_link(tiny_match.group(1)))
-    raise ValueError(f"Could not extract page ID from: {page_ref}")
-
-
-def resolve_title(file_path: str, md_content: str, config: ConfluenceConfig) -> str:
-    """Resolve page title using: title_map > first heading > filename."""
-    # 1. Explicit title_map
-    if file_path in config.title_map:
-        return config.title_map[file_path]
-
-    # 2. First # heading in the markdown
-    match = re.search(r"^#\s+(.+)$", md_content, re.MULTILINE)
-    if match:
-        return match.group(1).strip()
-
-    # 3. Filename-based
-    name = Path(file_path).stem
-    if name.lower() == "readme":
-        # Use parent directory name
-        parent = Path(file_path).parent.name
-        if parent and parent != ".":
-            name = parent
-    return name.replace("-", " ").replace("_", " ").title()
+# ---------------------------------------------------------------------------
+# Re-exports from page_utils for backward compatibility
+# ---------------------------------------------------------------------------
+from page_utils import (  # noqa: F401, E402
+    get_all_children,
+    decode_tiny_link,
+    encode_tiny_id,
+    extract_page_id,
+    resolve_title,
+)

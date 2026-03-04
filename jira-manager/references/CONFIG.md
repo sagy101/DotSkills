@@ -1,6 +1,10 @@
 # Configuration Reference
 
-The `.jira.json` file lives in the project root and configures the jira-manager skill for that project.
+The `.jira.json` file configures the jira-manager skill. It can live in:
+- **Project root** — project-specific settings (e.g. `project_key`, `field_mappings`)
+- **Home directory** (`~/.jira.json`) — global defaults (e.g. `jira_url`, `credentials`)
+
+If both exist, they are **deep-merged** (project-level wins on conflicts).
 
 ## Full schema
 
@@ -50,18 +54,47 @@ The `.jira.json` file lives in the project root and configures the jira-manager 
 | `issue_types` | No | `{}` | Maps issue type names to Jira issue type IDs. Run `discover_fields.py --apply` to auto-populate |
 | `field_catalog` | No | `{}` | Comprehensive catalog of fields, statuses, priorities, components, versions. Run `discover_fields.py --all --apply` to auto-populate |
 
+## Config resolution order
+
+1. Walk up from CWD looking for `.jira.json` (project-level)
+2. Check `~/.jira.json` (global defaults)
+3. If both exist, deep-merge them (project-level wins)
+4. If neither exists, error with instructions
+
+## Global + per-project split (recommended)
+
+Put shared settings in `~/.jira.json`:
+```json
+{
+  "jira_url": "https://mycompany.atlassian.net",
+  "credentials": { "username_env": "JIRA_EMAIL", "token_env": "JIRA_TOKEN" }
+}
+```
+
+Then each project only needs a minimal `.jira.json`:
+```json
+{
+  "project_key": "PROJ"
+}
+```
+
 ## Credential resolution order
 
 1. If `env_file` is set, load variables from that file first
 2. Then check OS environment variables
 3. The variable names are taken from `credentials.username_env` and `credentials.token_env`
 
+**Recommended**: export credentials globally in your shell profile rather than using per-project `.env` files:
+- **zsh**: `echo 'export JIRA_TOKEN="<value>"' >> ~/.zshrc && source ~/.zshrc`
+- **bash**: `echo 'export JIRA_TOKEN="<value>"' >> ~/.bashrc && source ~/.bashrc`
+- **fish**: `set -Ux JIRA_TOKEN '<value>'`
+
 ## Auto-discovery
 
 Run the discovery script to auto-populate `field_mappings` and `issue_types`:
 
 ```bash
-.jira-venv/bin/python <skill_dir>/scripts/discover_fields.py --config .jira.json --apply
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/discover_fields.py --apply
 ```
 
 This calls Jira's REST API to detect custom field IDs and available issue types, then updates `.jira.json` in-place.
@@ -69,7 +102,7 @@ This calls Jira's REST API to detect custom field IDs and available issue types,
 For full field catalog (statuses, priorities, components, versions, resolutions):
 
 ```bash
-.jira-venv/bin/python <skill_dir>/scripts/discover_fields.py --config .jira.json --all --apply
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/discover_fields.py --all --apply
 ```
 
 This populates `field_catalog` which enables the `--set` and `--status` flags on create/update scripts.

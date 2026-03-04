@@ -40,15 +40,16 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from config_loader import (
+    add_config_arg,
     load_config,
     connect,
     load_manifest,
     save_manifest,
-    resolve_title,
     resolve_credentials,
     ensure_deps,
     ConfluenceConfig,
 )
+from page_utils import resolve_title
 
 ensure_deps({"atlassian-python-api": "atlassian", "markdown": "markdown"})
 
@@ -262,10 +263,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Publish one markdown file to Confluence"
     )
-    parser.add_argument(
-        "--config",
-        help="Path to .confluence.json (default: auto-detect from cwd up)",
-    )
+    add_config_arg(parser)
     parser.add_argument("--file", required=True, help="Markdown file (relative to docs_dir)")
     parser.add_argument("--title", help="Confluence page title (default: auto-detect from file)")
     parser.add_argument("--mode", required=True, choices=["create", "update"])

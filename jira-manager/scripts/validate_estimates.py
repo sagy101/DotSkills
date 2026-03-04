@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import load_config, load_manifest
+from config_loader import add_config_arg, load_config, load_manifest
 from jira_client import JiraClient
 
 
@@ -268,7 +268,7 @@ def format_report(data):
 
 def main():
     parser = argparse.ArgumentParser(description="Validate estimation consistency")
-    parser.add_argument("--config", required=True, help="Path to .jira.json")
+    add_config_arg(parser)
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--epic", help="Validate all stories under an epic (live Jira)")

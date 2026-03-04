@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import load_config, load_manifest, save_manifest
+from config_loader import add_config_arg, load_config, load_manifest, save_manifest
 from jira_client import JiraClient
 
 
@@ -72,7 +72,7 @@ def _cleanup_manifest(config, key):
 
 def main():
     parser = argparse.ArgumentParser(description="Delete a Jira issue")
-    parser.add_argument("--config", required=True, help="Path to .jira.json")
+    add_config_arg(parser)
     parser.add_argument("--key", required=True, help="Issue key to delete (e.g. API-123)")
     parser.add_argument(
         "--confirm",

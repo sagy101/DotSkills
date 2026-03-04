@@ -49,11 +49,15 @@ This skill gives **any SKILL.md-compatible agent** reliable Jira CRUD by combini
 
 **7. Link rewriting for traceability** — `--rewrite-links` converts relative markdown links in descriptions to full git browse URLs (e.g., `./src/auth.ts` → `https://github.com/org/repo/blob/main/src/auth.ts`). This gives Jira readers clickable links to source code without requiring Jira-GitHub integrations.
 
-**8. Credentials via environment variables** — Same pattern as confluence-publisher: `.jira.json` stores env var *names*, not values. Pre-flight confirms they're set without printing them. Optional `.env` file support via the `env_file` config key.
+**8. Credentials via environment variables** — `.jira.json` stores env var *names*, not values. Pre-flight confirms they're set without printing them. Optional `.env` file support via the `env_file` config key (path-traversal protected — must resolve inside the project root). Environment variable names are validated against `[A-Za-z_][A-Za-z0-9_]*` to prevent shell injection in credential hints. Shell-specific hints are generated for zsh, bash, fish, PowerShell, and cmd.
 
 **9. Dynamically discovered issue link types** — Link types (Blocks, Duplicate, Cloners, Relates, etc.) are fetched at runtime from `GET /rest/api/2/issueLinkType`, not hardcoded. The `--link` flag accepts the link type name, its inward label (e.g., "is blocked by"), or its outward label (e.g., "blocks") and resolves against the live list. Direction is automatically swapped when an inward label is used: `--link "is blocked by:API-456"` creates the link with API-456 as the blocker.
 
-**10. Virtual environment isolation** — `setup_env.py` creates `.jira-venv/` with all dependencies. Avoids system Python pollution. All script invocations use `.jira-venv/bin/python`.
+**10. Virtual environment isolation** — `setup_env.py` creates `.venv/` inside the skill directory (e.g., `jira-manager/.venv/`). The agent invokes scripts using the absolute path to the venv Python interpreter (e.g., `/path/to/jira-manager/.venv/bin/python`) — no shell activation required. This keeps the skill self-contained and works identically whether installed in the repo or synced to `~/.codeium/windsurf/skills/`.
+
+**11. Config discovery with git root boundary** — `.jira.json` is discovered by walking up from CWD, stopping at the nearest git root to avoid picking up configs from unrelated parent directories. Global config (`~/.jira.json`) is merged underneath project-level config (project wins on conflict). An explicit `--config` flag overrides discovery entirely.
+
+**12. Module structure** — `config_loader.py` handles configuration loading, credential resolution, shell detection, and manifest I/O. All scripts share the same `--config` argument definition via `add_config_arg()` for consistency.
 
 ---
 
@@ -135,4 +139,4 @@ If `field_catalog` is empty or stale, scripts may fail with "field not configure
 
 ## Status
 
-**Stable (v1.5)** — Full CRUD, bulk operations, Agile board/sprint support, field discovery, diff/validate, markup conversion, comments, and issue links implemented.
+**Stable (v1.6)** — Full CRUD, bulk operations, Agile board/sprint support, field discovery, diff/validate, markup conversion, comments, and issue links implemented.
