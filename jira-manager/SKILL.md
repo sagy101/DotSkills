@@ -1,11 +1,11 @@
 ---
 name: jira-manager
 description: >
-  Create, update, fetch, delete, diff, and validate Jira tickets from structured markdown or JSON sources. Supports full field discovery (statuses, priorities, components, versions, sprints, custom fields), generic --set and --filter flags, Agile board/sprint operations (list boards, fetch board issues, bulk update by board/JQL/filter/ticket list), status transitions, markdown/Jira markup conversion, and link rewriting. Works with any Jira Cloud instance.
+  Create, update, fetch, delete, diff, and validate Jira tickets from structured markdown or JSON sources. Supports full field discovery (statuses, priorities, components, versions, sprints, custom fields), generic --set and --filter flags, Agile board/sprint operations (list boards, fetch board issues, bulk update by board/JQL/filter/ticket list), status transitions, comments, issue links (blockers, duplicates, etc.), markdown/Jira markup conversion, and link rewriting. Works with any Jira Cloud instance.
 license: MIT
 metadata:
   author: sagy101
-  version: "1.4"
+  version: "1.5"
 compatibility: >
   Python 3.10+. Jira Cloud REST API v2 + Agile REST API v1.0.
   Requires an API token with issue read/write permissions.
@@ -13,13 +13,13 @@ compatibility: >
 
 # Jira Manager
 
-CRUD for Jira tickets with field discovery, sprint management, status transitions, link rewriting, and estimation validation.
+CRUD for Jira tickets with field discovery, sprint management, status transitions, comments, issue links, link rewriting, and estimation validation.
 
 ## When to use this skill
 
 Use when the user wants to:
 - **Create** tickets (single or bulk from markdown/JSON spec)
-- **Update** fields, status, sprint, or attachments on existing issues
+- **Update** fields, status, sprint, attachments, comments, or issue links on existing issues
 - **Fetch** issues by key, JQL, filters (assignee, status, etc.), or parent
 - **Delete** issues (with confirmation)
 - **Diff** local definitions against live Jira
@@ -134,9 +134,26 @@ Requires `--confirm` to execute (defaults to dry-run preview).
 # Generic field by name, attachments
 .jira-venv/bin/python <skill_dir>/scripts/update_ticket.py \
   --config .jira.json --key PROJ-101 --set "components=Backend" --attachment report.pdf
+
+# Add a comment
+.jira-venv/bin/python <skill_dir>/scripts/update_ticket.py \
+  --config .jira.json --key PROJ-101 --comment "Completed code review."
+
+# Add an issue link (blocker)
+.jira-venv/bin/python <skill_dir>/scripts/update_ticket.py \
+  --config .jira.json --key PROJ-101 --link "Blocks:PROJ-200"
+
+# Add a reverse link ("is blocked by" swaps direction automatically)
+.jira-venv/bin/python <skill_dir>/scripts/update_ticket.py \
+  --config .jira.json --key PROJ-101 --link "is blocked by:PROJ-50"
+
+# Multiple links + comment in one call
+.jira-venv/bin/python <skill_dir>/scripts/update_ticket.py \
+  --config .jira.json --key PROJ-101 --link "Blocks:PROJ-200" --link "Duplicate:PROJ-300" \
+  --comment "Linking related issues."
 ```
 
-Named flags: `--status`, `--priority`, `--assignee`, `--component`, `--fix-version`, `--sprint`, `--labels`, `--story-points`, `--set "field=value"`, `--attachment`.
+Named flags: `--status`, `--priority`, `--assignee`, `--component`, `--fix-version`, `--sprint`, `--labels`, `--story-points`, `--set "field=value"`, `--attachment`, `--comment`, `--link` (repeatable).
 
 ### Fetch tickets
 
@@ -243,3 +260,4 @@ Relative markdown links auto-rewrite to git browse URLs when `--rewrite-links` i
 | Sprint not setting | Run `discover_fields.py --all --apply` or use `--sprint <numeric_id>` |
 | `ModuleNotFoundError` | Run `setup_env.py` |
 | `--set` not resolving | Run `discover_fields.py --all --verbose --apply` |
+| `Unknown link type` | Check available types with `get_link_types()` — common: Blocks, Duplicate, Cloners, Relates |

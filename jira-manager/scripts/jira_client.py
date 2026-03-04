@@ -466,6 +466,65 @@ class JiraClient:
         )
 
     # -----------------------------------------------------------------
+    # Comments
+    # -----------------------------------------------------------------
+    def add_comment(self, issue_key: str, body: str) -> dict:
+        """Add a comment to an issue. Returns the created comment."""
+        return self._request(
+            "POST",
+            f"/rest/api/2/issue/{issue_key}/comment",
+            {"body": body},
+        )
+
+    def get_comments(self, issue_key: str) -> List[dict]:
+        """Fetch all comments on an issue."""
+        result = self._request(
+            "GET", f"/rest/api/2/issue/{issue_key}/comment"
+        )
+        return result.get("comments", [])
+
+    # -----------------------------------------------------------------
+    # Issue Links
+    # -----------------------------------------------------------------
+    def get_link_types(self) -> List[dict]:
+        """Fetch all available issue link types (e.g. Blocks, Cloners, Duplicate)."""
+        result = self._request("GET", "/rest/api/2/issueLinkType")
+        return result.get("issueLinkTypes", [])
+
+    def add_issue_link(
+        self,
+        link_type_name: str,
+        inward_key: str,
+        outward_key: str,
+        comment: Optional[str] = None,
+    ) -> dict:
+        """Create a link between two issues.
+
+        Args:
+            link_type_name: The link type name (e.g. "Blocks", "Duplicate",
+                "Cloners"). Must match a name from get_link_types().
+            inward_key: The inward issue key (e.g. the blocker).
+            outward_key: The outward issue key (e.g. the blocked issue).
+            comment: Optional comment to add to the link.
+
+        Example: add_issue_link("Blocks", "API-100", "API-200")
+            means API-100 blocks API-200.
+        """
+        body: Dict[str, Any] = {
+            "type": {"name": link_type_name},
+            "inwardIssue": {"key": inward_key},
+            "outwardIssue": {"key": outward_key},
+        }
+        if comment:
+            body["comment"] = {"body": comment}
+        return self._request("POST", "/rest/api/2/issueLink", body)
+
+    def get_issue_links(self, issue_key: str) -> List[dict]:
+        """Fetch all links on an issue."""
+        issue = self.get_issue(issue_key, fields=["issuelinks"])
+        return issue.get("fields", {}).get("issuelinks", [])
+
+    # -----------------------------------------------------------------
     # Utility
     # -----------------------------------------------------------------
     def test_connection(self) -> bool:
