@@ -17,7 +17,7 @@ This skill gives **any SKILL.md-compatible agent** reliable Jira CRUD by combini
 | Capability | Description |
 |---|---|
 | **Create tickets** | Single or bulk creation from markdown/JSON source files with dependency ordering |
-| **Update tickets** | Modify fields, status, sprint, priority, assignee, attachments on existing issues |
+| **Update tickets** | Modify fields, status, sprint, priority, assignee, attachments, comments, and issue links on existing issues |
 | **Bulk update** | Update multiple tickets by explicit list, board, JQL, or field filter |
 | **Fetch tickets** | Query by key, JQL, field filter, parent, or Agile board (table/detail/JSON output) |
 | **Delete tickets** | Remove issues with dry-run preview and confirmation gate |
@@ -27,6 +27,8 @@ This skill gives **any SKILL.md-compatible agent** reliable Jira CRUD by combini
 | **Status transitions** | Move issues through workflow states via Jira's transition engine |
 | **Markup conversion** | Automatic Markdown ↔ Jira wiki markup conversion for descriptions |
 | **Link rewriting** | Convert relative markdown links to git browse URLs in ticket descriptions |
+| **Comments** | Add comments to issues via `--comment` flag during update |
+| **Issue links** | Create typed links between issues (Blocks, Duplicate, Relates, etc.) via `--link` flag |
 | **Board/sprint ops** | List Agile boards, fetch board issues, move issues between sprints |
 
 ---
@@ -49,7 +51,9 @@ This skill gives **any SKILL.md-compatible agent** reliable Jira CRUD by combini
 
 **8. Credentials via environment variables** — Same pattern as confluence-publisher: `.jira.json` stores env var *names*, not values. Pre-flight confirms they're set without printing them. Optional `.env` file support via the `env_file` config key.
 
-**9. Virtual environment isolation** — `setup_env.py` creates `.jira-venv/` with all dependencies. Avoids system Python pollution. All script invocations use `.jira-venv/bin/python`.
+**9. Dynamically discovered issue link types** — Link types (Blocks, Duplicate, Cloners, Relates, etc.) are fetched at runtime from `GET /rest/api/2/issueLinkType`, not hardcoded. The `--link` flag accepts the link type name, its inward label (e.g., "is blocked by"), or its outward label (e.g., "blocks") and resolves against the live list. Direction is automatically swapped when an inward label is used: `--link "is blocked by:API-456"` creates the link with API-456 as the blocker.
+
+**10. Virtual environment isolation** — `setup_env.py` creates `.jira-venv/` with all dependencies. Avoids system Python pollution. All script invocations use `.jira-venv/bin/python`.
 
 ---
 
@@ -131,4 +135,4 @@ If `field_catalog` is empty or stale, scripts may fail with "field not configure
 
 ## Status
 
-**Stable (v1.4)** — Full CRUD, bulk operations, Agile board/sprint support, field discovery, diff/validate, and markup conversion implemented.
+**Stable (v1.5)** — Full CRUD, bulk operations, Agile board/sprint support, field discovery, diff/validate, markup conversion, comments, and issue links implemented.
