@@ -42,27 +42,27 @@ Use `+` / `-` modifiers (e.g., `A-`, `B+`) when between thresholds. Apply per-di
 
 ### Critical
 
-| ID | Title | Sources | Location | Issue | Agreement | Verdict | Fix |
-|----|-------|---------|----------|-------|-----------|---------|-----|
-| C1 | <title> | <which passes> | <file:line> | <what's wrong> | AGREE / PARTIAL / DISAGREE + why | ACCEPTED / REJECTED + reason | applied / deferred + reason |
+| Done | ID | Title | Complexity | Sources | Location | Issue | Agreement | Verdict | Fix |
+|------|----|----|------------|---------|----------|-------|-----------|---------|-----|
+| ✅ / ❌ / (empty) | C1 | <title> | S / M / L / XL | <which passes> | <file:line> | <what's wrong> | AGREE / PARTIAL / DISAGREE + why | ACCEPTED / REJECTED + reason | applied / deferred + reason |
 
 ### High
 
-| ID | Title | Sources | Location | Issue | Agreement | Verdict | Fix |
-|----|-------|---------|----------|-------|-----------|---------|-----|
-| H1 | <title> | <which passes> | <file:line> | <what's wrong> | AGREE / PARTIAL / DISAGREE + why | ACCEPTED / REJECTED + reason | applied / deferred + reason |
+| Done | ID | Title | Complexity | Sources | Location | Issue | Agreement | Verdict | Fix |
+|------|----|----|------------|---------|----------|-------|-----------|---------|-----|
+| ✅ / ❌ / (empty) | H1 | <title> | S / M / L / XL | <which passes> | <file:line> | <what's wrong> | AGREE / PARTIAL / DISAGREE + why | ACCEPTED / REJECTED + reason | applied / deferred + reason |
 
 ### Medium
 
-| ID | Title | Sources | Location | Issue | Agreement | Verdict | Fix |
-|----|-------|---------|----------|-------|-----------|---------|-----|
-| M1 | <title> | <which passes> | <file:line> | <what's wrong> | AGREE / PARTIAL / DISAGREE + why | ACCEPTED / REJECTED + reason | applied / deferred + reason |
+| Done | ID | Title | Complexity | Sources | Location | Issue | Agreement | Verdict | Fix |
+|------|----|----|------------|---------|----------|-------|-----------|---------|-----|
+| ✅ / ❌ / (empty) | M1 | <title> | S / M / L / XL | <which passes> | <file:line> | <what's wrong> | AGREE / PARTIAL / DISAGREE + why | ACCEPTED / REJECTED + reason | applied / deferred + reason |
 
 ### Low
 
-| ID | Title | Sources | Location | Issue | Agreement | Verdict | Fix |
-|----|-------|---------|----------|-------|-----------|---------|-----|
-| L1 | <title> | <which passes> | <file:line> | <what's wrong> | AGREE / PARTIAL / DISAGREE + why | ACCEPTED / REJECTED + reason | applied / deferred + reason |
+| Done | ID | Title | Complexity | Sources | Location | Issue | Agreement | Verdict | Fix |
+|------|----|----|------------|---------|----------|-------|-----------|---------|-----|
+| ✅ / ❌ / (empty) | L1 | <title> | S / M / L / XL | <which passes> | <file:line> | <what's wrong> | AGREE / PARTIAL / DISAGREE + why | ACCEPTED / REJECTED + reason | applied / deferred + reason |
 
 ## Per-Dimension Grades
 
@@ -107,6 +107,15 @@ Use `+` / `-` modifiers (e.g., `A-`, `B+`) when between thresholds. Apply per-di
 - **Verdict**: What action to take
   - `ACCEPTED` — will be addressed (now or deferred)
   - `REJECTED` — will not be addressed, with reason
+- **Done**: Status indicator
+  - ✅ — fix has been applied
+  - ❌ — rejected / will not be fixed
+  - *(empty)* — not yet addressed (deferred or pending)
+- **Complexity**: Estimated effort to fix
+  - `S` — trivial, single-line or config change
+  - `M` — small code change, one file
+  - `L` — multi-file change or design decision
+  - `XL` — cross-cutting, platform-level, or architectural change
 - **Fix**: Disposition
   - `applied` — fixed in this session
   - `deferred` — valid but not fixing now, with reason (e.g., pre-existing, low priority, cross-cutting)
