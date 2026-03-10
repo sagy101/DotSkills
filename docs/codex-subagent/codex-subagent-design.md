@@ -36,7 +36,6 @@ This skill gives **any SKILL.md-compatible agent** sub-agent capabilities via Co
 | **Delegate implementation** | Run write tasks (create files, refactor code) in an isolated sub-agent with sandbox controls |
 | **Delegate analysis** | Run read-only tasks (explain code, search, summarize) with fresh context |
 | **Code review** | Dedicated `codex exec review` with git diff integration (uncommitted, branch-based) |
-| **Super-review** | Parallel multi-perspective review — host + multiple specialized sub-agents, synthesized and graded |
 | **Structured output** | Enforce JSON output shape via `--output-schema` for machine-readable results |
 | **Session resume** | Multi-turn delegation with `--persist` / `--resume` for iterative refinement |
 | **Collision-aware writes** | Automatic git worktree isolation for medium-confidence write delegations |
@@ -75,7 +74,6 @@ The host agent follows this priority order before every task:
    - Parallel execution needed? (multiple independent tasks)
    - Isolation needed? (prototype, spike, risky changes)
    - Second opinion needed? (review, audit)
-   - Super-review needed? (parallel multi-perspective review)
    → YES to any: Delegate via this skill.
 
 4. Is the task trivially simple (< 2 min of direct work)?
@@ -100,44 +98,6 @@ Assessment criteria:
 - Do import chains overlap? (medium-risk)
 - Different directories with no shared modules? (usually high confidence)
 - Read-only tasks? (always high — no conflict possible)
-
----
-
-## Super-Review Pattern
-
-The host agent doesn't just delegate reviews — it runs its own review AND launches specialized sub-agent reviews in parallel, then synthesizes and **grades** the result.
-
-### How It Works
-1. **Host agent reviews** using IDE context, conversation history, user intent
-2. **Selects review focuses** based on what's being reviewed and the user's prompt (dynamic, not a fixed list)
-3. **Discovers pre-configured prompts** (installed skills first, then project docs/workflows, then custom inline as fallback) and obtains complete prompt files by following the discovered skill's instructions
-4. **Shows review plan** — presents the selected review types, target files, and sub-agent count to the user. Waits for explicit approval before launching.
-5. **Launches sub-agents** in parallel, each with a review prompt file loaded via `--review-prompt <filepath>` — the wrapper reads the file and prepends it to stdin, so the full prompt never passes through the host agent's context
-6. **Synthesizes**: reads all outputs, cross-references with own review, de-duplicates, validates, filters false positives
-7. **Grades**: assigns an overall grade (A-F or 1-10) with per-dimension grades and justification
-8. **Re-reads output template** and verifies the response matches every required section before presenting
-9. **Presents** unified review grouped by severity with actionable recommendations
-
-### Review Prompt Skills (Generic Pattern)
-
-The sub-agent skill's `--review-prompt` flag accepts **any** complete `.md` file. A separate **review prompt skill** can provide pre-configured review prompts, but this skill has no dependency on any specific one. They connect through the generic `--review-prompt <file>` interface.
-
-A review prompt skill typically provides:
-- **A SKILL.md** listing available review types with short descriptions (~50 tokens each)
-- **A way to produce complete prompt files** (build script, ready-to-use `.md` files, or both)
-- **Instructions** for how to get a complete prompt file for a given review type
-
-**How the host agent connects them:**
-- **With a review prompt skill**: Reads its SKILL.md, picks the right type, follows instructions to get a complete `.md` file, passes it via `--review-prompt`
-- **Without any review prompt skill**: Full review prompt via stdin, or `--review-prompt ./any-custom-file.md`
-- **Adding context to a prompt**: Pipe additional context via stdin — it's appended after the review prompt file
-
-**Prompt discovery order** (super-review Step 2):
-1. Installed skills (any skill providing review prompts)
-2. Workflows & project docs (`.windsurf/workflows/`, `docs/`, etc.)
-3. Custom inline via stdin (fallback)
-
-> The sub-agent skill never imports, calls, or depends on any specific review prompt skill. It only receives a file path.
 
 ---
 
@@ -186,7 +146,3 @@ A review prompt skill typically provides:
 - **shinpr/sub-agents-skills** — Multi-CLI sub-agent pattern (SKILL.md structure, JSONL processing)
 - **openai/codex (Rust source)** — System prompts, orchestrator template, multi-agent collaboration
 - **Piebald-AI/claude-code-system-prompts** — Task tool definition, subagent guidance patterns
-
-## Status
-
-**Experimental** — Full plan at [`codex-subagent-plan.md`](codex-subagent-plan.md). Review prompt integration is generic — works with any skill providing `.md` review prompts via `--review-prompt`. All custom terms defined in the plan's Glossary (Section 1). Super-reviewed twice (Round 1: 7 parallel Codex reviews; Round 2: 6 criteria-specific passes, 11 fixes).

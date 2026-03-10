@@ -35,7 +35,7 @@ Use `+` / `-` modifiers (e.g., `A-`, `B+`) when between thresholds. Apply per-di
 | # | Pass | Source | Status | Findings |
 |---|------|--------|--------|----------|
 | 1 | Host (self) | <agent name> | ✅ / ❌ | <count> |
-| 2 | <review type> | Codex sub-agent | ✅ / ❌ | <count> |
+| 2 | <review type> | Sub-agent | ✅ / ❌ | <count> |
 (one row per review pass including your own)
 
 ## Findings

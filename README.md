@@ -10,7 +10,8 @@ Each skill is a self-contained directory following the [Agent Skills Open Standa
 
 | Skill | Description |
 |---|---|
-| [codex-subagent](./codex-subagent/) | Delegate coding tasks to OpenAI Codex CLI as a sub-agent — parallel work, fresh context, second opinions. Python safety wrapper, collision confidence, super-review pattern, guardrails. POSIX-only. See [design](./docs/codex-subagent/codex-subagent-design.md). |
+| [codex-subagent](./codex-subagent/) | Delegate coding tasks to OpenAI Codex CLI as a sub-agent — parallel work, fresh context, second opinions. Python safety wrapper, collision confidence, guardrails. POSIX-only. See [design](./docs/codex-subagent/codex-subagent-design.md). |
+| [super-review](./super-review/) | Run parallel multi-perspective code reviews using sub-agents — synthesize, de-duplicate, grade, and present unified findings. Backend-agnostic (works with codex-subagent, Claude Code, or any sub-agent executor). See [design](./docs/super-review/super-review-design.md). |
 | [review-prompts](./review-prompts/) | Reusable review prompt library — code review, security, plan review, architecture, performance, testing, prompt engineering, and language-specific prompts. Works standalone or as a file injection to sub-agents. |
 
 ### Productivity / Integration

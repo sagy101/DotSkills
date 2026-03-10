@@ -2,10 +2,9 @@
 name: codex-subagent
 description: >
   Delegate coding tasks to OpenAI Codex CLI as a sub-agent. Use when the user asks to delegate work,
-  run parallel coding tasks, get a code review or second opinion, run a super-review (parallel
-  multi-perspective review), explore code with fresh context, or when multiple independent subtasks
-  can be parallelized. Use only when the task justifies delegation overhead (> 2 min of direct work)
-  and benefits from fresh context or parallelism.
+  run parallel coding tasks, get a code review or second opinion, explore code with fresh context,
+  or when multiple independent subtasks can be parallelized. Use only when the task justifies
+  delegation overhead (> 2 min of direct work) and benefits from fresh context or parallelism.
   IMPORTANT: NEVER run `codex` CLI commands directly — always use this skill's wrapper script (run_codex.py).
 license: MIT
 metadata:
@@ -36,7 +35,6 @@ Delegate coding tasks to OpenAI's Codex CLI (`codex exec`) as a sub-agent. This 
    - Parallel execution is needed (multiple independent tasks)
    - Task isolation adds value (prototype, spike, risky changes)
    - A second opinion or specialized review is wanted
-   - A super-review (parallel multi-perspective) is needed
 
 **Prefer direct work when:**
 - The task is trivially simple (< 2 minutes of direct work)
@@ -262,34 +260,7 @@ On timeout: inform user, re-launch with `--persist` + next tier up. If 40min tim
    ```
 3. Read result file, incorporate findings
 
-### Operation 3: Super-Review (Parallel Host + Codex)
-
-When a review is requested, run your own review AND launch specialized sub-agent reviews in parallel, then synthesize.
-
-1. **Your own review**: Use IDE context, conversation history, user intent
-2. **Select review types** based on what's being reviewed and user's prompt (dynamic, not fixed)
-3. **Discover review prompts** — search in this order:
-   a. Installed skills providing review prompts (read their SKILL.md for types and build instructions)
-   b. Workflows and project docs (`.windsurf/workflows/`, `docs/`)
-   c. Custom inline via stdin (fallback)
-4. **Show review plan** — present the selected review types, target files, and sub-agent count to the user. Wait for explicit approval before launching.
-5. **Launch sub-agents** in parallel (max 6, enforced by wrapper), each with `--review-prompt <file>`:
-   ```
-   echo "src/auth/*.ts" | python3 <skill_dir>/scripts/run_codex.py --mode read-only --review-prompt /tmp/sec-prompt.md review --base main -
-   echo "src/api/users.ts" | python3 <skill_dir>/scripts/run_codex.py --mode read-only --review-prompt /tmp/cr-prompt.md -
-   ```
-6. **Synthesize**: Read all outputs, cross-reference with your review, de-duplicate, validate each finding
-7. **Grade**: Use the scoring rubric and dimensions in [references/SUPER_REVIEW_TEMPLATE.md](references/SUPER_REVIEW_TEMPLATE.md)
-8. **Before presenting**: Re-read [references/SUPER_REVIEW_TEMPLATE.md](references/SUPER_REVIEW_TEMPLATE.md) and verify your output matches every section
-9. **Present**: Use the template from step 8 exactly
-
-**Partial failure policy**: If sub-agents fail, continue with available results. Mark missing dimensions. Optionally retry once. Never present partial results as complete.
-
-#### Grading, Dimensions & Output Template
-
-All in one file: [references/SUPER_REVIEW_TEMPLATE.md](references/SUPER_REVIEW_TEMPLATE.md). Contains scoring dimensions, grading rubric, and the full output template with per-severity tables and Agreement column. **Read that file at step 8 before presenting results.**
-
-### Operation 4: Structured Output Task
+### Operation 3: Structured Output Task
 
 1. Create JSON schema file for expected output shape (see [assets/output-schema-review.json](assets/output-schema-review.json) for example)
 2. Run via wrapper with `--output-schema` passthrough:
@@ -298,7 +269,7 @@ All in one file: [references/SUPER_REVIEW_TEMPLATE.md](references/SUPER_REVIEW_T
    ```
 3. Validate JSON output against schema; retry with clarified format on parse failure
 
-### Operation 5: Resume / Multi-Turn Delegation
+### Operation 4: Resume / Multi-Turn Delegation
 
 1. Initial run with `--persist`:
    ```
