@@ -98,28 +98,28 @@ def add_config_arg(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def normalize_args(argv: list[str] | None = None) -> list[str]:
-    """Normalize CLI arguments: convert single-dash long flags to double-dash.
+def _normalize_argv() -> None:
+    """Normalize sys.argv in-place: convert single-dash long flags to double-dash.
 
     LLM agents frequently write ``-format`` instead of ``--format``.
     This converts any ``-<word>`` (3+ chars, not a number) to ``--<word>``
     so argparse matches it correctly.  Short flags like ``-v`` and ``-h``
     are left untouched.
+
+    Called automatically when this module is imported, so every script that
+    uses ``from config_loader import ...`` gets normalization for free.
     """
-    if argv is None:
-        argv = sys.argv[1:]
-    out: list[str] = []
-    for arg in argv:
+    for i, arg in enumerate(sys.argv[1:], start=1):
         if (
             arg.startswith("-")
             and not arg.startswith("--")
             and len(arg) > 2
             and not arg.lstrip("-").isdigit()
         ):
-            out.append("-" + arg)
-        else:
-            out.append(arg)
-    return out
+            sys.argv[i] = "-" + arg
+
+
+_normalize_argv()
 
 
 def detect_shell() -> tuple[str, str]:

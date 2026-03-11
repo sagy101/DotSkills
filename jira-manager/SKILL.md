@@ -244,6 +244,24 @@ Add `--summary` for counts only, `--json` for raw output. Exit code 1 = changes 
 
 Required fields per issue type (`create_meta`) are always discovered and saved with `--apply`. Create scripts validate these before calling the API and exit with actionable `--set` hints if any are missing.
 
+#### Search for a field by name
+
+```bash
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/discover_fields.py \
+  --search "QBR"         # case-insensitive substring search across all fields
+```
+
+Returns field ID, name, custom/system, and schema type for every match. Use this when you need to find a project-specific custom field.
+
+#### List all fields for an issue type
+
+```bash
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/discover_fields.py \
+  --fields-for-type epic  # lists all fields + allowed values for epics
+```
+
+Shows every field available for the given issue type, marks `[REQUIRED]` fields, and prints allowed values (e.g. dropdown options). Use this to discover what fields and values are needed before creating a ticket.
+
 ### Markup conversion & link rewriting
 
 Descriptions auto-convert between Markdown ↔ Jira wiki markup. Pass `--no-convert` to skip.
@@ -282,7 +300,8 @@ Relative markdown links auto-rewrite to git browse URLs when `--rewrite-links` i
 |---|---|---|
 | Writing `python -c "..."` with `JiraClient` directly | Missing config, wrong method names, no field resolution | Use the dedicated script (`fetch_tickets.py`, `create_ticket.py`, etc.) |
 | Guessing `JiraClient` methods (`search_issues`, `jql_search`, `session`) | These methods don't exist | Use `fetch_tickets.py --jql`, `fetch_tickets.py --filter`, or `fetch_tickets.py --key` |
-| Using single-dash flags (`-format`) | argparse requires double-dash for long flags | Use `--format`, `--key`, `--type`, etc. |
+| Using single-dash flags (`-format`) | Auto-corrected since v1.7 — but prefer `--format` for clarity | `_normalize_argv()` in config_loader fixes this at import time |
 | Calling `/rest/api/2/search` directly | Deprecated (410 Gone) on newer Jira Cloud | Use `fetch_tickets.py` which handles API versions |
 | Manually editing `.jira.json` to add field_mappings | Error-prone, misses catalog entries | Run `discover_fields.py --apply` (or `--all --apply`) |
+| Can't find a custom field (e.g. QBR) | `discover_fields.py` only finds well-known fields by default | Use `--search "QBR"` to find any field by name, then `--fields-for-type epic` to see allowed values |
 | Abandoning scripts after first error | Wastes time re-implementing existing logic | Check error table above, fix the flag/config, re-run |

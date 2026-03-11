@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import add_config_arg, load_config, load_manifest, normalize_args
+from config_loader import add_config_arg, load_config, load_manifest
 from jira_client import JiraClient
 from link_rewriter import rewrite_links_to_git
 from markup_converter import md_to_jira_markup
@@ -250,7 +250,7 @@ def main():
         "--summary", action="store_true", help="Show counts only, no field details"
     )
     parser.add_argument("--json", action="store_true", help="Output raw JSON")
-    args = parser.parse_args(normalize_args())
+    args = parser.parse_args()
 
     config = load_config(args.config)
     client = JiraClient(config)

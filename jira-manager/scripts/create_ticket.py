@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import add_config_arg, load_config, load_manifest, normalize_args, save_manifest
+from config_loader import add_config_arg, load_config, load_manifest, save_manifest
 from field_resolver import (
     add_common_field_args,
     apply_extra_fields,
@@ -120,7 +120,7 @@ def main():
         help="ID to track this ticket in the manifest (e.g. '1' for story 1, '1.1' for subtask)",
     )
     add_common_field_args(parser)
-    args = parser.parse_args(normalize_args())
+    args = parser.parse_args()
 
     config = load_config(args.config)
     fields, status_from_set = build_fields(args, config)

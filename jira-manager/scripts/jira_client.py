@@ -290,6 +290,36 @@ class JiraClient:
             params["expand"] = "projects.issuetypes.fields"
         return self._request("GET", "/rest/api/2/issue/createmeta", params=params)
 
+    def get_create_meta_for_type(
+        self,
+        issue_type_id: str,
+        project_key: Optional[str] = None,
+    ) -> List[dict]:
+        """Fetch all available fields for a specific issue type via createmeta.
+
+        Returns a flat list of field dicts (each with key, name, required,
+        allowedValues, etc.).  Handles pagination automatically.
+        """
+        pk = project_key or self.config.project_key
+        all_fields: List[dict] = []
+        start = 0
+        while True:
+            result = self._request(
+                "GET",
+                f"/rest/api/2/issue/createmeta/{pk}/issuetypes/{issue_type_id}",
+                params={"startAt": start, "maxResults": 50},
+            )
+            fields = result.get("fields", result.get("values", []))
+            if isinstance(fields, list):
+                all_fields.extend(fields)
+            else:
+                break
+            total = result.get("total", len(all_fields))
+            start += len(fields)
+            if start >= total or not fields:
+                break
+        return all_fields
+
     def get_transitions(self, issue_key: str) -> List[dict]:
         """Fetch available workflow transitions for an issue."""
         result = self._request(

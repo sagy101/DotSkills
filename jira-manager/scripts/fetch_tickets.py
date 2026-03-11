@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import add_config_arg, load_config, normalize_args
+from config_loader import add_config_arg, load_config
 from jira_client import JiraClient
 from jql_builder import build_board_jql, build_jql_from_filters
 
@@ -266,7 +266,7 @@ def main():
         action="store_true",
         help="Skip Jira wiki markup to Markdown conversion for descriptions",
     )
-    args = parser.parse_args(normalize_args())
+    args = parser.parse_args()
 
     # Flatten --filter lists into a single list of key=value pairs
     if args.filter:

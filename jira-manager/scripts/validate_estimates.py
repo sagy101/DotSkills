@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import add_config_arg, load_config, load_manifest, normalize_args
+from config_loader import add_config_arg, load_config, load_manifest
 from jira_client import JiraClient
 
 
@@ -281,7 +281,7 @@ def main():
     parser.add_argument(
         "--json", action="store_true", help="Output raw JSON instead of table"
     )
-    args = parser.parse_args(normalize_args())
+    args = parser.parse_args()
 
     config = load_config(args.config)
 

@@ -57,11 +57,15 @@ This skill gives **any SKILL.md-compatible agent** reliable Jira CRUD by combini
 
 **11. Required field pre-validation via create_meta** — `discover_fields.py --apply` now always fetches Jira's `createmeta` (required fields per issue type) and persists it in `.jira.json`. Before any create API call, `create_ticket.py` and `bulk_create.py` validate that all required fields are present and exit with actionable `--set` hints if any are missing. This catches errors like "QBR is mandatory for Epics" before hitting the API.
 
-**12. CLI flag normalization for LLM agents** — All scripts pass `sys.argv` through `normalize_args()` before argparse processing. This converts single-dash long flags (`-format`) to double-dash (`--format`) — a frequent LLM mistake. Short flags like `-v` are left untouched. The heuristic: any arg starting with `-` (not `--`) with 3+ characters and not a number gets a second dash prepended.
+**12. CLI flag normalization for LLM agents** — `config_loader.py` calls `_normalize_argv()` at import time, patching `sys.argv` in-place before argparse ever sees it. Since every script imports `config_loader`, normalization is automatic — no per-script wiring needed. Converts single-dash long flags (`-format`) to double-dash (`--format`). Short flags like `-v` are untouched.
 
 **13. Config discovery with git root boundary** — `.jira.json` is discovered by walking up from CWD, stopping at the nearest git root to avoid picking up configs from unrelated parent directories. Global config (`~/.jira.json`) is merged underneath project-level config (project wins on conflict). An explicit `--config` flag overrides discovery entirely.
 
-**14. Module structure** — `config_loader.py` handles configuration loading, credential resolution, shell detection, and manifest I/O. All scripts share the same `--config` argument definition via `add_config_arg()` for consistency.
+**14. Field search (`--search`)** — `discover_fields.py --search "QBR"` searches all Jira fields by name substring (case-insensitive) and prints field IDs, custom/system status, and schema types. This prevents agents from writing raw `curl` commands to find project-specific custom fields.
+
+**15. Per-issue-type field listing (`--fields-for-type`)** — `discover_fields.py --fields-for-type epic` fetches all available fields for a given issue type via the per-type createmeta endpoint, marks required fields, and prints allowed values for dropdown fields. This directly addresses the scenario where an agent needs to know what values are valid for a field like "QBR Theme" on an Epic.
+
+**16. Module structure** — `config_loader.py` handles configuration loading, credential resolution, shell detection, and manifest I/O. All scripts share the same `--config` argument definition via `add_config_arg()` for consistency.
 
 ---
 
@@ -147,4 +151,4 @@ If `field_catalog` is empty or stale, scripts may fail with "field not configure
 
 ## Status
 
-**Stable (v1.7)** — Full CRUD, bulk operations, Agile board/sprint support, field discovery, diff/validate, markup conversion, comments, and issue links implemented.
+**Stable (v1.8)** — Full CRUD, bulk operations, Agile board/sprint support, field discovery, diff/validate, markup conversion, comments, and issue links implemented.

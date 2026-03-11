@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import add_config_arg, find_config, load_config, normalize_args
+from config_loader import add_config_arg, find_config, load_config
 from jira_client import JiraClient
 
 
@@ -377,6 +377,65 @@ def _print_suggestion(suggestion):
     print(json.dumps(display, indent=2))
 
 
+def _run_search(client, query):
+    """Search all Jira fields by name substring (case-insensitive)."""
+    all_fields = client.get_fields()
+    query_lower = query.lower()
+    matches = []
+    for f in all_fields:
+        fname = f.get("name", "")
+        if query_lower in fname.lower():
+            matches.append(f)
+    if not matches:
+        print(f"No fields matching '{query}'.")
+        return
+    print(f"Fields matching '{query}' ({len(matches)} found):\n")
+    for f in sorted(matches, key=lambda x: x.get("name", "")):
+        fid = f.get("id", "")
+        fname = f.get("name", "")
+        custom = "custom" if f.get("custom") else "system"
+        schema_type = f.get("schema", {}).get("type", "")
+        print(f"  {fname} ({fid})  [{custom}, {schema_type}]")
+
+
+def _run_fields_for_type(client, config, type_name):
+    """List all available fields (with allowed values) for a given issue type."""
+    type_id = None
+    normalized = type_name.lower().replace(" ", "_")
+    for name, tid in config.issue_types.items():
+        if name == normalized:
+            type_id = tid
+            break
+    if not type_id:
+        print(f"ERROR: Unknown issue type '{type_name}'. "
+              f"Known types: {', '.join(sorted(config.issue_types.keys()))}",
+              file=sys.stderr)
+        print("Run discover_fields.py --apply to refresh issue types.",
+              file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Fields available for '{type_name}' (type id={type_id}):\n")
+    try:
+        fields = client.get_create_meta_for_type(type_id)
+    except Exception as e:
+        print(f"ERROR: Could not fetch fields for type: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    for f in sorted(fields, key=lambda x: x.get("name", "")):
+        fkey = f.get("key", f.get("fieldId", ""))
+        fname = f.get("name", "")
+        required = " [REQUIRED]" if f.get("required") else ""
+        allowed = f.get("allowedValues", [])
+        print(f"  {fname} ({fkey}){required}")
+        if allowed:
+            for v in allowed[:20]:
+                val = v.get("value") or v.get("name") or v.get("key", "")
+                vid = v.get("id", "")
+                print(f"    - {val} (id: {vid})")
+            if len(allowed) > 20:
+                print(f"    ... and {len(allowed) - 20} more")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Discover Jira project metadata")
     add_config_arg(parser)
@@ -394,7 +453,18 @@ def main():
         help="Full discovery: statuses, priorities, components, versions, "
              "resolutions, and all fields. Saves to field_catalog in config.",
     )
-    args = parser.parse_args(normalize_args())
+    parser.add_argument(
+        "--search",
+        metavar="NAME",
+        help="Search all Jira fields by name substring (case-insensitive)",
+    )
+    parser.add_argument(
+        "--fields-for-type",
+        metavar="TYPE",
+        help="List all available fields and allowed values for an issue type "
+             "(e.g. epic, story, bug)",
+    )
+    args = parser.parse_args()
 
     config = load_config(args.config)
     client = JiraClient(config)
@@ -404,6 +474,14 @@ def main():
         print("ERROR: Could not connect to Jira. Check credentials and URL.")
         sys.exit(1)
     print("Connection OK.\n")
+
+    if args.search:
+        _run_search(client, args.search)
+        return
+
+    if args.fields_for_type:
+        _run_fields_for_type(client, config, args.fields_for_type)
+        return
 
     field_mappings, issue_types, create_meta = _run_basic_discovery(client, args.verbose)
 
