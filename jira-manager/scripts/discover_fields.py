@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import add_config_arg, find_config, load_config
+from config_loader import add_config_arg, find_config, load_config, normalize_args
 from jira_client import JiraClient
 
 
@@ -394,7 +394,7 @@ def main():
         help="Full discovery: statuses, priorities, components, versions, "
              "resolutions, and all fields. Saves to field_catalog in config.",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(normalize_args())
 
     config = load_config(args.config)
     client = JiraClient(config)

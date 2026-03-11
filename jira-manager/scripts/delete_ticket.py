@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import add_config_arg, load_config, load_manifest, save_manifest
+from config_loader import add_config_arg, load_config, load_manifest, normalize_args, save_manifest
 from jira_client import JiraClient
 
 
@@ -89,7 +89,7 @@ def main():
         action="store_true",
         help="Show what would be deleted without making API calls",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(normalize_args())
 
     config = load_config(args.config)
     client = JiraClient(config)

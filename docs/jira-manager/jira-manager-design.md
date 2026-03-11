@@ -55,9 +55,13 @@ This skill gives **any SKILL.md-compatible agent** reliable Jira CRUD by combini
 
 **10. Virtual environment isolation** — `setup_env.py` creates `.venv/` inside the skill directory (e.g., `jira-manager/.venv/`). The agent invokes scripts using the absolute path to the venv Python interpreter (e.g., `/path/to/jira-manager/.venv/bin/python`) — no shell activation required. This keeps the skill self-contained and works identically whether installed in the repo or synced to `~/.codeium/windsurf/skills/`.
 
-**11. Config discovery with git root boundary** — `.jira.json` is discovered by walking up from CWD, stopping at the nearest git root to avoid picking up configs from unrelated parent directories. Global config (`~/.jira.json`) is merged underneath project-level config (project wins on conflict). An explicit `--config` flag overrides discovery entirely.
+**11. Required field pre-validation via create_meta** — `discover_fields.py --apply` now always fetches Jira's `createmeta` (required fields per issue type) and persists it in `.jira.json`. Before any create API call, `create_ticket.py` and `bulk_create.py` validate that all required fields are present and exit with actionable `--set` hints if any are missing. This catches errors like "QBR is mandatory for Epics" before hitting the API.
 
-**12. Module structure** — `config_loader.py` handles configuration loading, credential resolution, shell detection, and manifest I/O. All scripts share the same `--config` argument definition via `add_config_arg()` for consistency.
+**12. CLI flag normalization for LLM agents** — All scripts pass `sys.argv` through `normalize_args()` before argparse processing. This converts single-dash long flags (`-format`) to double-dash (`--format`) — a frequent LLM mistake. Short flags like `-v` are left untouched. The heuristic: any arg starting with `-` (not `--`) with 3+ characters and not a number gets a second dash prepended.
+
+**13. Config discovery with git root boundary** — `.jira.json` is discovered by walking up from CWD, stopping at the nearest git root to avoid picking up configs from unrelated parent directories. Global config (`~/.jira.json`) is merged underneath project-level config (project wins on conflict). An explicit `--config` flag overrides discovery entirely.
+
+**14. Module structure** — `config_loader.py` handles configuration loading, credential resolution, shell detection, and manifest I/O. All scripts share the same `--config` argument definition via `add_config_arg()` for consistency.
 
 ---
 
@@ -104,12 +108,14 @@ All bulk updates default to **dry-run preview** and require `--confirm` to execu
    - Fix versions
    - Sprints (via Agile API)
    - Custom fields (with --verbose)
-3. Results saved to field_catalog in .jira.json
+   - Required fields per issue type (create_meta)
+3. Results saved to field_catalog and create_meta in .jira.json
 4. All subsequent scripts reference field_catalog for:
    - Validating --status values against available transitions
    - Resolving --priority to Jira's priority IDs
    - Mapping --sprint names to sprint IDs (Agile API)
    - Resolving --set field names to Jira field IDs
+5. Create scripts reference create_meta to pre-validate required fields
 ```
 
 If `field_catalog` is empty or stale, scripts may fail with "field not configured" — the fix is always to re-run discovery with `--apply`.
@@ -126,6 +132,8 @@ If `field_catalog` is empty or stale, scripts may fail with "field not configure
 | Orphaned subtasks | Medium | Dependency-ordered creation; stop on parent failure |
 | Invalid status transitions | Medium | Transition query + clear error messages |
 | Stale field catalog | Medium | Pre-flight check triggers re-discovery |
+| Agent abandoning scripts for inline code | High | SKILL.md rules #1-2 mandate script usage; troubleshooting table documents common mistakes |
+| Agent using wrong flag syntax (`-flag` vs `--flag`) | Medium | `normalize_args()` auto-corrects single-dash long flags |
 | Markup conversion artifacts | Low | `--no-convert` escape hatch; round-trip tested |
 | Raw JQL matching too broadly | High | Dry-run preview; `--confirm` required; max-results cap with warning |
 
@@ -139,4 +147,4 @@ If `field_catalog` is empty or stale, scripts may fail with "field not configure
 
 ## Status
 
-**Stable (v1.6)** — Full CRUD, bulk operations, Agile board/sprint support, field discovery, diff/validate, markup conversion, comments, and issue links implemented.
+**Stable (v1.7)** — Full CRUD, bulk operations, Agile board/sprint support, field discovery, diff/validate, markup conversion, comments, and issue links implemented.

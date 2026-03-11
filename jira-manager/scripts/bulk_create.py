@@ -45,7 +45,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import add_config_arg, load_config, load_manifest, save_manifest
+from config_loader import add_config_arg, load_config, load_manifest, normalize_args, save_manifest
 from field_resolver import resolve_issue_type, validate_required_fields
 from jira_client import JiraClient
 from link_rewriter import rewrite_links_to_git
@@ -379,7 +379,7 @@ def main():
         action="store_true",
         help="Show plan without creating tickets",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(normalize_args())
 
     config = load_config(args.config)
     manifest = load_manifest(config)

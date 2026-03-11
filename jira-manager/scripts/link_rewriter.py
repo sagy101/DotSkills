@@ -22,7 +22,7 @@ from typing import Optional
 from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import JiraConfig, add_config_arg, load_config
+from config_loader import JiraConfig, add_config_arg, load_config, normalize_args
 
 
 def _git_remote_to_browse_base(remote_url: str, branch: str) -> Optional[str]:
@@ -134,7 +134,7 @@ def main():
     )
     parser.add_argument("--text", help="Text to transform (reads stdin if omitted)")
     parser.add_argument("--file", help="File to read text from")
-    args = parser.parse_args()
+    args = parser.parse_args(normalize_args())
 
     config = load_config(args.config)
 

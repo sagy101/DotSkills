@@ -251,13 +251,15 @@ Relative markdown links auto-rewrite to git browse URLs when `--rewrite-links` i
 
 ## Important rules
 
-1. **Never create/update/delete without plan + explicit user approval.**
-2. **Never print credentials.** Only confirm env vars are set.
-3. **Create in dependency order**: epics → stories → subtasks.
-4. `.jira-manifest.json` is auto-maintained. Do not edit manually.
-5. On create failure, stop immediately — do not continue with dependents.
-6. After bulk create, offer estimation validation.
-7. Link rewriting is best-effort.
+1. **ALWAYS use the provided scripts.** Every operation (create, update, fetch, delete, discover, diff, validate) has a dedicated script. Run them via `<skill_dir>/.venv/bin/python <skill_dir>/scripts/<script>.py`. NEVER write inline Python (`python -c "..."`) to call `JiraClient`, `config_loader`, or the Jira REST API directly. The scripts handle auth, config merging, error formatting, field resolution, and markup conversion — inline code will miss all of this.
+2. **If a script fails, debug the script invocation** (wrong flags, missing config, missing `--apply`). Do NOT abandon the scripts and write custom code. Check the error table below and re-run with corrected arguments.
+3. **Never create/update/delete without plan + explicit user approval.**
+4. **Never print credentials.** Only confirm env vars are set.
+5. **Create in dependency order**: epics → stories → subtasks.
+6. `.jira-manifest.json` is auto-maintained. Do not edit manually.
+7. On create failure, stop immediately — do not continue with dependents.
+8. After bulk create, offer estimation validation.
+9. Link rewriting is best-effort.
 
 ## Error handling
 
@@ -273,3 +275,14 @@ Relative markdown links auto-rewrite to git browse URLs when `--rewrite-links` i
 | `ModuleNotFoundError` | Run `setup_env.py` |
 | `--set` not resolving | Run `discover_fields.py --all --verbose --apply` |
 | `Unknown link type` | Check available types with `get_link_types()` — common: Blocks, Duplicate, Cloners, Relates |
+
+## Troubleshooting (common agent mistakes)
+
+| Mistake | Why it fails | Correct approach |
+|---|---|---|
+| Writing `python -c "..."` with `JiraClient` directly | Missing config, wrong method names, no field resolution | Use the dedicated script (`fetch_tickets.py`, `create_ticket.py`, etc.) |
+| Guessing `JiraClient` methods (`search_issues`, `jql_search`, `session`) | These methods don't exist | Use `fetch_tickets.py --jql`, `fetch_tickets.py --filter`, or `fetch_tickets.py --key` |
+| Using single-dash flags (`-format`) | argparse requires double-dash for long flags | Use `--format`, `--key`, `--type`, etc. |
+| Calling `/rest/api/2/search` directly | Deprecated (410 Gone) on newer Jira Cloud | Use `fetch_tickets.py` which handles API versions |
+| Manually editing `.jira.json` to add field_mappings | Error-prone, misses catalog entries | Run `discover_fields.py --apply` (or `--all --apply`) |
+| Abandoning scripts after first error | Wastes time re-implementing existing logic | Check error table above, fix the flag/config, re-run |

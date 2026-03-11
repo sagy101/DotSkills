@@ -31,7 +31,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import add_config_arg, load_config
+from config_loader import add_config_arg, load_config, normalize_args
 from field_resolver import (
     add_common_field_args,
     build_update_fields,
@@ -90,7 +90,7 @@ def main():
              "'is blocked by:API-456'. Can be repeated.",
     )
     add_common_field_args(parser)
-    args = parser.parse_args()
+    args = parser.parse_args(normalize_args())
 
     config = load_config(args.config)
     fields, status_from_set = build_update_fields(args, config)
