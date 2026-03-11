@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import add_config_arg, load_config
+from config_loader import add_config_arg, find_config, load_config
 from jira_client import JiraClient
 
 
@@ -415,18 +415,17 @@ def main():
         _print_suggestion(suggestion)
 
     if args.apply:
-        _apply_suggestion(args.config, suggestion)
+        config_file = Path(args.config) if args.config else find_config()
+        _apply_suggestion(config_file, suggestion)
 
     print("\nDone.")
 
 
-def _apply_suggestion(config_path_str, suggestion):
+def _apply_suggestion(config_path: Path, suggestion):
     """Write discovered mappings into .jira.json."""
     if not suggestion:
         print("\nNothing to apply.")
         return
-
-    config_path = Path(config_path_str)
     raw = json.loads(config_path.read_text(encoding="utf-8"))
 
     for key in ("field_mappings", "issue_types"):
