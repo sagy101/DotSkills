@@ -331,7 +331,7 @@ def discover_full_catalog(client: JiraClient, verbose: bool = False) -> dict:
 
 
 def _run_basic_discovery(client, verbose):
-    """Run basic field and issue type discovery. Returns (field_mappings, issue_types)."""
+    """Run basic field and issue type discovery. Returns (field_mappings, issue_types, create_meta)."""
     print("Discovering custom fields ...")
     field_mappings = discover_fields(client)
     for name, fid in field_mappings.items():
@@ -346,24 +346,33 @@ def _run_basic_discovery(client, verbose):
     if not issue_types:
         print("  (no issue types found)")
 
-    if verbose:
-        print("\nDiscovering required fields per issue type ...")
-        meta = discover_create_meta(client)
-        for type_name, info in sorted(meta.items()):
-            required = [f"{f['name']} ({f['id']})" for f in info["required_fields"]]
-            print(f"  {type_name} (id={info['id']}): {', '.join(required)}")
+    print("\nDiscovering required fields per issue type ...")
+    create_meta = discover_create_meta(client)
+    for type_name, info in sorted(create_meta.items()):
+        required = [f"{f['name']} ({f['id']})" for f in info["required_fields"]]
+        print(f"  {type_name} (id={info['id']}): {', '.join(required)}")
+    if not create_meta:
+        print("  (createmeta not available)")
 
-    return field_mappings, issue_types
+    if verbose and create_meta:
+        print("\nDetailed required fields per issue type:")
+        for type_name, info in sorted(create_meta.items()):
+            print(f"  {type_name}:")
+            for f in info["required_fields"]:
+                print(f"    - {f['name']} ({f['id']})")
+
+    return field_mappings, issue_types, create_meta
 
 
 def _print_suggestion(suggestion):
-    """Print the suggestion block, excluding verbose _fields_index."""
+    """Print the suggestion block, excluding verbose _fields_index and create_meta."""
     display = dict(suggestion)
     if "field_catalog" in display:
         display["field_catalog"] = {
             k: v for k, v in display["field_catalog"].items()
             if k != "_fields_index"
         }
+    display.pop("create_meta", None)
     print("\n--- Suggested .jira.json additions ---")
     print(json.dumps(display, indent=2))
 
@@ -396,7 +405,7 @@ def main():
         sys.exit(1)
     print("Connection OK.\n")
 
-    field_mappings, issue_types = _run_basic_discovery(client, args.verbose)
+    field_mappings, issue_types, create_meta = _run_basic_discovery(client, args.verbose)
 
     field_catalog = {}
     if args.all:
@@ -408,6 +417,8 @@ def main():
         suggestion["field_mappings"] = field_mappings
     if issue_types:
         suggestion["issue_types"] = issue_types
+    if create_meta:
+        suggestion["create_meta"] = create_meta
     if field_catalog:
         suggestion["field_catalog"] = field_catalog
 
@@ -428,7 +439,7 @@ def _apply_suggestion(config_path: Path, suggestion):
         return
     raw = json.loads(config_path.read_text(encoding="utf-8"))
 
-    for key in ("field_mappings", "issue_types"):
+    for key in ("field_mappings", "issue_types", "create_meta"):
         if key in suggestion:
             existing = raw.get(key, {})
             existing.update(suggestion[key])

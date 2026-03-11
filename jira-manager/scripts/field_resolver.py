@@ -323,6 +323,38 @@ def resolve_issue_type(config, type_name):
 
 
 # ------------------------------------------------------------------
+# Required field validation
+# ------------------------------------------------------------------
+
+# Fields that are always provided by create_ticket.py / bulk_create.py
+_IMPLICIT_FIELDS = {"project", "summary", "issuetype", "parent"}
+
+
+def validate_required_fields(config, issue_type_name, fields):
+    """Check create_meta for required fields missing from the fields dict.
+
+    Returns a list of dicts: [{"id": ..., "name": ...}, ...] for each
+    missing required field.  Returns [] if create_meta is unavailable or
+    all required fields are present.
+    """
+    meta = config.create_meta
+    if not meta:
+        return []
+
+    normalized = normalize_key(issue_type_name)
+    type_info = meta.get(normalized)
+    if not type_info:
+        return []
+
+    provided = set(fields.keys()) | _IMPLICIT_FIELDS
+    missing = []
+    for req in type_info.get("required_fields", []):
+        if req["id"] not in provided:
+            missing.append(req)
+    return missing
+
+
+# ------------------------------------------------------------------
 # Argparse helpers
 # ------------------------------------------------------------------
 

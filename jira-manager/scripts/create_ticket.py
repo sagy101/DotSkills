@@ -30,6 +30,7 @@ from field_resolver import (
     resolve_description,
     resolve_issue_type,
     resolve_sprint_id,
+    validate_required_fields,
 )
 from workflow_ops import handle_status_transition, upload_attachments
 from jira_client import JiraClient
@@ -124,6 +125,19 @@ def main():
     config = load_config(args.config)
     fields, status_from_set = build_fields(args, config)
     effective_status = args.status or status_from_set
+
+    missing = validate_required_fields(config, args.type, fields)
+    if missing:
+        print(f"ERROR: Missing required fields for issue type "
+              f"'{args.type}':", file=sys.stderr)
+        for mf in missing:
+            fid = mf["id"]
+            fname = mf["name"]
+            hint = '--set "{}=<value>"'.format(fname)
+            print(f"  - {fname} ({fid})  → {hint}", file=sys.stderr)
+        print("\nRun discover_fields.py --apply to refresh required fields.",
+              file=sys.stderr)
+        sys.exit(1)
 
     if args.dry_run:
         print("DRY RUN — would create issue with fields:")

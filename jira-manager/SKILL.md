@@ -242,6 +242,8 @@ Add `--summary` for counts only, `--json` for raw output. Exit code 1 = changes 
 
 `--all` discovers: statuses, priorities, resolutions, components, versions, sprints (Agile API). Add `--verbose` for full system+custom fields index.
 
+Required fields per issue type (`create_meta`) are always discovered and saved with `--apply`. Create scripts validate these before calling the API and exit with actionable `--set` hints if any are missing.
+
 ### Markup conversion & link rewriting
 
 Descriptions auto-convert between Markdown ↔ Jira wiki markup. Pass `--no-convert` to skip.
@@ -265,6 +267,7 @@ Relative markdown links auto-rewrite to git browse URLs when `--rewrite-links` i
 | `404 Not Found` | Check issue key and `project_key` in config |
 | `400 Bad Request` | Run `discover_fields.py --verbose` for required fields |
 | `Field not configured` | Run `discover_fields.py --apply` |
+| `Missing required fields` | Supply via `--set "Field=value"` or `--fields`. Run `discover_fields.py --apply` to refresh |
 | `No transition found` | Some statuses need intermediate steps |
 | Sprint not setting | Run `discover_fields.py --all --apply` or use `--sprint <numeric_id>` |
 | `ModuleNotFoundError` | Run `setup_env.py` |

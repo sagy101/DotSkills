@@ -46,7 +46,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_loader import add_config_arg, load_config, load_manifest, save_manifest
-from field_resolver import resolve_issue_type
+from field_resolver import resolve_issue_type, validate_required_fields
 from jira_client import JiraClient
 from link_rewriter import rewrite_links_to_git
 from markup_converter import md_to_jira_markup
@@ -242,6 +242,15 @@ def _build_issue_fields(config, item, type_name, epic_key=None, parent_key=None,
     sp_field = config.get_field_id("story_points")
     if sp_field and item.get("story_points") is not None:
         fields[sp_field] = item["story_points"]
+
+    missing = validate_required_fields(config, type_name, fields)
+    if missing:
+        names = ", ".join(f"{m['name']} ({m['id']})" for m in missing)
+        print(f"ERROR: Missing required fields for {type_name} "
+              f"'{item.get('summary', '?')}': {names}", file=sys.stderr)
+        print("Use --set or add fields to source file. "
+              "Run discover_fields.py --apply to refresh.", file=sys.stderr)
+        sys.exit(1)
 
     return fields
 
