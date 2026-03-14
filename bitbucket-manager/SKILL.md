@@ -209,6 +209,18 @@ All scripts accept `--repo <slug>` (auto-detected from git remote if omitted), `
 4. **Never print credentials.** Only confirm env vars are set.
 5. **Repo slug is auto-detected from git remote.** Override with `--repo` if needed.
 
+## Formatting guidelines
+
+Bitbucket Cloud renders PR descriptions, comments, and commit messages using **Python-Markdown** with these extensions: `codehilite`, `tables`, `def_list`, `del`, `footnotes`, `fenced_code`, `sane_lists`, `abbr`, `toc`, `wikilinks`. Arbitrary HTML (e.g. `<table>`) is **not** supported.
+
+When composing `--description` or `--body` arguments:
+
+- **Use real newlines**, not `\n` escape sequences. Shell `\n` is passed as literal text, not a line break. Use multi-line quoted strings or heredocs instead.
+- **Supported syntax**: headings (`#`), bold/italic, bullet/numbered lists, fenced code blocks (` ``` `), tables (`| col |`), links, inline code, strikethrough (`~~text~~`), definition lists.
+- **References**: `issue #N`, `pull request #N`, `@username`, short commit hashes are auto-linked.
+- **Emoji**: `:emoji_name:` syntax (e.g. `:white_check_mark:`).
+- **Not supported**: raw HTML tags, `<details>/<summary>` blocks, image uploads (use markdown image links instead).
+
 ## Error handling
 
 | Error | Cause | Fix |
