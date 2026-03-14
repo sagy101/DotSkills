@@ -18,6 +18,7 @@ Each skill is a self-contained directory following the [Agent Skills Open Standa
 
 | Skill | Description |
 |---|---|
+| [bitbucket-manager](./bitbucket-manager/) | Manage Bitbucket Cloud PRs — create, update, merge, decline, comment, list. Build/pipeline status checks, Jira issue extraction, repo listing. Zero pip deps (pure stdlib). See [design](./docs/bitbucket-manager/bitbucket-manager-design.md). |
 | [confluence-publisher](./confluence-publisher/) | Publish markdown docs to Confluence Cloud — pages, hierarchy, cross-links, Mermaid diagrams, diff/preview, export, fetch. Surgical HTML edits (find/replace without overwriting formatting), version diff, version history, page revert |
 | [jira-manager](./jira-manager/) | Create, update, fetch, delete, diff, and validate Jira tickets — bulk create from markdown/JSON, bulk update (list, board, JQL), full field catalog discovery (statuses, priorities, components, versions), status transitions, generic `--set` and `--filter` flags for any discovered field, estimation validation, link rewriting |
 
