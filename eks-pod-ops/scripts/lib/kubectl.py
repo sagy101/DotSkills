@@ -3,9 +3,8 @@
 import os
 import shutil
 import subprocess
-from typing import Optional
 
-from lib.config import get_env_config, get_kubeconfig_path, die
+from lib.config import die, get_env_config, get_kubeconfig_path
 from lib.redaction import redact_text
 
 
@@ -66,9 +65,7 @@ def run_kubectl(
     return result.returncode, output
 
 
-def stream_kubectl(
-    config: dict, env_name: str, args: list[str]
-) -> int:
+def stream_kubectl(config: dict, env_name: str, args: list[str]) -> int:
     """Stream kubectl output with real-time redaction. For --follow."""
     kubeconfig = get_kubeconfig_path(config, env_name)
     env_cfg = get_env_config(config, env_name)
@@ -78,8 +75,9 @@ def stream_kubectl(
 
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        for line in proc.stdout:
-            print(redact_text(line.rstrip(), config))
+        if proc.stdout:
+            for line in proc.stdout:
+                print(redact_text(line.rstrip(), config))
     except KeyboardInterrupt:
         proc.terminate()
     return 0

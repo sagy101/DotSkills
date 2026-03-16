@@ -5,18 +5,29 @@ import json
 from lib.config import die
 from lib.kubectl import run_kubectl
 
-KNOWN_SIDECARS = frozenset({
-    "statsite", "istio-proxy", "envoy", "datadog-agent",
-    "fluentd", "fluentbit", "fluent-bit", "aws-otel-collector",
-    "xray-daemon", "vault-agent", "vault-agent-init",
-})
+KNOWN_SIDECARS = frozenset(
+    {
+        "statsite",
+        "istio-proxy",
+        "envoy",
+        "datadog-agent",
+        "fluentd",
+        "fluentbit",
+        "fluent-bit",
+        "aws-otel-collector",
+        "xray-daemon",
+        "vault-agent",
+        "vault-agent-init",
+    }
+)
 
 
 def resolve_pods(config: dict, env_name: str, service: str) -> list[dict]:
     """Find pods for a service by label or name prefix."""
     # Try label selector first
     rc, output = run_kubectl(
-        config, env_name,
+        config,
+        env_name,
         ["get", "pods", "-l", f"app={service}", "-o", "json"],
         redact=False,
     )
@@ -24,9 +35,7 @@ def resolve_pods(config: dict, env_name: str, service: str) -> list[dict]:
 
     # Fallback: name prefix match
     if not pods:
-        rc, output = run_kubectl(
-            config, env_name, ["get", "pods", "-o", "json"], redact=False
-        )
+        rc, output = run_kubectl(config, env_name, ["get", "pods", "-o", "json"], redact=False)
         if rc == 0:
             try:
                 data = json.loads(output)

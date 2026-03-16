@@ -6,19 +6,20 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 # Allow imports from sibling lib/
 sys.path.insert(0, str(Path(__file__).parent))
 
-from lib.config import require_config, get_env_config, get_kubeconfig_path, die
+from lib.config import die, get_env_config, get_kubeconfig_path, require_config
 from lib.kubectl import run_kubectl, stream_kubectl
-from lib.redaction import redact_text, check_exec_allowed
-from lib.pods import resolve_pods, resolve_single_pod, pick_app_container, print_pod_table
+from lib.pods import pick_app_container, print_pod_table, resolve_pods, resolve_single_pod
+from lib.redaction import check_exec_allowed, redact_text
 
 # ─── Subcommands ──────────────────────────────────────────────────────────────
 
 
-def cmd_pods(args, config):
+def cmd_pods(args: argparse.Namespace, config: dict[str, Any]) -> int:
     if args.service:
         pods = resolve_pods(config, args.env, args.service)
         if not pods:
@@ -37,7 +38,7 @@ def cmd_pods(args, config):
     return 0
 
 
-def cmd_logs(args, config):
+def cmd_logs(args: argparse.Namespace, config: dict[str, Any]) -> int:
     kubectl_args = ["logs"]
 
     if args.pod:
@@ -64,7 +65,7 @@ def cmd_logs(args, config):
     return rc
 
 
-def _logs_all_pods(args, config):
+def _logs_all_pods(args: argparse.Namespace, config: dict[str, Any]) -> int:
     stern = shutil.which("stern")
     env_cfg = get_env_config(config, args.env)
     kubeconfig = get_kubeconfig_path(config, args.env)
@@ -81,8 +82,8 @@ def _logs_all_pods(args, config):
             print(redact_text(result.stdout + result.stderr, config))
             return result.returncode
         except subprocess.TimeoutExpired as e:
-            output = (e.stdout or "") + (e.stderr or "")
-            if output:
+            output = str(e.stdout or "") + str(e.stderr or "")
+            if output.strip():
                 print(redact_text(output, config))
             print("[stern timed out after 30s — partial output above]")
             return 0
@@ -104,9 +105,11 @@ def _logs_all_pods(args, config):
     return 0
 
 
-def cmd_exec(args, config):
+def cmd_exec(args: argparse.Namespace, config: dict[str, Any]) -> int:
     if not args.command:
-        die("No command specified. Usage: eks_ops.py exec --env <env> --service <name> -- <command>")
+        die(
+            "No command specified. Usage: eks_ops.py exec --env <env> --service <name> -- <command>"
+        )
 
     cmd_str = " ".join(args.command)
     blocked = check_exec_allowed(cmd_str)
@@ -130,7 +133,7 @@ def cmd_exec(args, config):
     return rc
 
 
-def cmd_restart(args, config):
+def cmd_restart(args: argparse.Namespace, config: dict[str, Any]) -> int:
     if not args.service:
         die("Specify --service <name> to restart.")
 
@@ -141,7 +144,9 @@ def cmd_restart(args, config):
 
     if args.watch:
         print("Watching rollout status...")
-        rc, output = run_kubectl(config, args.env, ["rollout", "status", f"deployment/{args.service}", "--timeout=120s"])
+        rc, output = run_kubectl(
+            config, args.env, ["rollout", "status", f"deployment/{args.service}", "--timeout=120s"]
+        )
         print(output)
     return rc
 

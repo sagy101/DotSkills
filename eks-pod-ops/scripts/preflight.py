@@ -10,7 +10,7 @@ from pathlib import Path
 # Allow imports from sibling lib/
 sys.path.insert(0, str(Path(__file__).parent))
 
-from lib.config import find_config, load_config, get_env_config, get_kubeconfig_path
+from lib.config import find_config, get_env_config, get_kubeconfig_path, load_config
 
 
 def check(label: str, ok: bool, detail: str = ""):
@@ -24,6 +24,7 @@ def check(label: str, ok: bool, detail: str = ""):
 
 def main():
     import argparse
+
     parser = argparse.ArgumentParser(description="Pre-flight checks for EKS pod operations.")
     parser.add_argument("--env", help="Also check kubeconfig and SSO for this environment.")
     args = parser.parse_args()
@@ -45,7 +46,11 @@ def main():
         if rancher_issue and os.path.isfile(homebrew):
             all_ok &= check("kubectl", True, f"Rancher Desktop detected, will use {homebrew}")
         elif rancher_issue:
-            all_ok &= check("kubectl", False, "Rancher Desktop kubectl found but no homebrew fallback. Run: brew install kubectl")
+            all_ok &= check(
+                "kubectl",
+                False,
+                "Rancher Desktop kubectl found but no homebrew fallback. Run: brew install kubectl",
+            )
         else:
             all_ok &= check("kubectl", True, kubectl)
     else:
@@ -63,19 +68,29 @@ def main():
         envs = sorted(config.get("environments", {}).keys())
         print(f"         Environments: {', '.join(envs)}")
     else:
-        all_ok &= check("Config", False, "Create ~/.eks-config.json or .eks-config.json in project root")
+        all_ok &= check(
+            "Config", False, "Create ~/.eks-config.json or .eks-config.json in project root"
+        )
         config = None
 
     # 5. Optional: stern
     stern = shutil.which("stern")
-    check("stern (optional)", bool(stern), stern or "Not installed. Run: brew install stern (for --all-pods)")
+    check(
+        "stern (optional)",
+        bool(stern),
+        stern or "Not installed. Run: brew install stern (for --all-pods)",
+    )
 
     # 6. Optional: detect-secrets
     try:
-        import detect_secrets
+        __import__("detect_secrets")
         check("detect-secrets (optional)", True, "Entropy-based redaction enabled")
     except ImportError:
-        check("detect-secrets (optional)", True, "Not installed — regex redaction only (fine for most cases)")
+        check(
+            "detect-secrets (optional)",
+            True,
+            "Not installed — regex redaction only (fine for most cases)",
+        )
 
     # 7. Environment-specific checks
     if args.env and config:
@@ -94,9 +109,12 @@ def main():
         else:
             profile = env_cfg.get("profile", args.env)
             cluster = env_cfg.get("cluster", f"eks01-{args.env}")
-            all_ok &= check("Kubeconfig", False,
+            all_ok &= check(
+                "Kubeconfig",
+                False,
                 f"Not found: {kc_path}\n"
-                f"           Run: aws eks update-kubeconfig --profile {profile} --name {cluster} --kubeconfig {kc_path}")
+                f"           Run: aws eks update-kubeconfig --profile {profile} --name {cluster} --kubeconfig {kc_path}",
+            )
 
         # SSO session
         if aws:
@@ -104,14 +122,19 @@ def main():
             try:
                 result = subprocess.run(
                     ["aws", "sts", "get-caller-identity", "--profile", profile],
-                    capture_output=True, text=True, timeout=10,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
                 )
                 if result.returncode == 0:
                     all_ok &= check("SSO session", True, f"Profile '{profile}' authenticated")
                 else:
                     sso_session = env_cfg.get("sso_session", "lab")
-                    all_ok &= check("SSO session", False,
-                        f"Expired. Run: aws sso login --sso-session {sso_session}")
+                    all_ok &= check(
+                        "SSO session",
+                        False,
+                        f"Expired. Run: aws sso login --sso-session {sso_session}",
+                    )
             except subprocess.TimeoutExpired:
                 all_ok &= check("SSO session", False, "Timed out checking credentials")
 

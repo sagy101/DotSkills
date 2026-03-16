@@ -14,9 +14,9 @@ These patterns are always active (unless `redaction.disabled` is set in config):
 | AWS secret key | `AWS_SECRET_ACCESS_KEY=xxx` | `AWS_SECRET_ACCESS_KEY=[REDACTED]` |
 | AWS session token | `AWS_SESSION_TOKEN=xxx` | `AWS_SESSION_TOKEN=[REDACTED]` |
 | AWS access key IDs | `AKIA...`, `ASIA...` (16+ chars) | `[REDACTED AWS KEY]` |
-| Private keys | `-----BEGIN PRIVATE KEY-----...` | `[REDACTED PRIVATE KEY]` |
+| Private keys | `-----BEGIN PRIVATE KEY-----...` | `[REDACTED PRIVATE KEY]` |  <!-- pragma: allowlist secret -->
 | JWT tokens | `eyJ...eyJ...` (3-segment base64) | `[REDACTED JWT]` |
-| Connection strings | `postgres://user:pass@host` | `postgres://user:[REDACTED]@host` |
+| Connection strings | `postgres://user:pass@host` | `postgres://user:[REDACTED]@host` |  <!-- pragma: allowlist secret -->
 | Base64 blobs | 80+ character base64 strings | `[REDACTED BASE64]` |
 
 ## Custom Patterns

@@ -4,10 +4,18 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
 
-def find_config() -> Optional[Path]:
+class ConfigError(SystemExit):
+    """Raised when config is missing or invalid."""
+
+    def __init__(self, msg: str) -> None:
+        print(f"ERROR: {msg}", file=sys.stderr)
+        super().__init__(1)
+
+
+def find_config() -> Path | None:
     """Search CWD upward for .eks-config.json, then ~/.eks-config.json."""
     cwd = Path.cwd()
     for d in [cwd, *cwd.parents]:
@@ -20,38 +28,36 @@ def find_config() -> Optional[Path]:
     return None
 
 
-def load_config(path: Path) -> dict:
+def load_config(path: Path) -> dict[str, Any]:
     with open(path) as f:
-        return json.load(f)
+        return dict(json.load(f))
 
 
-def get_env_config(config: dict, env_name: str) -> dict:
+def get_env_config(config: dict[str, Any], env_name: str) -> dict[str, Any]:
     """Resolve environment config by name or alias."""
-    envs = config.get("environments", {})
+    envs: dict[str, Any] = config.get("environments", {})
     if env_name in envs:
-        return envs[env_name]
-    # Check aliases
-    for name, cfg in envs.items():
+        return dict(envs[env_name])
+    for cfg in envs.values():
         if cfg.get("alias") == env_name:
-            return cfg
+            return dict(cfg)
     available = ", ".join(sorted(envs.keys()))
-    die(f"Environment '{env_name}' not found in config. Available: {available}")
-    return {}  # unreachable
+    raise ConfigError(f"Environment '{env_name}' not found in config. Available: {available}")
 
 
-def get_kubeconfig_path(config: dict, env_name: str) -> str:
+def get_kubeconfig_path(config: dict[str, Any], env_name: str) -> str:
     """Build absolute kubeconfig path for an environment."""
     kube_dir = os.path.expanduser(config.get("kubeconfig_dir", "~/.kube"))
-    pattern = config.get("kubeconfig_pattern", "config_{env}")
+    pattern: str = config.get("kubeconfig_pattern", "config_{env}")
     filename = pattern.replace("{env}", env_name)
-    return os.path.join(kube_dir, filename)
+    return str(os.path.join(kube_dir, filename))
 
 
-def require_config() -> tuple[Path, dict]:
+def require_config() -> tuple[Path, dict[str, Any]]:
     """Find and load config, or die with helpful message."""
     path = find_config()
     if not path:
-        die(
+        raise ConfigError(
             "Config not found.\n"
             "Create ~/.eks-config.json (recommended) or .eks-config.json in project root.\n"
             "See references/CONFIG.md for format."
@@ -59,6 +65,6 @@ def require_config() -> tuple[Path, dict]:
     return path, load_config(path)
 
 
-def die(msg: str):
-    print(f"ERROR: {msg}", file=sys.stderr)
-    sys.exit(1)
+def die(msg: str) -> None:
+    """Print error and exit. Kept for compatibility."""
+    raise ConfigError(msg)
