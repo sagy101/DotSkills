@@ -25,21 +25,10 @@ Use this skill when the user wants to:
 
 ## Prerequisites
 
-1. **Config**: `~/.eks-config.json` (global, recommended) or `.eks-config.json` in project root (see [CONFIG.md](references/CONFIG.md))
-2. **kubectl**: installed and available in PATH
-3. **AWS CLI**: installed with SSO profiles configured per environment
-4. **Kubeconfigs**: generated per environment at `~/.kube/config_<env>`
-
-If `~/.eks-config.json` does not exist, help the user create one:
-
-```json
-{
-  "environments": {
-    "dev": { "profile": "dev", "cluster": "eks01-dev", "sso_session": "lab", "namespace": "default" },
-    "stg": { "profile": "stg", "cluster": "eks01-stg", "sso_session": "lab", "namespace": "default" }
-  }
-}
-```
+1. **kubectl**: installed and available in PATH
+2. **AWS CLI**: installed with SSO profiles configured per environment
+3. **Kubeconfigs**: generated per environment at `~/.kube/config_<env>`
+4. **Config**: `~/.eks-config.json` — auto-generated on first run by scanning kubeconfigs and AWS profiles. See [CONFIG.md](references/CONFIG.md) for manual setup.
 
 ## Pre-flight checks
 

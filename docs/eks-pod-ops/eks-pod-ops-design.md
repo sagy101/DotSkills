@@ -103,10 +103,10 @@ The preflight script shows whether each is installed:
 
 ## Setup
 
-1. Create `~/.eks-config.json` (see `references/CONFIG.md`)
-2. Generate kubeconfigs: `for ENV in dev stg us1 eu2; do aws eks update-kubeconfig --profile $ENV --name eks01-$ENV --kubeconfig ~/.kube/config_$ENV; done`
-3. Log in to AWS SSO: `aws sso login --sso-session lab`
-4. Verify: `python3 scripts/preflight.py --env stg`
+1. Ensure kubeconfigs exist per environment (`~/.kube/config_<env>`) and AWS CLI profiles are configured in `~/.aws/config`
+2. Run preflight: `python3 scripts/preflight.py` — it auto-discovers environments and generates `~/.eks-config.json`
+3. Log in to AWS SSO: `aws sso login --sso-session <session>` (session name shown in preflight output)
+4. Verify a specific env: `python3 scripts/preflight.py --env stg`
 
 ## Quick Test
 
