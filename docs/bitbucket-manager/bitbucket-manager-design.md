@@ -22,7 +22,8 @@ This skill gives **any SKILL.md-compatible agent** reliable Bitbucket Cloud PR m
 | **List PRs** | Filter by state, author, branch; table or JSON output |
 | **Merge PR** | Merge with strategy selection and precondition check (approvals, builds, tasks) |
 | **Decline PR** | Close a PR without merging |
-| **PR comments** | Add general or inline file-level comments; list comments in threaded view |
+| **PR comments** | Add general, inline, or threaded reply comments; list comments in threaded view |
+| **Resolve/reopen comments** | Resolve or reopen comment threads via dedicated API endpoints |
 | **PR checks** | View build/pipeline status checks for a PR |
 | **Build status** | View CI status for a specific commit SHA or branch HEAD |
 | **Jira extraction** | Scan branch, title, description, and commits for Jira issue keys |
@@ -81,4 +82,4 @@ This skill gives **any SKILL.md-compatible agent** reliable Bitbucket Cloud PR m
 
 ## Status
 
-**Stable (v1.0)** — Initial release with PR CRUD, comments, build checks, Jira extraction, and repo listing.
+**Stable (v1.1)** — Added threaded replies (`--parent-id`), comment resolution (`--resolve`), and reopen support. Uses dedicated `POST/DELETE .../comments/{id}/resolve` endpoints.

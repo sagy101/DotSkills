@@ -243,17 +243,59 @@ class BitbucketClient:
         pr_id: int,
         body: str,
         inline: Optional[Dict[str, Any]] = None,
+        parent_id: Optional[int] = None,
     ) -> dict:
-        """Add a comment to a PR. Pass inline dict for file-level comments."""
+        """Add a comment to a PR. Pass inline dict for file-level comments, parent_id for threaded replies."""
         payload: Dict[str, Any] = {
             "content": {"raw": body},
         }
         if inline:
             payload["inline"] = inline
+        if parent_id:
+            payload["parent"] = {"id": parent_id}
         return self._request(
             "POST",
             f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments",
             data=payload,
+        )
+
+    def get_pr_comment(
+        self,
+        workspace: str,
+        repo_slug: str,
+        pr_id: int,
+        comment_id: int,
+    ) -> dict:
+        """Fetch a single comment on a PR."""
+        return self._request(
+            "GET",
+            f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments/{comment_id}",
+        )
+
+    def resolve_pr_comment(
+        self,
+        workspace: str,
+        repo_slug: str,
+        pr_id: int,
+        comment_id: int,
+    ) -> dict:
+        """Mark a PR comment thread as resolved via POST .../comments/{id}/resolve."""
+        return self._request(
+            "POST",
+            f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments/{comment_id}/resolve",
+        )
+
+    def unresolve_pr_comment(
+        self,
+        workspace: str,
+        repo_slug: str,
+        pr_id: int,
+        comment_id: int,
+    ) -> dict:
+        """Reopen a resolved comment thread via DELETE .../comments/{id}/resolve."""
+        return self._request(
+            "DELETE",
+            f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments/{comment_id}/resolve",
         )
 
     def get_pr_comments(

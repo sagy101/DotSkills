@@ -154,6 +154,12 @@ python3 <skill_dir>/scripts/pr_comment.py --pr 42 --body "Looks good!"
 # Inline comment on a file
 python3 <skill_dir>/scripts/pr_comment.py --pr 42 --body "Fix this" --file src/app.py --line 25
 
+# Threaded reply to an existing comment
+python3 <skill_dir>/scripts/pr_comment.py --pr 42 --body "Fixed in latest push." --parent-id 769609697
+
+# Resolve a comment (no --body needed)
+python3 <skill_dir>/scripts/pr_comment.py --pr 42 --resolve 769609697
+
 # Dry run
 python3 <skill_dir>/scripts/pr_comment.py --pr 42 --body "LGTM" --dry-run
 ```
