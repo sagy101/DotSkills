@@ -1,8 +1,9 @@
 ---
 name: jira-manager
 description: >
-  Create, update, fetch, delete, diff, and validate Jira tickets. Supports field discovery,
-  sprint management, status transitions, comments, issue links, bulk operations, and Agile boards.
+  Jira ticket management — create, update, fetch, delete, transition, comment, link, and bulk-operate
+  on Jira issues. Fetch by key, JQL, filter, board, or sprint. Discover fields, statuses, priorities.
+  Use when the user mentions Jira tickets, sprints, epics, stories, backlogs, or board operations.
 license: MIT
 metadata:
   author: sagy101
@@ -60,6 +61,8 @@ Formats: `table` (default — shows key, type, SP, priority, status, sprint, sum
 Options: `--max-results N` (default 50), `--no-convert` (skip markup conversion).
 
 **Filter values that are JQL functions** (e.g. `currentUser()`, `now()`, `startOfDay()`) are passed through unquoted. Plain values are auto-quoted.
+
+**Shell quoting**: Always single-quote filter values containing parentheses (e.g. `'assignee=currentUser()'`) to prevent shell expansion.
 
 ## Create tickets
 
@@ -149,7 +152,7 @@ $PY $S/validate_estimates.py --epic PROJ-100   # check sub-ticket estimate sums
 2. **If a script fails**, debug the invocation (wrong flags, missing config, missing `--apply`). Do NOT abandon scripts and write custom code.
 3. **Never create/update/delete without showing the plan and getting user approval.**
 4. **Never print credentials.**
-5. **`--set` is for updates only**, not creates. For custom fields on create, use `--fields '{"customfield_123": "val"}'`.
+5. **`--set` works on both create and update** — resolves field names via `field_catalog`. For fields that `--set` can't resolve, use `--fields '{"customfield_123": "val"}'` (raw JSON).
 6. Descriptions auto-convert Markdown ↔ Jira markup. Use `--no-convert` to skip. `--rewrite-links` rewrites relative markdown links to git browse URLs.
 
 ## Error quick-ref
