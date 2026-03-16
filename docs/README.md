@@ -12,6 +12,7 @@ Each skill with non-trivial design decisions has a companion design document exp
 | [confluence-publisher](confluence-publisher/confluence-publisher-design.md) | Why, capabilities, transformation pipeline, link rewriting, Mermaid strategy, surgical edit, module structure | Stable (v3.1) |
 | [bitbucket-manager](bitbucket-manager/bitbucket-manager-design.md) | Why, capabilities, zero-dep stdlib design, repo auto-detection, dry-run gates, config hierarchy | Stable (v1.0) |
 | [jira-manager](jira-manager/jira-manager-design.md) | Why, capabilities, discovery-first architecture, bulk update scoping, field discovery flow, config discovery | Stable (v1.6) |
+| [eks-pod-ops](eks-pod-ops/eks-pod-ops-design.md) | Why, secret redaction pipeline, exec blocklist, sidecar-aware container selection, Rancher Desktop workaround, module structure | Stable (v1.1) |
 
 ## Templates
 
@@ -31,6 +32,8 @@ docs/
 │   └── codex-flags.md
 ├── confluence-publisher/
 │   └── confluence-publisher-design.md
+├── eks-pod-ops/
+│   └── eks-pod-ops-design.md
 ├── jira-manager/
 │   └── jira-manager-design.md
 └── templates/
