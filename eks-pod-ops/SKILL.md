@@ -112,8 +112,9 @@ python3 <skill_dir>/scripts/eks_ops.py restart --env dev --service my-service --
 5. Reading files under `/secrets/`, `/vault/`, or credential paths is blocked inside `exec`.
 6. If `[REDACTED]` appears in output, do not attempt to retrieve the original value.
 7. The script auto-selects the app container in multi-container pods (skips sidecars like statsite, istio-proxy).
-8. Prefer Grafana or Splunk for production log investigation — use this skill as a complement.
-9. Developers typically have read-only EKS access — `restart` may fail on production clusters.
+8. **Multiple replicas**: when a service has multiple pods, `--service` picks the first running one. If the user wants a specific replica, run `pods --env <env> --service <name>` first to list all replicas, ask the user which one, then use `--pod <pod-name>` instead of `--service`.
+9. Prefer Grafana or Splunk for production log investigation — use this skill as a complement.
+10. Developers typically have read-only EKS access — `restart` may fail on production clusters.
 
 ## Error handling
 
