@@ -67,28 +67,37 @@ def cmd_logs(args: argparse.Namespace, config: dict[str, Any]) -> int:
 
 def _logs_all_pods(args: argparse.Namespace, config: dict[str, Any]) -> int:
     stern = shutil.which("stern")
+    if stern:
+        return _logs_all_pods_stern(args, config, stern)
+    return _logs_all_pods_kubectl(args, config)
+
+
+def _logs_all_pods_stern(args: argparse.Namespace, config: dict[str, Any], stern: str) -> int:
     env_cfg = get_env_config(config, args.env)
     kubeconfig = get_kubeconfig_path(config, args.env)
     namespace = env_cfg.get("namespace", "default")
+    cmd = [stern, "-l", f"app={args.service}", "-n", namespace, f"--kubeconfig={kubeconfig}"]
+    if args.since:
+        cmd += ["--since", args.since]
+    if args.tail:
+        cmd += ["--tail", str(args.tail)]
 
-    if stern:
-        cmd = [stern, "-l", f"app={args.service}", "-n", namespace, f"--kubeconfig={kubeconfig}"]
-        if args.since:
-            cmd += ["--since", args.since]
-        if args.tail:
-            cmd += ["--tail", str(args.tail)]
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            print(redact_text(result.stdout + result.stderr, config))
-            return result.returncode
-        except subprocess.TimeoutExpired as e:
-            output = str(e.stdout or "") + str(e.stderr or "")
-            if output.strip():
-                print(redact_text(output, config))
-            print("[stern timed out after 30s — partial output above]")
-            return 0
+    if args.follow:
+        return _stream_stern(cmd, config)
 
-    # Fallback: sequential kubectl logs per pod
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        print(redact_text(result.stdout + result.stderr, config))
+        return result.returncode
+    except subprocess.TimeoutExpired as e:
+        output = str(e.stdout or "") + str(e.stderr or "")
+        if output.strip():
+            print(redact_text(output, config))
+        print("[stern timed out after 30s — partial output above]")
+        return 0
+
+
+def _logs_all_pods_kubectl(args: argparse.Namespace, config: dict[str, Any]) -> int:
     pods = resolve_pods(config, args.env, args.service)
     if not pods:
         die(f"No pods found for service '{args.service}' in {args.env}.")
@@ -99,9 +108,25 @@ def _logs_all_pods(args: argparse.Namespace, config: dict[str, Any]) -> int:
             kubectl_args += ["--tail", str(args.tail)]
         if args.since:
             kubectl_args += ["--since", args.since]
+        if args.follow:
+            kubectl_args.append("--follow")
         print(f"── {pod['name']} ──")
+        if args.follow:
+            return stream_kubectl(config, args.env, kubectl_args)
         rc, output = run_kubectl(config, args.env, kubectl_args)
         print(output)
+    return 0
+
+
+def _stream_stern(cmd: list[str], config: dict[str, Any]) -> int:
+    """Stream stern output with real-time redaction."""
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        if proc.stdout:
+            for line in proc.stdout:
+                print(redact_text(line.rstrip(), config))
+    except KeyboardInterrupt:
+        proc.terminate()
     return 0
 
 
