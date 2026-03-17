@@ -12,7 +12,7 @@ The overall guideline: prefer a simpler agent surface over simpler scripts. When
 - Each script should handle its own validation, error reporting, and output formatting
 - The agent's job is to pick the right script, pass the right args, and present the output
 
-**Rule of thumb:** if the agent needs more than ~3 decision points for an operation, that logic belongs in a script.
+**Rule of thumb:** if logic can be a script, it should be — even a single decision point. The bar for keeping logic on the agent side is "does this genuinely require agent judgment (e.g., interpreting user intent)?" If not, script it.
 
 ### 1. Be clear and direct
 
