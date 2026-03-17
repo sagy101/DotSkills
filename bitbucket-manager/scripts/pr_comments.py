@@ -8,16 +8,20 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from bb_config import add_common_args, load_config, resolve_repo, resolve_workspace
 from bb_client import BitbucketClient
+from bb_config import add_common_args, load_config, resolve_repo, resolve_workspace
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="List comments on a Bitbucket PR")
     add_common_args(parser)
     parser.add_argument("--pr", required=True, type=int, help="PR ID")
-    parser.add_argument("--format", choices=["threaded", "json"], default="threaded",
-                        help="Output format (default: threaded)")
+    parser.add_argument(
+        "--format",
+        choices=["threaded", "json"],
+        default="threaded",
+        help="Output format (default: threaded)",
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -36,7 +40,6 @@ def main() -> None:
         return
 
     # Build threaded view
-    by_id = {c.get("id"): c for c in comments}
     roots = []
     children = {}
     for c in comments:
@@ -59,7 +62,11 @@ def main() -> None:
             line = inline.get("to", "")
             location = f" [{path}:{line}]" if line else f" [{path}]"
 
-        print(f"{prefix}#{c.get('id')} {author} ({created}){location}")
+        resolution = c.get("resolution")
+        resolved = resolution and resolution.get("type")
+        status = " [RESOLVED]" if resolved else ""
+
+        print(f"{prefix}#{c.get('id')} {author} ({created}){location}{status}")
         for line in body.splitlines():
             print(f"{prefix}  {line}")
         print()

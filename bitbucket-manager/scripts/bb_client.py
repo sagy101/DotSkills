@@ -12,7 +12,8 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, Dict, List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any
 
 from bb_config import BitbucketConfig, resolve_credentials
 
@@ -23,7 +24,7 @@ _BASE_URL = "https://api.bitbucket.org/2.0"
 class BitbucketClient:
     """Thin wrapper around Bitbucket Cloud REST API v2."""
 
-    def __init__(self, config: BitbucketConfig):
+    def __init__(self, config: BitbucketConfig) -> None:
         self.config = config
         email, app_password = resolve_credentials(config)
         creds = base64.b64encode(f"{email}:{app_password}".encode()).decode()
@@ -39,8 +40,8 @@ class BitbucketClient:
         self,
         method: str,
         path: str,
-        data: Optional[dict] = None,
-        params: Optional[dict] = None,
+        data: dict | None = None,
+        params: dict | None = None,
     ) -> Any:
         """Execute an HTTP request against the Bitbucket REST API."""
         url = f"{_BASE_URL}{path}"
@@ -60,7 +61,10 @@ class BitbucketClient:
         else:
             body = None
         req = urllib.request.Request(
-            url, data=body, headers=self._headers, method=method,
+            url,
+            data=body,
+            headers=self._headers,
+            method=method,
         )
 
         if _DEBUG:
@@ -74,7 +78,7 @@ class BitbucketClient:
                     return {}
                 raw = resp.read().decode()
                 return json.loads(raw) if raw else {}
-        except socket.timeout:
+        except TimeoutError:
             print(f"ERROR: Request timed out (60s) {method} {path}", file=sys.stderr)
             raise
         except urllib.error.HTTPError as e:
@@ -84,11 +88,13 @@ class BitbucketClient:
                 msg = error_json.get("error", {}).get("message", "")
                 detail = msg if msg else error_body[:500]
             except (json.JSONDecodeError, AttributeError):
-                detail = error_body[:500] if _DEBUG else f"HTTP {e.code} (set BB_DEBUG=1 for details)"
+                detail = (
+                    error_body[:500] if _DEBUG else f"HTTP {e.code} (set BB_DEBUG=1 for details)"
+                )
             print(f"ERROR {e.code} {method} {path}: {detail}", file=sys.stderr)
             raise
         except urllib.error.URLError as e:
-            if isinstance(e.reason, (socket.timeout, TimeoutError)):
+            if isinstance(e.reason, socket.timeout | TimeoutError):
                 print(f"ERROR: Request timed out (60s) {method} {path}", file=sys.stderr)
             else:
                 print(f"ERROR: URL error {method} {path}: {e.reason}", file=sys.stderr)
@@ -97,15 +103,15 @@ class BitbucketClient:
     def _paginate(
         self,
         path: str,
-        params: Optional[dict] = None,
+        params: dict | None = None,
         max_results: int = 0,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """Fetch all pages from a paginated Bitbucket API endpoint.
 
         Args:
             max_results: Maximum total items to return. 0 = unlimited.
         """
-        all_items: List[dict] = []
+        all_items: list[dict] = []
         unlimited = max_results == 0
         remaining = max_results if not unlimited else float("inf")
         current_params = dict(params) if params else {}
@@ -128,6 +134,19 @@ class BitbucketClient:
 
         return all_items
 
+    def _parallel_fetch(
+        self,
+        callables: list,
+        max_workers: int = 5,
+    ) -> list:
+        """Execute multiple zero-arg callables in parallel, return results in order."""
+        results = [None] * len(callables)
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {pool.submit(fn): i for i, fn in enumerate(callables)}
+            for f in as_completed(futures):
+                results[futures[f]] = f.result()
+        return results
+
     # -----------------------------------------------------------------
     # Pull Request CRUD
     # -----------------------------------------------------------------
@@ -139,11 +158,11 @@ class BitbucketClient:
         source_branch: str,
         destination_branch: str,
         description: str = "",
-        reviewers: Optional[List[str]] = None,
+        reviewers: list[str] | None = None,
         close_source_branch: bool = False,
     ) -> dict:
         """Create a pull request."""
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "title": title,
             "source": {"branch": {"name": source_branch}},
             "destination": {"branch": {"name": destination_branch}},
@@ -167,7 +186,7 @@ class BitbucketClient:
         **fields: Any,
     ) -> dict:
         """Update a pull request. Accepts title, description, destination, reviewers."""
-        payload: Dict[str, Any] = {}
+        payload: dict[str, Any] = {}
         if "title" in fields:
             payload["title"] = fields["title"]
         if "description" in fields:
@@ -195,7 +214,7 @@ class BitbucketClient:
         repo_slug: str,
         state: str = "OPEN",
         max_results: int = 50,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """List pull requests with optional state filter."""
         params = {"state": state}
         return self._paginate(
@@ -211,10 +230,10 @@ class BitbucketClient:
         pr_id: int,
         merge_strategy: str = "merge_commit",
         close_source_branch: bool = False,
-        message: Optional[str] = None,
+        message: str | None = None,
     ) -> dict:
         """Merge a pull request."""
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "type": merge_strategy,
             "close_source_branch": close_source_branch,
         }
@@ -242,11 +261,11 @@ class BitbucketClient:
         repo_slug: str,
         pr_id: int,
         body: str,
-        inline: Optional[Dict[str, Any]] = None,
-        parent_id: Optional[int] = None,
+        inline: dict[str, Any] | None = None,
+        parent_id: int | None = None,
     ) -> dict:
         """Add a comment to a PR. Pass inline dict for file-level comments, parent_id for threaded replies."""
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "content": {"raw": body},
         }
         if inline:
@@ -304,12 +323,35 @@ class BitbucketClient:
         repo_slug: str,
         pr_id: int,
         max_results: int = 0,
-    ) -> List[dict]:
-        """List all comments on a PR."""
-        return self._paginate(
+    ) -> list[dict]:
+        """List all comments on a PR with accurate resolution status.
+
+        The list endpoint does not reliably return resolution details,
+        so each root (non-reply) comment is fetched individually to get
+        the real resolution object.  Child comments inherit resolution
+        from their parent thread.
+        """
+        comments = self._paginate(
             f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments",
             max_results=max_results,
         )
+        root_ids = [c["id"] for c in comments if not c.get("parent") and c.get("id")]
+        resolutions = {}
+        if root_ids:
+            fetchers = [
+                lambda c=cid: (c, self.get_pr_comment(workspace, repo_slug, pr_id, c))
+                for cid in root_ids
+            ]
+            for cid, detail in self._parallel_fetch(fetchers):
+                resolutions[cid] = detail.get("resolution")
+        for c in comments:
+            cid = c.get("id")
+            parent_id = (c.get("parent") or {}).get("id")
+            if cid in resolutions:
+                c["resolution"] = resolutions[cid]
+            elif parent_id and parent_id in resolutions:
+                c["resolution"] = resolutions[parent_id]
+        return comments
 
     # -----------------------------------------------------------------
     # PR Statuses / Checks
@@ -319,7 +361,7 @@ class BitbucketClient:
         workspace: str,
         repo_slug: str,
         pr_id: int,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """Fetch build/pipeline status checks for a PR."""
         return self._paginate(
             f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/statuses",
@@ -333,7 +375,7 @@ class BitbucketClient:
         workspace: str,
         repo_slug: str,
         commit_sha: str,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """Fetch build statuses for a specific commit."""
         return self._paginate(
             f"/repositories/{workspace}/{repo_slug}/commit/{commit_sha}/statuses",
@@ -346,10 +388,10 @@ class BitbucketClient:
         self,
         workspace: str,
         max_results: int = 50,
-        q: Optional[str] = None,
-    ) -> List[dict]:
+        q: str | None = None,
+    ) -> list[dict]:
         """List repositories in a workspace."""
-        params: Dict[str, str] = {}
+        params: dict[str, str] = {}
         if q:
             params["q"] = q
         return self._paginate(

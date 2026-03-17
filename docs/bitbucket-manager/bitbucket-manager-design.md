@@ -33,7 +33,7 @@ This skill gives **any SKILL.md-compatible agent** reliable Bitbucket Cloud PR m
 
 ## Key Design Decisions
 
-**1. Zero pip dependencies** — Pure Python stdlib (`urllib`, `json`, `base64`, `argparse`, `subprocess`). No venv, no setup script, no install step. This eliminates dependency conflicts and makes the skill instantly usable on any system with Python 3.10+.
+**1. Zero pip dependencies** — Pure Python stdlib (`urllib`, `json`, `base64`, `argparse`, `subprocess`, `concurrent.futures`). No venv, no setup script, no install step. This eliminates dependency conflicts and makes the skill instantly usable on any system with Python 3.10+.
 
 **2. One script per operation** — Each operation is a standalone CLI script. The agent picks which script to run based on the user's intent. Scripts share `bb_config.py` (config/credential resolution) and `bb_client.py` (HTTP client with pagination). This makes the agent's decision space small and deterministic.
 
@@ -46,6 +46,10 @@ This skill gives **any SKILL.md-compatible agent** reliable Bitbucket Cloud PR m
 **6. Dry-run for all write operations** — `pr_create`, `pr_update`, `pr_merge`, `pr_decline`, and `pr_comment` all support `--dry-run`. Merge dry-run is particularly useful — it shows approval count, build check results, and open tasks before committing to the merge.
 
 **7. Bitbucket API v2 pagination handled in client** — The `_paginate()` method in `bb_client.py` follows Bitbucket's `next` URL pattern automatically. Individual scripts never deal with pagination logic.
+
+**8. Parallel fetching for enrichment** — The `_parallel_fetch()` helper in `bb_client.py` uses `ThreadPoolExecutor` (max 5 workers) to batch independent API calls. Used by `get_pr_comments()` to fetch resolution status for each root comment in parallel rather than sequentially. Reusable for any future batch operation.
+
+**9. Comments always include resolution status** — The Bitbucket list-comments endpoint does not reliably return resolution details, so `get_pr_comments()` enriches each root comment with an individual GET. Child comments inherit resolution from their parent thread. This ensures the agent always sees `[RESOLVED]` status without extra calls.
 
 ---
 
@@ -82,4 +86,4 @@ This skill gives **any SKILL.md-compatible agent** reliable Bitbucket Cloud PR m
 
 ## Status
 
-**Stable (v1.1)** — Added threaded replies (`--parent-id`), comment resolution (`--resolve`), and reopen support. Uses dedicated `POST/DELETE .../comments/{id}/resolve` endpoints.
+**Stable (v1.2)** — Comments now always include resolution status via parallel-enriched individual fetches. Added `_parallel_fetch()` helper to `bb_client.py` using `concurrent.futures.ThreadPoolExecutor`.
