@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_loader import add_config_arg, load_config
 from jira_client import JiraClient
 from jql_builder import build_board_jql, build_jql_from_filters
+from markup_converter import jira_markup_to_md
 
 
 def format_issue_table(issues, config):
@@ -25,8 +26,8 @@ def format_issue_table(issues, config):
     sp_field = config.get_field_id("story_points")
 
     lines = []
-    lines.append(f"{'Key':<12} {'Type':<12} {'SP':>4}  {'Status':<14} {'Sprint':<20} Summary")
-    lines.append("-" * 100)
+    lines.append(f"{'Key':<12} {'Type':<12} {'SP':>4}  {'Priority':<12} {'Status':<14} {'Sprint':<20} Summary")
+    lines.append("-" * 116)
 
     for issue in issues:
         key = issue["key"]
@@ -34,13 +35,14 @@ def format_issue_table(issues, config):
         summary = fields.get("summary", "")[:40]
         itype = fields.get("issuetype", {}).get("name", "?")
         status = fields.get("status", {}).get("name", "?")
+        priority = fields.get("priority", {}).get("name", "?") if fields.get("priority") else "?"
         sp = ""
         if sp_field and fields.get(sp_field) is not None:
             sp = str(fields[sp_field])
         sprint = _extract_sprint_name(fields, config) or ""
         if len(sprint) > 18:
             sprint = sprint[:17] + "\u2026"
-        lines.append(f"{key:<12} {itype:<12} {sp:>4}  {status:<14} {sprint:<20} {summary}")
+        lines.append(f"{key:<12} {itype:<12} {sp:>4}  {priority:<12} {status:<14} {sprint:<20} {summary}")
 
     return "\n".join(lines)
 
@@ -117,7 +119,8 @@ def _handle_key(client, config, key, format_type, fields, convert=True):
             print(format_issue_detail(issue, config, convert_markup=convert))
         else:
             print(format_issue_table([issue], config))
-    except Exception:
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -141,7 +144,8 @@ def _handle_jql(client, config, jql, format_type, fields, max_results, convert=T
             print(format_issue_table(issues, config))
             if total > len(issues):
                 print(f"\nShowing {len(issues)} of {total} results")
-    except Exception:
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -159,7 +163,8 @@ def _handle_children(client, config, parent_key, format_type, fields, convert=Tr
             print(f"Children of {parent_key}:")
             print(format_issue_table(issues, config))
             print(f"\nTotal: {len(issues)}")
-    except Exception:
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -188,7 +193,8 @@ def _handle_board_issues(client, config, board_id, filter_args, format_type, fie
         print(f"\nTotal: {len(issues)}")
         if truncated:
             print(f"NOTE: Results capped at --max-results {max_results}. The board may contain more issues. Use --max-results to increase the limit.")
-    except Exception:
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
