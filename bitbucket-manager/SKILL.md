@@ -28,7 +28,8 @@ Use when the user wants to:
 - **Merge** a PR (with precondition checks)
 - **Decline** a PR
 - **Comment** on a PR (general or inline file-level comments)
-- **View comments** on a PR (threaded view)
+- **Resolve** one or more PR comments in bulk
+- **View comments** on one or more PRs (threaded view with filters)
 - **Check** build/pipeline status for a PR or commit
 - **Extract** Jira issue keys linked to a PR
 - **List** repositories in a workspace
@@ -157,21 +158,51 @@ python3 <skill_dir>/scripts/pr_comment.py --pr 42 --body "Fix this" --file src/a
 # Threaded reply to an existing comment
 python3 <skill_dir>/scripts/pr_comment.py --pr 42 --body "Fixed in latest push." --parent-id 769609697
 
-# Resolve a comment (no --body needed)
+# Resolve a single comment (no --body needed)
 python3 <skill_dir>/scripts/pr_comment.py --pr 42 --resolve 769609697
 
-# Dry run
+# Resolve multiple comments at once (1s delay between calls for rate-limit safety)
+python3 <skill_dir>/scripts/pr_comment.py --pr 42 --resolve 769609697 769609700 769609705
+
+# Dry run (works with single or bulk resolve)
+python3 <skill_dir>/scripts/pr_comment.py --pr 42 --resolve 769609697 769609700 --dry-run
+
+# Dry run for posting
 python3 <skill_dir>/scripts/pr_comment.py --pr 42 --body "LGTM" --dry-run
 ```
 
 ### List comments
 
 ```bash
+# Single PR — threaded view with resolution status, tree connectors
 python3 <skill_dir>/scripts/pr_comments.py --pr 42
+
+# Multiple PRs in one call (same repo)
+python3 <skill_dir>/scripts/pr_comments.py --pr 42 43 44
+
+# Filter: only unresolved threads
+python3 <skill_dir>/scripts/pr_comments.py --pr 42 --status unresolved
+
+# Filter: by author (substring match, case-insensitive)
+python3 <skill_dir>/scripts/pr_comments.py --pr 42 --author "Alice"
+
+# Filter: inline comments on a specific file
+python3 <skill_dir>/scripts/pr_comments.py --pr 42 --file "src/app.py"
+
+# Filter: threads with discussion (has replies)
+python3 <skill_dir>/scripts/pr_comments.py --pr 42 --has-replies
+
+# Filter: standalone comments (no replies)
+python3 <skill_dir>/scripts/pr_comments.py --pr 42 --no-replies
+
+# Combine filters (AND logic)
+python3 <skill_dir>/scripts/pr_comments.py --pr 42 --status unresolved --has-replies
+
+# JSON output
 python3 <skill_dir>/scripts/pr_comments.py --pr 42 --format json
 ```
 
-Shows threaded view with inline location indicators.
+Shows threaded view with thread headers (numbering, resolution status with who/when), tree connectors (`+--`, `|`) for replies, and summary line. Unresolved threads are listed first.
 
 ### Check build status for a PR
 
@@ -233,10 +264,11 @@ When composing `--description` or `--body` arguments:
 |---|---|---|
 | `401 Unauthorized` | Bad credentials | Verify `BITBUCKET_EMAIL` and `BITBUCKET_TOKEN` env vars. Token must be an app password, not account password |
 | `403 Forbidden` | Insufficient permissions | App password needs repository and PR read/write scopes |
+| `403` on resolve | Tried to resolve a general comment | Only inline (diff) comments can be resolved. General PR comments cannot be resolved via the API |
 | `404 Not Found` | Wrong workspace, repo slug, or PR ID | Verify config `workspace` and run `repo_list.py` to check |
 | `400 Bad Request` | Invalid payload (e.g. bad branch name) | Check branch exists; review `--dry-run` output |
 | `409 Conflict` | Merge conflict or PR not mergeable | Resolve conflicts in the source branch first |
-| `429 Too Many Requests` | Rate limited | Wait and retry. Bitbucket Cloud has a 1000 req/hr limit |
+| `429 Too Many Requests` | Rate limited | Automatic retry with exponential backoff (2s/4s/8s, 3 retries). If still failing, wait and retry manually. Bitbucket Cloud limit: 1000 req/hr |
 | Config not found | No `.bitbucket.json` anywhere | Create `~/.bitbucket.json` with workspace and credentials |
 | Repo auto-detect failed | No `origin` remote or not a Bitbucket URL | Provide `--repo <slug>` explicitly |
 | `env_file escapes project root` | Relative `env_file` in global config resolves outside `~` | Use an absolute path for `env_file` in global `~/.bitbucket.json` |

@@ -1,15 +1,67 @@
 #!/usr/bin/env python3
-"""Add a comment to a Bitbucket pull request."""
+"""Add a comment to a Bitbucket pull request, or resolve one or more comments."""
 
 import argparse
 import json
 import sys
+import time
+import urllib.error
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bb_client import BitbucketClient
 from bb_config import add_common_args, load_config, resolve_repo, resolve_workspace
+
+_RESOLVE_DELAY_S = 1  # Atlassian-recommended delay between mutative requests
+
+
+def _bulk_resolve(
+    client: BitbucketClient,
+    workspace: str,
+    repo_slug: str,
+    pr_id: int,
+    comment_ids: list[int],
+    dry_run: bool,
+) -> None:
+    """Resolve one or more comment threads by ID."""
+    total = len(comment_ids)
+
+    if dry_run:
+        print(f"DRY RUN — would resolve {total} comment(s) on PR #{pr_id}:")
+        for cid in comment_ids:
+            print(f"  #{cid}")
+        return
+
+    succeeded = 0
+    for i, cid in enumerate(comment_ids, 1):
+        try:
+            client.resolve_pr_comment(
+                workspace=workspace,
+                repo_slug=repo_slug,
+                pr_id=pr_id,
+                comment_id=cid,
+            )
+            print(f"[{i}/{total}] Resolved #{cid}")
+            succeeded += 1
+        except urllib.error.HTTPError as e:
+            if e.code == 403:
+                print(
+                    f"[{i}/{total}] FAILED #{cid}: Cannot resolve — only inline "
+                    f"(diff) comments can be resolved, not general PR comments.",
+                    file=sys.stderr,
+                )
+            else:
+                print(f"[{i}/{total}] FAILED #{cid}: {e}", file=sys.stderr)
+        except Exception as e:
+            print(f"[{i}/{total}] FAILED #{cid}: {e}", file=sys.stderr)
+        # Sleep between calls to respect rate limits (skip after last)
+        if i < total:
+            time.sleep(_RESOLVE_DELAY_S)
+
+    print(f"\nResolved {succeeded}/{total} comments on PR #{pr_id}.")
+    if succeeded < total:
+        sys.exit(1)
 
 
 def main() -> None:
@@ -23,8 +75,9 @@ def main() -> None:
     parser.add_argument(
         "--resolve",
         type=int,
+        nargs="+",
         metavar="COMMENT_ID",
-        help="Resolve a comment by ID (no --body needed)",
+        help="Resolve comment(s) by ID (no --body needed)",
     )
     parser.add_argument(
         "--dry-run", action="store_true", help="Show comment preview without posting"
@@ -49,16 +102,7 @@ def main() -> None:
     client = BitbucketClient(config)
 
     if args.resolve:
-        if args.dry_run:
-            print(f"DRY RUN — would resolve comment #{args.resolve} on PR #{args.pr}")
-            return
-        client.resolve_pr_comment(
-            workspace=workspace,
-            repo_slug=repo_slug,
-            pr_id=args.pr,
-            comment_id=args.resolve,
-        )
-        print(f"Comment #{args.resolve} resolved on PR #{args.pr}.")
+        _bulk_resolve(client, workspace, repo_slug, args.pr, args.resolve, args.dry_run)
         return
 
     if args.dry_run:

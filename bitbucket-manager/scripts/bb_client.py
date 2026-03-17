@@ -9,6 +9,7 @@ import json
 import os
 import socket
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -18,6 +19,8 @@ from typing import Any
 from bb_config import BitbucketConfig, resolve_credentials
 
 _DEBUG = os.environ.get("BB_DEBUG", "").lower() in ("1", "true", "yes")
+_MAX_429_RETRIES = 3
+_429_BACKOFF_BASE = 2  # seconds; doubles each retry: 2, 4, 8
 _BASE_URL = "https://api.bitbucket.org/2.0"
 
 
@@ -36,14 +39,8 @@ class BitbucketClient:
     # -----------------------------------------------------------------
     # Low-level HTTP
     # -----------------------------------------------------------------
-    def _request(
-        self,
-        method: str,
-        path: str,
-        data: dict | None = None,
-        params: dict | None = None,
-    ) -> Any:
-        """Execute an HTTP request against the Bitbucket REST API."""
+    @staticmethod
+    def _build_url(path: str, params: dict | None) -> str:
         url = f"{_BASE_URL}{path}"
         if params:
             qs = "&".join(
@@ -51,54 +48,88 @@ class BitbucketClient:
                 for k, v in params.items()
             )
             url = f"{url}?{qs}"
+        return url
 
-        # Always send a JSON body for POST/PUT — Bitbucket rejects
-        # Content-Type: application/json with no body on some endpoints.
+    @staticmethod
+    def _build_body(method: str, data: dict | None) -> bytes | None:
         if data is not None:
-            body = json.dumps(data).encode()
-        elif method in ("POST", "PUT"):
-            body = b"{}"
-        else:
-            body = None
-        req = urllib.request.Request(
-            url,
-            data=body,
-            headers=self._headers,
-            method=method,
-        )
+            return json.dumps(data).encode()
+        if method in ("POST", "PUT"):
+            return b"{}"
+        return None
+
+    @staticmethod
+    def _handle_http_error(e: urllib.error.HTTPError, method: str, path: str) -> None:
+        """Log and re-raise a non-retryable HTTP error."""
+        error_body = e.read().decode()
+        try:
+            error_json = json.loads(error_body)
+            msg = error_json.get("error", {}).get("message", "")
+            detail = msg if msg else error_body[:500]
+        except (json.JSONDecodeError, AttributeError):
+            detail = error_body[:500] if _DEBUG else f"HTTP {e.code} (set BB_DEBUG=1 for details)"
+        print(f"ERROR {e.code} {method} {path}: {detail}", file=sys.stderr)
+        raise
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        data: dict | None = None,
+        params: dict | None = None,
+    ) -> Any:
+        """Execute an HTTP request against the Bitbucket REST API.
+
+        Retries automatically on HTTP 429 (rate limit) with exponential backoff.
+        """
+        url = self._build_url(path, params)
+        body = self._build_body(method, data)
 
         if _DEBUG:
             print(f"DEBUG: {method} {url}", file=sys.stderr)
             if body:
                 print(f"DEBUG: body={body[:500].decode()!r}", file=sys.stderr)
 
-        try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                if resp.status == 204:
-                    return {}
-                raw = resp.read().decode()
-                return json.loads(raw) if raw else {}
-        except TimeoutError:
-            print(f"ERROR: Request timed out (60s) {method} {path}", file=sys.stderr)
-            raise
-        except urllib.error.HTTPError as e:
-            error_body = e.read().decode()
+        last_error: urllib.error.HTTPError | None = None
+        for attempt in range(_MAX_429_RETRIES + 1):
+            req = urllib.request.Request(url, data=body, headers=self._headers, method=method)
             try:
-                error_json = json.loads(error_body)
-                msg = error_json.get("error", {}).get("message", "")
-                detail = msg if msg else error_body[:500]
-            except (json.JSONDecodeError, AttributeError):
-                detail = (
-                    error_body[:500] if _DEBUG else f"HTTP {e.code} (set BB_DEBUG=1 for details)"
-                )
-            print(f"ERROR {e.code} {method} {path}: {detail}", file=sys.stderr)
-            raise
-        except urllib.error.URLError as e:
-            if isinstance(e.reason, socket.timeout | TimeoutError):
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    if resp.status == 204:
+                        return {}
+                    raw = resp.read().decode()
+                    return json.loads(raw) if raw else {}
+            except TimeoutError:
                 print(f"ERROR: Request timed out (60s) {method} {path}", file=sys.stderr)
-            else:
-                print(f"ERROR: URL error {method} {path}: {e.reason}", file=sys.stderr)
-            raise
+                raise
+            except urllib.error.HTTPError as e:
+                if e.code == 429 and attempt < _MAX_429_RETRIES:
+                    wait = _429_BACKOFF_BASE * (2**attempt)
+                    print(
+                        f"Rate limited, retrying in {wait}s... "
+                        f"(attempt {attempt + 1}/{_MAX_429_RETRIES})",
+                        file=sys.stderr,
+                    )
+                    e.read()  # drain response body
+                    time.sleep(wait)
+                    last_error = e
+                    continue
+                self._handle_http_error(e, method, path)
+            except urllib.error.URLError as e:
+                if isinstance(e.reason, socket.timeout | TimeoutError):
+                    print(f"ERROR: Request timed out (60s) {method} {path}", file=sys.stderr)
+                else:
+                    print(f"ERROR: URL error {method} {path}: {e.reason}", file=sys.stderr)
+                raise
+
+        # All retries exhausted
+        if last_error:
+            print(
+                f"ERROR 429 {method} {path}: Rate limit exceeded after {_MAX_429_RETRIES} retries",
+                file=sys.stderr,
+            )
+            raise last_error
+        return {}  # unreachable, satisfies type checker
 
     def _paginate(
         self,

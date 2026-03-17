@@ -15,6 +15,7 @@ Usage:
 """
 
 import contextlib
+import re
 import subprocess
 import sys
 import time
@@ -31,6 +32,15 @@ _passed = 0
 _failed = 0
 _skipped = 0
 _pr_id = None
+
+
+def _extract_comment_id(result: subprocess.CompletedProcess) -> str | None:
+    """Extract comment ID from 'Comment #NNN' in stdout."""
+    for line in result.stdout.splitlines():
+        m = re.search(r"Comment #(\d+)", line)
+        if m:
+            return m.group(1)
+    return None
 
 
 def _run(script: str, *args: str, expect_fail: bool = False) -> subprocess.CompletedProcess:
@@ -111,6 +121,105 @@ def _cleanup() -> None:
         print(f"[CLEANUP] Local branch {_BRANCH} deleted")
 
 
+def _test_comments(pr: str, test_file: str) -> None:
+    """Test comment posting, threading, display, filters, and bulk resolve."""
+    global _skipped
+
+    r = _run("pr_comment.py", "--pr", pr, "--body", "E2E test comment", "--dry-run")
+    _check("pr_comment --dry-run", r, stdout_contains="DRY RUN")
+
+    # Post inline comment 1 on the test file (inline comments can be resolved)
+    r = _run(
+        "pr_comment.py",
+        "--pr",
+        pr,
+        "--body",
+        f"E2E root comment 1 {_TIMESTAMP}",
+        "--file",
+        test_file,
+        "--line",
+        "3",
+    )
+    _check("pr_comment (root 1, inline)", r, stdout_contains="posted")
+    cid1 = _extract_comment_id(r)
+
+    # Post inline comment 2 on the test file
+    r = _run(
+        "pr_comment.py",
+        "--pr",
+        pr,
+        "--body",
+        f"E2E root comment 2 {_TIMESTAMP}",
+        "--file",
+        test_file,
+        "--line",
+        "5",
+    )
+    _check("pr_comment (root 2, inline)", r, stdout_contains="posted")
+    cid2 = _extract_comment_id(r)
+
+    # Post a reply to root comment 1 (creates a thread with replies)
+    reply_id = None
+    if cid1:
+        r = _run(
+            "pr_comment.py",
+            "--pr",
+            pr,
+            "--body",
+            f"E2E reply to root 1 {_TIMESTAMP}",
+            "--parent-id",
+            cid1,
+        )
+        _check("pr_comment (reply)", r, stdout_contains=f"replied to #{cid1}")
+        reply_id = _extract_comment_id(r)
+
+    # Threaded display
+    r = _run("pr_comments.py", "--pr", pr)
+    _check("pr_comments (threaded)", r, stdout_contains=f"E2E root comment 1 {_TIMESTAMP}")
+    _check("pr_comments (has summary)", r, stdout_contains="threads")
+    _check("pr_comments (has thread header)", r, stdout_contains="--- Thread 1/")
+    if reply_id:
+        _check("pr_comments (tree connector)", r, stdout_contains="+--")
+
+    r = _run("pr_comments.py", "--pr", pr, "--format", "json")
+    _check("pr_comments (json)", r, stdout_contains="E2E root comment")
+
+    # Filters — all threads are unresolved at this point
+    r = _run("pr_comments.py", "--pr", pr, "--status", "unresolved")
+    _check("pr_comments --status unresolved", r, stdout_contains="UNRESOLVED")
+
+    r = _run("pr_comments.py", "--pr", pr, "--status", "resolved")
+    _check("pr_comments --status resolved (empty)", r, stdout_contains="no matching comments")
+
+    # has-replies: root 1 has a reply, root 2 does not
+    r = _run("pr_comments.py", "--pr", pr, "--has-replies")
+    _check("--has-replies shows root 1", r, stdout_contains=f"E2E root comment 1 {_TIMESTAMP}")
+    _check(
+        "--has-replies excludes root 2", r, stdout_not_contains=f"E2E root comment 2 {_TIMESTAMP}"
+    )
+
+    r = _run("pr_comments.py", "--pr", pr, "--no-replies")
+    _check("--no-replies shows root 2", r, stdout_contains=f"E2E root comment 2 {_TIMESTAMP}")
+    _check(
+        "--no-replies excludes root 1", r, stdout_not_contains=f"E2E root comment 1 {_TIMESTAMP}"
+    )
+
+    # Bulk resolve (dry-run then real)
+    if cid1 and cid2:
+        r = _run("pr_comment.py", "--pr", pr, "--resolve", cid1, cid2, "--dry-run")
+        _check("--resolve bulk --dry-run", r, stdout_contains="DRY RUN")
+
+        r = _run("pr_comment.py", "--pr", pr, "--resolve", cid1, cid2)
+        _check("--resolve bulk", r, stdout_contains="Resolved 2/2")
+    else:
+        print("[SKIP] Could not extract comment IDs for bulk resolve test")
+        _skipped += 2
+
+    # Verify resolved filter after bulk resolve
+    r = _run("pr_comments.py", "--pr", pr, "--status", "resolved")
+    _check("--status resolved (after resolve)", r, stdout_contains="RESOLVED")
+
+
 def main() -> None:
     global _pr_id, _passed, _failed
 
@@ -150,9 +259,17 @@ def main() -> None:
         print(f"[FAIL] Could not create branch {_BRANCH}: {result.stderr.strip()}")
         sys.exit(1)
 
-    # Create an empty commit so the branch has something to diff
+    # Create a test file so the branch has a real diff (needed for inline comments + resolve)
+    _TEST_FILE = f"e2e-test-{_TIMESTAMP}.txt"
+    _test_file_path = Path.cwd() / _TEST_FILE
+    _test_file_path.write_text(
+        f"# E2E test file — created by bitbucket-manager e2e test\n"
+        f"# Timestamp: {_TIMESTAMP}\n"
+        f"line 3\nline 4\nline 5\n"
+    )
+    subprocess.run(["git", "add", _TEST_FILE], capture_output=True, text=True)
     subprocess.run(
-        ["git", "commit", "--allow-empty", "-m", f"test: e2e bitbucket-manager {_TIMESTAMP}"],
+        ["git", "commit", "-m", f"test: e2e bitbucket-manager {_TIMESTAMP}"],
         capture_output=True,
         text=True,
     )
@@ -252,19 +369,8 @@ def main() -> None:
         r = _run("pr_get.py", "--pr", pr)
         _check("pr_get (after update)", r, stdout_contains=f"E2E UPDATED {_TIMESTAMP}")
 
-        # ── 6. pr_comment (dry-run first, then real) ─────────────
-        r = _run("pr_comment.py", "--pr", pr, "--body", "E2E test comment", "--dry-run")
-        _check("pr_comment --dry-run", r, stdout_contains="DRY RUN")
-
-        r = _run("pr_comment.py", "--pr", pr, "--body", f"E2E test comment {_TIMESTAMP}")
-        _check("pr_comment", r, stdout_contains="posted")
-
-        # ── 7. pr_comments ───────────────────────────────────────
-        r = _run("pr_comments.py", "--pr", pr)
-        _check("pr_comments (threaded)", r, stdout_contains=f"E2E test comment {_TIMESTAMP}")
-
-        r = _run("pr_comments.py", "--pr", pr, "--format", "json")
-        _check("pr_comments (json)", r, stdout_contains="E2E test comment")
+        # ── 6–7. Comments: post, reply, display, filter, resolve ─
+        _test_comments(pr, _TEST_FILE)
 
         # ── 8. pr_checks ─────────────────────────────────────────
         r = _run("pr_checks.py", "--pr", pr)
