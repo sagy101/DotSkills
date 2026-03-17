@@ -6,8 +6,21 @@ Provides:
 - build_jql_from_filters: Build JQL from key=value filter pairs
 """
 
+import re
 import sys
 from typing import List, Optional
+
+# JQL functions that should NOT be quoted when used as filter values.
+# Matches patterns like: currentUser(), now(), startOfDay(), startOfWeek(-1w), etc.
+_JQL_FUNCTION_RE = re.compile(r"^[a-zA-Z_]\w*\(.*\)$")
+
+
+def _format_jql_value(value: str) -> str:
+    """Format a value for JQL — leave functions unquoted, quote everything else."""
+    value = value.strip()
+    if _JQL_FUNCTION_RE.match(value):
+        return value
+    return f'"{value.replace(chr(34), chr(92) + chr(34))}"'
 
 
 def build_board_jql(
@@ -50,8 +63,7 @@ def build_board_jql(
                 print(f"ERROR: --filter must be 'field=value', got: {pair}", file=sys.stderr)
                 sys.exit(1)
             field, _, value = pair.partition("=")
-            value = value.strip().replace('"', '\\"')
-            clauses.append(f'{field.strip()} = "{value}"')
+            clauses.append(f'{field.strip()} = {_format_jql_value(value)}')
 
     return " AND ".join(clauses) if clauses else None
 
@@ -82,8 +94,6 @@ def build_jql_from_filters(
             print(f"ERROR: --filter must be 'field=value', got: {pair}", file=sys.stderr)
             sys.exit(1)
         field, _, value = pair.partition("=")
-        field = field.strip()
-        value = value.strip().replace('"', '\\"')
-        clauses.append(f'{field} = "{value}"')
+        clauses.append(f'{field.strip()} = {_format_jql_value(value)}')
 
     return " AND ".join(clauses) + " ORDER BY key ASC"

@@ -4,7 +4,7 @@ Low-level Jira REST API client for jira-manager skill scripts.
 Uses urllib.request (stdlib) so the skill works even without the requests package
 installed. Falls back gracefully and provides clear error messages.
 
-Based on the proven API patterns from cap-agent-kit/create_jira_tickets.py.
+Based on proven Jira REST API patterns.
 """
 
 import base64

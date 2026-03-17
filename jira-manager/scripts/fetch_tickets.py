@@ -226,6 +226,10 @@ def main():
     # We use a manual check instead of mutually_exclusive_group to allow
     # --filter to be combined with --board-id
     parser.add_argument("--key", help="Fetch a single issue by key")
+    parser.add_argument(
+        "--keys",
+        help="Fetch multiple issues by key (comma-separated, e.g. PROJ-1,PROJ-2,PROJ-3)",
+    )
     parser.add_argument("--jql", help="Search using JQL query")
     parser.add_argument("--children-of", help="Fetch children of an epic or story")
     parser.add_argument(
@@ -279,13 +283,13 @@ def main():
         args.filter = [item for sublist in args.filter for item in sublist]
 
     # Validate exclusive options
-    mode_count = sum(1 for x in [args.key, args.jql, args.children_of, args.boards, args.board_id] if x)
+    mode_count = sum(1 for x in [args.key, args.keys, args.jql, args.children_of, args.boards, args.board_id] if x)
     if mode_count > 1:
-        parser.error("Conflicting options: provide only one of --key, --jql, --children-of, --boards, or --board-id")
-    
+        parser.error("Conflicting options: provide only one of --key, --keys, --jql, --children-of, --boards, or --board-id")
+
     # If filter is provided without a primary mode, it counts as a mode (Project Search)
     if mode_count == 0 and not args.filter:
-        parser.error("Must provide one of --key, --jql, --children-of, --filter, --boards, or --board-id")
+        parser.error("Must provide one of --key, --keys, --jql, --children-of, --filter, --boards, or --board-id")
 
     config = load_config(args.config)
     client = JiraClient(config)
@@ -302,6 +306,10 @@ def main():
         _handle_board_issues(client, config, args.board_id, args.filter, args.format, field_list, args.max_results, convert, fetch_all=args.fetch_all)
     elif args.key:
         _handle_key(client, config, args.key, args.format, field_list, convert)
+    elif args.keys:
+        keys = [k.strip() for k in args.keys.split(",") if k.strip()]
+        jql = f"key in ({','.join(keys)})"
+        _handle_jql(client, config, jql, args.format, field_list, len(keys), convert)
     elif args.jql:
         _handle_jql(client, config, args.jql, args.format, field_list, args.max_results, convert)
     elif args.children_of:

@@ -191,8 +191,12 @@ def apply_priority(fields, args, config):
 
 
 def apply_assignee(fields, args):
-    """Add assignee to fields dict if provided."""
-    if args.assignee:
+    """Add assignee to fields dict if provided. Empty string unassigns."""
+    if args.assignee is None:
+        return
+    if args.assignee == "":
+        fields["assignee"] = None
+    else:
         fields["assignee"] = {"name": args.assignee}
 
 

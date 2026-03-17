@@ -29,7 +29,7 @@ def _git_remote_to_browse_base(remote_url: str, branch: str) -> Optional[str]:
     """Convert a git remote URL to a browsable base URL.
 
     Examples:
-        git@bitbucket.org:firelayers/cap-agent-kit.git  ->  https://bitbucket.org/firelayers/cap-agent-kit/src/main/
+        git@bitbucket.org:acme/my-project.git            ->  https://bitbucket.org/acme/my-project/src/main/
         https://github.com/user/repo.git                ->  https://github.com/user/repo/blob/main/
         git@github.com:user/repo.git                    ->  https://github.com/user/repo/blob/main/
     """
