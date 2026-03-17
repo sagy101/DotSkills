@@ -4,6 +4,16 @@ Distilled from Anthropic, OpenAI, and Windsurf documentation. Apply these when w
 
 ## Core Principles
 
+### 0. Scripts absorb complexity, agent stays simple
+
+The overall guideline: prefer a simpler agent surface over simpler scripts. When logic can be a script, it should be — but this is a balance, not a dogma. Don't write overly complex scripts to avoid trivial agent decisions. The goal is to minimize the number of agent steps where things can go wrong while keeping scripts readable and maintainable.
+
+- Agent workflow should be a short, linear sequence of script calls — not branching logic or multi-step reasoning
+- Each script should handle its own validation, error reporting, and output formatting
+- The agent's job is to pick the right script, pass the right args, and present the output
+
+**Rule of thumb:** if the agent needs more than ~3 decision points for an operation, that logic belongs in a script.
+
 ### 1. Be clear and direct
 
 Think of the agent as a brilliant new employee with zero context on your norms and workflows. The more precisely you explain what you want, the better the result.
@@ -86,12 +96,16 @@ Good: "Create, update, fetch, delete, diff, and validate Jira tickets from struc
 
 ### Pre-flight checks
 
-Always include numbered pre-flight checks that the agent runs proactively before any operation. Pattern:
+Pre-flight checks should be a **single script** that the agent calls once — not individual agent steps. The script validates everything and reports a clear pass/fail summary. The agent reads the output and proceeds or stops.
 
-1. **Runtime environment** — check language version, venv exists, dependencies installed
-2. **Configuration file** — check it exists and has required fields; if missing, help user create one interactively
+The preflight script should check:
+
+1. **Runtime environment** — language version, venv exists, dependencies installed
+2. **Configuration file** — exists and has required fields; report what's missing
 3. **Credentials** — confirm env vars are SET without printing values
 4. **Connectivity/discovery** — optional first-run validation
+
+This is a prime example of the core principle: the agent runs one command and reads the result, rather than executing four separate checks with branching logic.
 
 ### Approval gates
 
@@ -140,6 +154,7 @@ Include two tables:
 | No approval gates | Plan → approve → execute for all mutations |
 | Printing credentials | Only confirm SET/MISSING status |
 | Single mega-script | One script per operation + shared config loader |
+| Complex agent branching logic | Push decision logic into scripts; agent calls scripts with simple args |
 | No error guidance | Error table + troubleshooting table |
 | Negative instructions ("don't do X") | Positive instructions ("do Y instead") |
 | No examples | Exact CLI commands with realistic arguments |

@@ -20,6 +20,12 @@ compatibility: >
 
 Turn use-case-specific scripts into polished, generic Agent Skills following the Agent Skills specification, prompt engineering best practices, and proven patterns.
 
+## Design philosophy
+
+**Max capability, max simplicity.** The overall guideline: prefer a simpler agent surface over simpler scripts. When logic can live in a script, it should — scripts are deterministic, testable, and debuggable, while agent steps are fragile decision points. This is a balance, not a dogma: don't write overly complex scripts to avoid trivial agent decisions. But when in doubt, push complexity into scripts and keep the agent workflow as a short, linear sequence of script calls.
+
+Every additional agent step is a place to fall. Every script is a place to land.
+
 ## When to use this skill
 
 Use this skill when the user wants to:
@@ -127,11 +133,13 @@ Write these sections in this exact order:
 2. **When to use this skill** — bullet list of trigger scenarios with action verbs
 3. **Prerequisites** — numbered list: config file, credentials, dependencies
 4. **Configuration** — minimal config example + link to `references/CONFIG.md`
-5. **Pre-flight checks** — numbered checks the agent runs before ANY operation:
+5. **Pre-flight checks** — a single script call that validates the environment before ANY operation. The script (not the agent) runs all checks and reports results:
    - Check 1: Runtime environment (Language version, dependencies, or tool availability)
    - Check 2: Configuration file exists and is valid
    - Check 3: Credentials are set (never print values, only confirm SET/MISSING)
    - Check 4: Connectivity or discovery (if applicable)
+
+   The agent calls the preflight script once and reads the output — it does not run each check individually. This is a key example of the design philosophy: script absorbs the complexity, agent stays simple.
 6. **Workflow** — numbered steps: validate → determine scope → build plan → get approval → execute → verify
 7. **Operations** — one subsection per operation with exact CLI commands using `<skill_dir>` placeholder
 8. **Important rules** — numbered list of invariants (approval gates, security, ordering)
@@ -173,6 +181,7 @@ For each complex operation, create a reference doc covering:
 
 When creating scripts, follow these patterns:
 
+- **Scripts absorb complexity, not the agent** — if logic can live in a script, it must. The agent should call scripts with simple CLI args, not reason through multi-step logic inline. More scripts with thin agent glue > fewer scripts with thick agent reasoning.
 - **One script per operation** — keep scripts focused and single-purpose
 - **Shared config loader** — centralize config parsing and credential resolution
 - **Setup script** — bootstrap environment (e.g., venv for Python, npm install for Node)
