@@ -33,6 +33,7 @@ select = [
     "SIM",  # flake8-simplify
     "RET",  # flake8-return
     "PERF", # perflint rules
+    "C901", # mccabe complexity
 ]
 ignore = [
     "E501",    # line too long (handled by formatter)
@@ -40,6 +41,9 @@ ignore = [
     "ANN401",  # dynamically typed expressions (Any)
     "PERF203", # try-except in loop
 ]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
 
 [tool.ruff.format]
 quote-style = "double"
