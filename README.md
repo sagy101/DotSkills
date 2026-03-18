@@ -21,6 +21,7 @@ Each skill is a self-contained directory following the [Agent Skills Open Standa
 | [bitbucket-manager](./bitbucket-manager/) | Manage Bitbucket Cloud PRs — create, update, merge, decline, comment, list. Build/pipeline status checks, Jira issue extraction, repo listing. Zero pip deps (pure stdlib). See [design](./docs/bitbucket-manager/bitbucket-manager-design.md). |
 | [confluence-publisher](./confluence-publisher/) | Publish markdown docs to Confluence Cloud — pages, hierarchy, cross-links, Mermaid diagrams, diff/preview, export, fetch. Surgical HTML edits (find/replace without overwriting formatting), version diff, version history, page revert |
 | [jira-manager](./jira-manager/) | Create, update, fetch, delete, diff, and validate Jira tickets — bulk create from markdown/JSON, bulk update (list, board, JQL), full field catalog discovery (statuses, priorities, components, versions), status transitions, generic `--set` and `--filter` flags for any discovered field, estimation validation, link rewriting |
+| [jenkins-manager](./jenkins-manager/) | Check Jenkins CI/CD build status, view console logs, trigger builds, view build changesets, check queue status, list jobs/folders. Auto-discovers job from git remote. Secret redaction on all log output. Zero pip deps (pure stdlib). See [design](./docs/jenkins-manager/jenkins-manager-design.md). |
 | [eks-pod-ops](./eks-pod-ops/) | Read pod logs, list/describe pods, exec into containers, and restart deployments on EKS clusters. Automatic secret redaction (tokens, keys, passwords, JWTs), exec blocklist (blocks bare `env`/`printenv`, secret file reads), sidecar-aware container selection, Rancher Desktop kubectl workaround. Zero pip deps (pure stdlib) |
 
 ### Meta / Tooling
@@ -76,9 +77,13 @@ tests/
   codex-subagent/
     test_run_codex.py    # 83 tests — safety parsing, flag scanning, arg building
   eks-pod-ops/
-    test_redaction.py    # 49 tests — secret redaction patterns, exec blocklist
-    test_config.py       #  9 tests — config loading, env resolution, kubeconfig paths
+    test_eks_redaction.py  # 49 tests — secret redaction patterns, exec blocklist
+    test_eks_config.py     #  9 tests — config loading, env resolution, kubeconfig paths
     test_pods.py         #  6 tests — container selection, pod parsing, sidecar skipping
+  jenkins-manager/
+    test_jenkins_config.py      # 30 tests — repo parsing, branch encoding, deep merge, job/branch resolution
+    test_jenkins_redaction.py   # 33 tests — secret redaction patterns, Jenkins log false positives
+    test_client.py              # 20 tests — color-status mapping, API path construction
 ```
 
 Run with pytest:
