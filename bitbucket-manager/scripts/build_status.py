@@ -9,8 +9,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from bb_config import add_common_args, load_config, resolve_repo, resolve_workspace
 from bb_client import BitbucketClient
+from bb_config import add_common_args, load_config, resolve_repo, resolve_workspace
 
 
 def _resolve_branch_head(branch: str) -> str:
@@ -18,7 +18,8 @@ def _resolve_branch_head(branch: str) -> str:
     try:
         result = subprocess.run(
             ["git", "rev-parse", f"origin/{branch}"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         if result.returncode == 0:
             return result.stdout.strip()
@@ -28,7 +29,8 @@ def _resolve_branch_head(branch: str) -> str:
     try:
         result = subprocess.run(
             ["git", "rev-parse", branch],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         if result.returncode == 0:
             return result.stdout.strip()
@@ -45,8 +47,12 @@ def main() -> None:
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--commit", help="Commit SHA")
     group.add_argument("--branch", help="Branch name (resolves to HEAD SHA)")
-    parser.add_argument("--format", choices=["table", "json"], default="table",
-                        help="Output format (default: table)")
+    parser.add_argument(
+        "--format",
+        choices=["table", "json"],
+        default="table",
+        help="Output format (default: table)",
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -69,7 +75,7 @@ def main() -> None:
     print(f"Build statuses for {sha[:12]}:")
     print()
     print(f"{'State':<12}  {'Name':<40}  {'URL'}")
-    print(f"{'─'*12}  {'─'*40}  {'─'*50}")
+    print(f"{'─' * 12}  {'─' * 40}  {'─' * 50}")
 
     for s in statuses:
         state = s.get("state", "?")

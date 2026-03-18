@@ -19,9 +19,9 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import add_config_arg, load_config, load_manifest, save_manifest
 from field_resolver import (
     add_common_field_args,
     apply_extra_fields,
@@ -32,11 +32,12 @@ from field_resolver import (
     resolve_sprint_id,
     validate_required_fields,
 )
-from workflow_ops import handle_status_transition, upload_attachments
 from jira_client import JiraClient
+from jira_config_loader import JiraConfig, add_config_arg, load_config, load_manifest, save_manifest
+from workflow_ops import handle_status_transition, upload_attachments
 
 
-def _add_epic_link(fields, args, config):
+def _add_epic_link(fields: dict[str, Any], args: argparse.Namespace, config: JiraConfig) -> None:
     """Add epic link field if --epic was provided."""
     if not args.epic:
         return
@@ -45,13 +46,12 @@ def _add_epic_link(fields, args, config):
         fields[epic_field] = args.epic
     else:
         print(
-            "WARNING: epic_link field not configured. "
-            "Run discover_fields.py --apply to detect it.",
+            "WARNING: epic_link field not configured. Run discover_fields.py --apply to detect it.",
             file=sys.stderr,
         )
 
 
-def build_fields(args, config):
+def build_fields(args: argparse.Namespace, config: JiraConfig) -> tuple[dict[str, Any], str | None]:
     """Build the Jira fields dict from CLI arguments.
 
     Returns (fields_dict, status_value_or_None).
@@ -88,7 +88,7 @@ def build_fields(args, config):
     return fields, status_from_set
 
 
-def _update_manifest(config, args, key):
+def _update_manifest(config: JiraConfig, args: argparse.Namespace, key: str) -> None:
     """Update the manifest file with the newly created ticket."""
     manifest = load_manifest(config)
     category = "subtasks" if args.parent else "stories"
@@ -104,7 +104,7 @@ def _update_manifest(config, args, key):
     print(f"  Manifest updated: {category}/{args.manifest_id} = {key}")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Create a Jira issue")
     add_config_arg(parser)
     parser.add_argument(
@@ -128,15 +128,13 @@ def main():
 
     missing = validate_required_fields(config, args.type, fields)
     if missing:
-        print(f"ERROR: Missing required fields for issue type "
-              f"'{args.type}':", file=sys.stderr)
+        print(f"ERROR: Missing required fields for issue type '{args.type}':", file=sys.stderr)
         for mf in missing:
             fid = mf["id"]
             fname = mf["name"]
-            hint = '--set "{}=<value>"'.format(fname)
+            hint = f'--set "{fname}=<value>"'
             print(f"  - {fname} ({fid})  → {hint}", file=sys.stderr)
-        print("\nRun discover_fields.py --apply to refresh required fields.",
-              file=sys.stderr)
+        print("\nRun discover_fields.py --apply to refresh required fields.", file=sys.stderr)
         sys.exit(1)
 
     if args.dry_run:

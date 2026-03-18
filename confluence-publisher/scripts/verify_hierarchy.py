@@ -9,15 +9,21 @@ Usage:
     python verify_hierarchy.py --config .confluence.json
 """
 
+from __future__ import annotations
+
 import argparse
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from atlassian import Confluence
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config_loader import add_config_arg, load_config, connect, load_manifest
-from page_utils import get_all_children
+from confluence_config import add_config_arg, connect, load_config, load_manifest  # noqa: E402
+from page_utils import get_all_children  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -26,12 +32,19 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def get_children(confluence, page_id: str) -> list:
+def get_children(confluence: Confluence, page_id: str) -> list[tuple[str, str]]:
     children = get_all_children(confluence, page_id)
     return [(c["id"], c["title"]) for c in children]
 
 
-def print_tree(confluence, page_id, title, manifest_lookup, visited_ids, indent=0):
+def print_tree(
+    confluence: Confluence,
+    page_id: str,
+    title: str,
+    manifest_lookup: dict[str, str],
+    visited_ids: set[str],
+    indent: int = 0,
+) -> None:
     visited_ids.add(page_id)
     prefix = "  " * indent + ("|- " if indent > 0 else "")
     manifest_file = manifest_lookup.get(page_id, "")

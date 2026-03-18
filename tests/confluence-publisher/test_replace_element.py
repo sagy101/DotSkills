@@ -16,7 +16,6 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 from replace_element import find_element_after_heading  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Fixtures: sample HTML fragments
 # ---------------------------------------------------------------------------
@@ -84,13 +83,14 @@ SECTION_HTML = """
 # Tests: find_element_after_heading — basic
 # ---------------------------------------------------------------------------
 
+
 class TestFindElementBasic:
     """Basic element finding after a heading."""
 
     def test_find_table_after_heading(self):
         start, end = find_element_after_heading(SIMPLE_HTML, "Implementation Phases", "table")
         extracted = SIMPLE_HTML[start:end]
-        assert "<table data-id=\"target\">" in extracted
+        assert '<table data-id="target">' in extracted
         assert "Phase 1" in extracted
         assert "</table>" in extracted
 
@@ -114,6 +114,7 @@ class TestFindElementBasic:
 # ---------------------------------------------------------------------------
 # Tests: find_element_after_heading — nested elements (H2 fix)
 # ---------------------------------------------------------------------------
+
 
 class TestNestedElements:
     """Verify correct handling of nested same-type elements."""
@@ -143,6 +144,7 @@ class TestNestedElements:
 # Tests: find_element_after_heading — nth occurrence
 # ---------------------------------------------------------------------------
 
+
 class TestNthOccurrence:
     """Verify --nth parameter for selecting specific occurrences."""
 
@@ -171,17 +173,22 @@ class TestNthOccurrence:
 # Tests: find_element_after_heading — heading with inner tags (H1 fix)
 # ---------------------------------------------------------------------------
 
+
 class TestHeadingWithInnerTags:
     """Verify heading detection strips inner tags before matching (H1 fix)."""
 
     def test_heading_with_strong_tag(self):
-        start, end = find_element_after_heading(HEADING_WITH_TAGS_HTML, "Implementation Phases", "table")
+        start, end = find_element_after_heading(
+            HEADING_WITH_TAGS_HTML, "Implementation Phases", "table"
+        )
         extracted = HEADING_WITH_TAGS_HTML[start:end]
         assert "<table>" in extracted
         assert "data" in extracted
 
     def test_case_insensitive_heading(self):
-        start, end = find_element_after_heading(HEADING_WITH_TAGS_HTML, "implementation phases", "table")
+        start, end = find_element_after_heading(
+            HEADING_WITH_TAGS_HTML, "implementation phases", "table"
+        )
         extracted = HEADING_WITH_TAGS_HTML[start:end]
         assert "<table>" in extracted
 
@@ -189,6 +196,7 @@ class TestHeadingWithInnerTags:
 # ---------------------------------------------------------------------------
 # Tests: find_element_after_heading — section extraction
 # ---------------------------------------------------------------------------
+
 
 class TestSectionExtraction:
     """Verify section extraction (heading + content until next same-or-higher heading)."""
@@ -228,24 +236,28 @@ class TestSectionExtraction:
 # Tests: apply-mode validation (H3, M2, M3 fixes)
 # ---------------------------------------------------------------------------
 
+
 class TestApplyValidation:
     """Test apply-mode input validation without Confluence API calls."""
 
-    def test_empty_old_file(self, tmp_path):
+    def test_empty_old_file(self, tmp_path: Path) -> None:
         old_file = tmp_path / "old.html"
         new_file = tmp_path / "new.html"
         old_file.write_text("", encoding="utf-8")
         new_file.write_text("<table>new</table>", encoding="utf-8")
 
-        with patch("sys.argv", ["prog", "--page", "123", "--old", str(old_file), "--new", str(new_file)]):
+        with patch(
+            "sys.argv", ["prog", "--page", "123", "--old", str(old_file), "--new", str(new_file)]
+        ):
             from replace_element import parse_args
-            args = parse_args()
+
+            parse_args()
 
         # Simulate apply_mode's validation
         old_html = old_file.read_text(encoding="utf-8").strip()
         assert old_html == ""
 
-    def test_empty_new_file(self, tmp_path):
+    def test_empty_new_file(self, tmp_path: Path) -> None:
         old_file = tmp_path / "old.html"
         new_file = tmp_path / "new.html"
         old_file.write_text("<table>old</table>", encoding="utf-8")
@@ -254,27 +266,34 @@ class TestApplyValidation:
         new_html = new_file.read_text(encoding="utf-8").strip()
         assert new_html == ""
 
-    def test_old_file_is_directory(self, tmp_path):
+    def test_old_file_is_directory(self, tmp_path: Path) -> None:
         dir_path = tmp_path / "dir"
         dir_path.mkdir()
         assert not dir_path.is_file()
 
-    def test_nth_negative_rejected(self):
-        with patch("sys.argv", ["prog", "--page", "123", "--heading", "Test", "--nth", "-1"]):
+    def test_nth_negative_rejected(self) -> None:
+        with (
+            patch("sys.argv", ["prog", "--page", "123", "--heading", "Test", "--nth", "-1"]),
+            pytest.raises(SystemExit),
+        ):
             from replace_element import parse_args
-            with pytest.raises(SystemExit):
-                parse_args()
 
-    def test_nth_zero_rejected(self):
-        with patch("sys.argv", ["prog", "--page", "123", "--heading", "Test", "--nth", "0"]):
+            parse_args()
+
+    def test_nth_zero_rejected(self) -> None:
+        with (
+            patch("sys.argv", ["prog", "--page", "123", "--heading", "Test", "--nth", "0"]),
+            pytest.raises(SystemExit),
+        ):
             from replace_element import parse_args
-            with pytest.raises(SystemExit):
-                parse_args()
+
+            parse_args()
 
 
 # ---------------------------------------------------------------------------
 # Tests: unclosed tag handling
 # ---------------------------------------------------------------------------
+
 
 class TestUnclosedTag:
     """Verify proper error on unclosed tags."""

@@ -14,7 +14,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 _ENV_VAR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -26,14 +26,14 @@ class BitbucketConfig:
     workspace: str
     email_env: str = "BITBUCKET_EMAIL"
     token_env: str = "BITBUCKET_TOKEN"
-    env_file: Optional[str] = None
-    default_reviewers: list = field(default_factory=list)
+    env_file: str | None = None
+    default_reviewers: list[str] = field(default_factory=list)
     default_destination: str = "master"
 
     # Resolved at runtime
     project_root: Path = field(default_factory=lambda: Path.cwd())
 
-    def auto_detect_repo(self) -> Optional[str]:
+    def auto_detect_repo(self) -> str | None:
         """Detect repo_slug from git remote origin URL.
 
         Parses SSH and HTTPS Bitbucket remote URLs:
@@ -44,7 +44,9 @@ class BitbucketConfig:
         try:
             result = subprocess.run(
                 ["git", "remote", "get-url", "origin"],
-                capture_output=True, text=True, cwd=str(self.project_root),
+                capture_output=True,
+                text=True,
+                cwd=str(self.project_root),
             )
             if result.returncode != 0:
                 return None
@@ -54,37 +56,35 @@ class BitbucketConfig:
             return None
 
 
-def _parse_repo_slug(remote_url: str) -> Optional[str]:
+def _parse_repo_slug(remote_url: str) -> str | None:
     """Extract repo_slug from a Bitbucket remote URL."""
     # SSH: git@bitbucket.org:workspace/repo.git
     if remote_url.startswith("git@"):
-        parts = remote_url.split(":")[-1]
-        parts = parts.rstrip(".git")
-        segments = parts.split("/")
+        path = remote_url.split(":")[-1].rstrip(".git")
+        segments = path.split("/")
         if len(segments) >= 2:
             return segments[-1]
     # HTTPS: https://bitbucket.org/workspace/repo.git
     elif "bitbucket.org" in remote_url:
-        parts = remote_url.rstrip("/").rstrip(".git").split("/")
-        if len(parts) >= 2:
-            return parts[-1]
+        segments = remote_url.rstrip("/").rstrip(".git").split("/")
+        if len(segments) >= 2:
+            return segments[-1]
     return None
 
 
-def _parse_workspace_and_repo(remote_url: str) -> Tuple[Optional[str], Optional[str]]:
+def _parse_workspace_and_repo(remote_url: str) -> tuple[str | None, str | None]:
     """Extract workspace and repo_slug from a Bitbucket remote URL."""
     # SSH: git@bitbucket.org:workspace/repo.git
     if remote_url.startswith("git@"):
-        parts = remote_url.split(":")[-1]
-        parts = parts.rstrip(".git")
-        segments = parts.split("/")
+        path = remote_url.split(":")[-1].rstrip(".git")
+        segments = path.split("/")
         if len(segments) >= 2:
             return segments[-2], segments[-1]
     # HTTPS: https://bitbucket.org/workspace/repo.git
     elif "bitbucket.org" in remote_url:
-        parts = remote_url.rstrip("/").rstrip(".git").split("/")
-        if len(parts) >= 2:
-            return parts[-2], parts[-1]
+        segments = remote_url.rstrip("/").rstrip(".git").split("/")
+        if len(segments) >= 2:
+            return segments[-2], segments[-1]
     return None, None
 
 
@@ -122,13 +122,13 @@ def _normalize_argv() -> None:
 _normalize_argv()
 
 
-def detect_shell() -> Tuple[str, str]:
+def detect_shell() -> tuple[str, str]:
     """Detect user's shell and rc file path."""
     if sys.platform == "win32":
         comspec = os.environ.get("COMSPEC", "")
         if "pwsh" in comspec.lower() or "powershell" in comspec.lower():
             return "pwsh", "$PROFILE"
-        if os.environ.get("PSModulePath"):
+        if os.environ.get("PSModulePath"):  # noqa: SIM112
             return "pwsh", "$PROFILE"
         return "cmd", "%USERPROFILE%\\.env"
 
@@ -156,7 +156,7 @@ def _credential_hint(var_name: str) -> str:
     return f"  echo 'export {var_name}=\"<value>\"' >> {rc_file} && . {rc_file}"
 
 
-def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """Deep-merge two dicts. override wins on conflicts."""
     merged = base.copy()
     for key, val in override.items():
@@ -167,7 +167,7 @@ def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any
     return merged
 
 
-def _find_git_root(start_dir: Path) -> Optional[Path]:
+def _find_git_root(start_dir: Path) -> Path | None:
     """Find the nearest .git directory walking up from start_dir."""
     current = start_dir
     while current != current.parent:
@@ -177,7 +177,7 @@ def _find_git_root(start_dir: Path) -> Optional[Path]:
     return None
 
 
-def _find_project_config(start_dir: Optional[str] = None) -> Optional[Path]:
+def _find_project_config(start_dir: str | None = None) -> Path | None:
     """Walk up from start_dir looking for .bitbucket.json."""
     current = Path(start_dir) if start_dir else Path.cwd()
     home = Path.home()
@@ -192,13 +192,13 @@ def _find_project_config(start_dir: Optional[str] = None) -> Optional[Path]:
     return None
 
 
-def _find_global_config() -> Optional[Path]:
+def _find_global_config() -> Path | None:
     """Check for ~/.bitbucket.json."""
     candidate = Path.home() / CONFIG_FILENAME
     return candidate if candidate.exists() else None
 
 
-def _parse_env_line(line: str) -> Optional[Tuple[str, str]]:
+def _parse_env_line(line: str) -> tuple[str, str] | None:
     """Parse a single line from a .env file."""
     line = line.strip()
     if not line or line.startswith("#"):
@@ -210,17 +210,16 @@ def _parse_env_line(line: str) -> Optional[Tuple[str, str]]:
     key, _, val = line.partition("=")
     key = key.strip()
     if key.startswith("export "):
-        key = key[len("export "):].strip()
+        key = key[len("export ") :].strip()
     val = val.strip()
-    if (val.startswith('"') and val.endswith('"')) or \
-       (val.startswith("'") and val.endswith("'")):
+    if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
         val = val[1:-1]
     return key, val
 
 
-def load_env_file(env_path: Path) -> Dict[str, str]:
+def load_env_file(env_path: Path) -> dict[str, str]:
     """Parse a .env file into a dict."""
-    env: Dict[str, str] = {}
+    env: dict[str, str] = {}
     if not env_path.exists():
         return env
     for line in env_path.read_text().splitlines():
@@ -231,7 +230,7 @@ def load_env_file(env_path: Path) -> Dict[str, str]:
     return env
 
 
-def load_config(config_path: Optional[str] = None) -> BitbucketConfig:
+def load_config(config_path: str | None = None) -> BitbucketConfig:
     """Load and validate .bitbucket.json.
 
     Resolution order:
@@ -254,13 +253,18 @@ def load_config(config_path: Optional[str] = None) -> BitbucketConfig:
             print(f"ERROR: {CONFIG_FILENAME} not found in any parent directory or ~/.")
             print()
             print("Create ~/.bitbucket.json with:")
-            print(json.dumps({
-                "workspace": "<your-workspace>",
-                "credentials": {
-                    "email_env": "BITBUCKET_EMAIL",
-                    "token_env": "BITBUCKET_TOKEN",
-                },
-            }, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "workspace": "<your-workspace>",
+                        "credentials": {
+                            "email_env": "BITBUCKET_EMAIL",
+                            "token_env": "BITBUCKET_TOKEN",
+                        },
+                    },
+                    indent=2,
+                )
+            )
             print()
             print("See references/CONFIG.md for full schema.")
             sys.exit(2)
@@ -274,7 +278,9 @@ def load_config(config_path: Optional[str] = None) -> BitbucketConfig:
         print("ERROR: Missing required field 'workspace' in merged config")
         sys.exit(2)
     if not isinstance(raw["workspace"], str) or not raw["workspace"].strip():
-        print(f"ERROR: 'workspace' must be a non-empty string (got {type(raw['workspace']).__name__})")
+        print(
+            f"ERROR: 'workspace' must be a non-empty string (got {type(raw['workspace']).__name__})"
+        )
         sys.exit(2)
 
     creds = raw.get("credentials", {})
@@ -293,10 +299,10 @@ def load_config(config_path: Optional[str] = None) -> BitbucketConfig:
     )
 
 
-def resolve_credentials(config: BitbucketConfig) -> Tuple[str, str]:
+def resolve_credentials(config: BitbucketConfig) -> tuple[str, str]:
     """Resolve email and app password from env file or environment variables.
     Returns (email, app_password). Exits on failure with shell-specific advice."""
-    env_vars: Dict[str, str] = {}
+    env_vars: dict[str, str] = {}
 
     if config.env_file:
         raw_path = Path(config.env_file)
@@ -307,9 +313,14 @@ def resolve_credentials(config: BitbucketConfig) -> Tuple[str, str]:
             # Relative paths resolve against project root with traversal check
             env_path = (config.project_root / config.env_file).resolve()
             root_resolved = config.project_root.resolve()
-            if not str(env_path).startswith(str(root_resolved) + os.sep) and env_path != root_resolved:
+            if (
+                not str(env_path).startswith(str(root_resolved) + os.sep)
+                and env_path != root_resolved
+            ):
                 print(f"ERROR: env_file escapes project root: {config.env_file}")
-                print("Use an absolute path in global config, or a relative path in project config.")
+                print(
+                    "Use an absolute path in global config, or a relative path in project config."
+                )
                 sys.exit(2)
         if not env_path.exists():
             print(f"ERROR: env_file not found: {env_path}")
@@ -333,7 +344,7 @@ def resolve_credentials(config: BitbucketConfig) -> Tuple[str, str]:
     return email, token
 
 
-def resolve_repo(config: BitbucketConfig, cli_repo: Optional[str] = None) -> str:
+def resolve_repo(config: BitbucketConfig, cli_repo: str | None = None) -> str:
     """Resolve repo slug: CLI flag > git remote auto-detect. Exits if unresolvable."""
     if cli_repo:
         return cli_repo
@@ -345,7 +356,7 @@ def resolve_repo(config: BitbucketConfig, cli_repo: Optional[str] = None) -> str
     sys.exit(1)
 
 
-def resolve_workspace(config: BitbucketConfig, cli_workspace: Optional[str] = None) -> str:
+def resolve_workspace(config: BitbucketConfig, cli_workspace: str | None = None) -> str:
     """Resolve workspace: CLI flag > config. Exits if unresolvable."""
     if cli_workspace:
         return cli_workspace

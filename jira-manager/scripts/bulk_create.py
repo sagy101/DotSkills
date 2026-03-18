@@ -43,16 +43,23 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import add_config_arg, load_config, load_manifest, save_manifest
 from field_resolver import resolve_issue_type, validate_required_fields
 from jira_client import JiraClient
+from jira_config_loader import JiraConfig, add_config_arg, load_config, load_manifest, save_manifest
 from link_rewriter import rewrite_links_to_git
 from markup_converter import md_to_jira_markup
 
 
-def _flush_section(current_lines, section, epic, story, subtask):
+def _flush_section(
+    current_lines: list[str],
+    section: str | None,
+    epic: dict[str, Any] | None,
+    story: dict[str, Any] | None,
+    subtask: dict[str, Any] | None,
+) -> None:
     """Assign accumulated lines to the current section's description."""
     desc = "\n".join(current_lines).strip()
     if section == "subtask" and subtask:
@@ -63,13 +70,13 @@ def _flush_section(current_lines, section, epic, story, subtask):
         epic["description"] = desc
 
 
-def parse_markdown_source(text, pattern):
+def parse_markdown_source(text: str, pattern: str) -> dict[str, Any]:
     """Parse structured markdown into epic/stories/subtasks hierarchy."""
-    result = {"epic": None, "stories": []}
-    story = None
-    subtask = None
-    section = None
-    lines_buf = []
+    result: dict[str, Any] = {"epic": None, "stories": []}
+    story: dict[str, Any] | None = None
+    subtask: dict[str, Any] | None = None
+    section: str | None = None
+    lines_buf: list[str] = []
 
     for line in text.splitlines():
         epic_match = re.match(r"^#\s+(?:Epic:\s*)?(.+)$", line)
@@ -117,7 +124,7 @@ def parse_markdown_source(text, pattern):
     return result
 
 
-def _extract_estimation(item, pattern):
+def _extract_estimation(item: dict[str, Any], pattern: str) -> None:
     """Extract story points from an item's description if it matches the pattern."""
     desc = item.get("description", "")
     if desc:
@@ -126,7 +133,7 @@ def _extract_estimation(item, pattern):
             item["story_points"] = float(match.group(1))
 
 
-def _extract_points(data, pattern):
+def _extract_points(data: dict[str, Any], pattern: str) -> None:
     """Extract story points from Estimation lines in descriptions."""
     if data.get("epic"):
         _extract_estimation(data["epic"], pattern)
@@ -137,12 +144,12 @@ def _extract_points(data, pattern):
             _extract_estimation(subtask, pattern)
 
 
-def parse_json_source(text):
+def parse_json_source(text: str) -> dict[str, Any]:
     """Parse JSON source into the same format as markdown parser."""
-    return json.loads(text)
+    return json.loads(text)  # type: ignore[no-any-return]
 
 
-def load_source(source_path, config):
+def load_source(source_path: str, config: JiraConfig) -> dict[str, Any]:
     """Load and parse a source file (markdown or JSON).
 
     Resolves relative paths against config.source_root if the path
@@ -157,18 +164,20 @@ def load_source(source_path, config):
     return parse_markdown_source(text, config.estimation_pattern)
 
 
-def _get_plan_row(item_id, item_sp, category, manifest):
+def _get_plan_row(
+    item_id: str, item_sp: float | None, category: str, manifest: dict[str, Any]
+) -> tuple[str, float | str, str, bool]:
     """Format a single plan row for story or subtask."""
     exists_entry = manifest.get(category, {}).get(item_id)
-    
+
     action = "SKIP" if exists_entry else "CREATE"
     marker = f"[{exists_entry['key']}]" if exists_entry else ""
     sp = item_sp if item_sp is not None else "?"
-    
+
     return action, sp, marker, bool(exists_entry)
 
 
-def print_plan(data, epic_key, manifest):
+def print_plan(data: dict[str, Any], epic_key: str, manifest: dict[str, Any]) -> str:
     """Display the creation plan table."""
     lines = []
     lines.append("")
@@ -188,7 +197,7 @@ def print_plan(data, epic_key, manifest):
         action, sp, marker, exists = _get_plan_row(
             sid, story.get("story_points"), "stories", manifest
         )
-        
+
         lines.append(f"  S{sid:<5} {action:<8} {sp:>5}  {story['summary']} {marker}")
         if exists:
             skips += 1
@@ -200,10 +209,8 @@ def print_plan(data, epic_key, manifest):
             action, sp, marker, exists = _get_plan_row(
                 stid, subtask.get("story_points"), "subtasks", manifest
             )
-            
-            lines.append(
-                f"    {stid:<5} {action:<8} {sp:>5}  {subtask['summary']} {marker}"
-            )
+
+            lines.append(f"    {stid:<5} {action:<8} {sp:>5}  {subtask['summary']} {marker}")
             if exists:
                 skips += 1
             else:
@@ -215,7 +222,15 @@ def print_plan(data, epic_key, manifest):
     return "\n".join(lines)
 
 
-def _build_issue_fields(config, item, type_name, epic_key=None, parent_key=None, rewrite_links=False, no_convert=False):
+def _build_issue_fields(
+    config: JiraConfig,
+    item: dict[str, Any],
+    type_name: str,
+    epic_key: str | None = None,
+    parent_key: str | None = None,
+    rewrite_links: bool = False,
+    no_convert: bool = False,
+) -> dict[str, Any]:
     """Build the Jira fields dict for a story or subtask."""
     fields = {
         "project": {"key": config.project_key},
@@ -246,16 +261,26 @@ def _build_issue_fields(config, item, type_name, epic_key=None, parent_key=None,
     missing = validate_required_fields(config, type_name, fields)
     if missing:
         names = ", ".join(f"{m['name']} ({m['id']})" for m in missing)
-        print(f"ERROR: Missing required fields for {type_name} "
-              f"'{item.get('summary', '?')}': {names}", file=sys.stderr)
-        print("Use --set or add fields to source file. "
-              "Run discover_fields.py --apply to refresh.", file=sys.stderr)
+        print(
+            f"ERROR: Missing required fields for {type_name} '{item.get('summary', '?')}': {names}",
+            file=sys.stderr,
+        )
+        print(
+            "Use --set or add fields to source file. Run discover_fields.py --apply to refresh.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     return fields
 
 
-def _save_to_manifest(config, manifest, category, item_id, entry):
+def _save_to_manifest(
+    config: JiraConfig,
+    manifest: dict[str, Any],
+    category: str,
+    item_id: str,
+    entry: dict[str, Any],
+) -> None:
     """Save a created ticket to the manifest."""
     if category not in manifest:
         manifest[category] = {}
@@ -263,7 +288,17 @@ def _save_to_manifest(config, manifest, category, item_id, entry):
     save_manifest(config, manifest)
 
 
-def _create_story(story, sid, epic_key, config, client, manifest, rewrite_links, dry_run, no_convert=False):
+def _create_story(
+    story: dict[str, Any],
+    sid: str,
+    epic_key: str,
+    config: JiraConfig,
+    client: JiraClient | None,
+    manifest: dict[str, Any],
+    rewrite_links: bool,
+    dry_run: bool,
+    no_convert: bool = False,
+) -> tuple[str, bool]:
     """Create a single story. Returns (story_key, created_bool)."""
     if manifest.get("stories", {}).get(sid):
         story_key = manifest["stories"][sid]["key"]
@@ -271,13 +306,19 @@ def _create_story(story, sid, epic_key, config, client, manifest, rewrite_links,
         return story_key, False
 
     fields = _build_issue_fields(
-        config, story, "story", epic_key=epic_key, rewrite_links=rewrite_links, no_convert=no_convert
+        config,
+        story,
+        "story",
+        epic_key=epic_key,
+        rewrite_links=rewrite_links,
+        no_convert=no_convert,
     )
 
     if dry_run:
         print(f"  DRY RUN — would create Story {sid}: {story['summary']}")
         return "DRY-RUN", True
 
+    assert client is not None
     try:
         result = client.create_issue(fields)
     except Exception:
@@ -294,7 +335,17 @@ def _create_story(story, sid, epic_key, config, client, manifest, rewrite_links,
     return story_key, True
 
 
-def _create_subtask(subtask, stid, story_key, config, client, manifest, rewrite_links, dry_run, no_convert=False):
+def _create_subtask(
+    subtask: dict[str, Any],
+    stid: str,
+    story_key: str,
+    config: JiraConfig,
+    client: JiraClient | None,
+    manifest: dict[str, Any],
+    rewrite_links: bool,
+    dry_run: bool,
+    no_convert: bool = False,
+) -> bool:
     """Create a single subtask. Returns True if created, False if skipped."""
     if manifest.get("subtasks", {}).get(stid):
         print(f"    SKIP Subtask {stid}: already exists as {manifest['subtasks'][stid]['key']}")
@@ -305,13 +356,19 @@ def _create_subtask(subtask, stid, story_key, config, client, manifest, rewrite_
         return True
 
     fields = _build_issue_fields(
-        config, subtask, "subtask", parent_key=story_key, rewrite_links=rewrite_links, no_convert=no_convert
+        config,
+        subtask,
+        "subtask",
+        parent_key=story_key,
+        rewrite_links=rewrite_links,
+        no_convert=no_convert,
     )
 
     if dry_run:
         print(f"    DRY RUN — would create Subtask {stid}: {subtask['summary']}")
         return True
 
+    assert client is not None
     try:
         result = client.create_issue(fields)
     except Exception:
@@ -331,7 +388,16 @@ def _create_subtask(subtask, stid, story_key, config, client, manifest, rewrite_
     return True
 
 
-def execute_plan(data, epic_key, config, client, manifest, rewrite_links, dry_run, no_convert=False):
+def execute_plan(
+    data: dict[str, Any],
+    epic_key: str,
+    config: JiraConfig,
+    client: JiraClient | None,
+    manifest: dict[str, Any],
+    rewrite_links: bool,
+    dry_run: bool,
+    no_convert: bool = False,
+) -> tuple[int, int]:
     """Create all tickets in dependency order."""
     created_count = 0
     skipped_count = 0
@@ -339,7 +405,15 @@ def execute_plan(data, epic_key, config, client, manifest, rewrite_links, dry_ru
     for story in data.get("stories", []):
         sid = str(story["id"])
         story_key, was_created = _create_story(
-            story, sid, epic_key, config, client, manifest, rewrite_links, dry_run, no_convert=no_convert
+            story,
+            sid,
+            epic_key,
+            config,
+            client,
+            manifest,
+            rewrite_links,
+            dry_run,
+            no_convert=no_convert,
         )
         if was_created:
             created_count += 1
@@ -349,7 +423,15 @@ def execute_plan(data, epic_key, config, client, manifest, rewrite_links, dry_ru
         for subtask in story.get("subtasks", []):
             stid = str(subtask["id"])
             was_created = _create_subtask(
-                subtask, stid, story_key, config, client, manifest, rewrite_links, dry_run, no_convert=no_convert
+                subtask,
+                stid,
+                story_key,
+                config,
+                client,
+                manifest,
+                rewrite_links,
+                dry_run,
+                no_convert=no_convert,
             )
             if was_created:
                 created_count += 1
@@ -359,7 +441,7 @@ def execute_plan(data, epic_key, config, client, manifest, rewrite_links, dry_ru
     return created_count, skipped_count
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Bulk-create Jira tickets")
     add_config_arg(parser)
     parser.add_argument("--source", required=True, help="Source file (.md or .json)")
@@ -389,12 +471,19 @@ def main():
     plan = print_plan(data, args.epic, manifest)
     print(plan)
 
-    no_convert = getattr(args, 'no_convert', False)
+    no_convert = getattr(args, "no_convert", False)
 
     if args.dry_run:
         print("\nDRY RUN — no tickets created.")
         execute_plan(
-            data, args.epic, config, None, manifest, args.rewrite_links, dry_run=True, no_convert=no_convert
+            data,
+            args.epic,
+            config,
+            None,
+            manifest,
+            args.rewrite_links,
+            dry_run=True,
+            no_convert=no_convert,
         )
         return
 
@@ -403,7 +492,14 @@ def main():
     # Execute
     print("\nCreating tickets ...\n")
     created, skipped = execute_plan(
-        data, args.epic, config, client, manifest, args.rewrite_links, dry_run=False, no_convert=no_convert
+        data,
+        args.epic,
+        config,
+        client,
+        manifest,
+        args.rewrite_links,
+        dry_run=False,
+        no_convert=no_convert,
     )
 
     print(f"\nDone. Created: {created}, Skipped: {skipped}")

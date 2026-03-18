@@ -8,16 +8,20 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from bb_config import add_common_args, load_config, resolve_repo, resolve_workspace
 from bb_client import BitbucketClient
+from bb_config import add_common_args, load_config, resolve_repo, resolve_workspace
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="List build checks for a Bitbucket PR")
     add_common_args(parser)
     parser.add_argument("--pr", required=True, type=int, help="PR ID")
-    parser.add_argument("--format", choices=["table", "json"], default="table",
-                        help="Output format (default: table)")
+    parser.add_argument(
+        "--format",
+        choices=["table", "json"],
+        default="table",
+        help="Output format (default: table)",
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -38,7 +42,7 @@ def main() -> None:
     print(f"Build checks for PR #{args.pr}:")
     print()
     print(f"{'State':<12}  {'Name':<40}  {'URL'}")
-    print(f"{'─'*12}  {'─'*40}  {'─'*50}")
+    print(f"{'─' * 12}  {'─' * 40}  {'─' * 50}")
 
     for s in statuses:
         state = s.get("state", "?")

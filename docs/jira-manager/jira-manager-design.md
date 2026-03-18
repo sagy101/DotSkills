@@ -53,11 +53,11 @@ This skill gives **any SKILL.md-compatible agent** reliable Jira CRUD by combini
 
 **9. Dynamically discovered issue link types** — Link types (Blocks, Duplicate, Cloners, Relates, etc.) are fetched at runtime from `GET /rest/api/2/issueLinkType`, not hardcoded. The `--link` flag accepts the link type name, its inward label (e.g., "is blocked by"), or its outward label (e.g., "blocks") and resolves against the live list. Direction is automatically swapped when an inward label is used: `--link "is blocked by:API-456"` creates the link with API-456 as the blocker.
 
-**10. Virtual environment isolation** — `setup_env.py` creates `.venv/` inside the skill directory (e.g., `jira-manager/.venv/`). The agent invokes scripts using the absolute path to the venv Python interpreter (e.g., `/path/to/jira-manager/.venv/bin/python`) — no shell activation required. This keeps the skill self-contained and works identically whether installed in the repo or synced to `~/.codeium/windsurf/skills/`.
+**10. Virtual environment isolation** — `jira_setup_env.py` creates `.venv/` inside the skill directory (e.g., `jira-manager/.venv/`). The agent invokes scripts using the absolute path to the venv Python interpreter (e.g., `/path/to/jira-manager/.venv/bin/python`) — no shell activation required. This keeps the skill self-contained and works identically whether installed in the repo or synced to `~/.codeium/windsurf/skills/`.
 
 **11. Required field pre-validation via create_meta** — `discover_fields.py --apply` now always fetches Jira's `createmeta` (required fields per issue type) and persists it in `.jira.json`. Before any create API call, `create_ticket.py` and `bulk_create.py` validate that all required fields are present and exit with actionable `--set` hints if any are missing. This catches errors like "QBR is mandatory for Epics" before hitting the API.
 
-**12. CLI flag normalization for LLM agents** — `config_loader.py` calls `_normalize_argv()` at import time, patching `sys.argv` in-place before argparse ever sees it. Since every script imports `config_loader`, normalization is automatic — no per-script wiring needed. Converts single-dash long flags (`-format`) to double-dash (`--format`). Short flags like `-v` are untouched.
+**12. CLI flag normalization for LLM agents** — `jira_config_loader.py` calls `_normalize_argv()` at import time, patching `sys.argv` in-place before argparse ever sees it. Since every script imports `jira_config_loader`, normalization is automatic — no per-script wiring needed. Converts single-dash long flags (`-format`) to double-dash (`--format`). Short flags like `-v` are untouched.
 
 **13. Config discovery with git root boundary** — `.jira.json` is discovered by walking up from CWD, stopping at the nearest git root to avoid picking up configs from unrelated parent directories. Global config (`~/.jira.json`) is merged underneath project-level config (project wins on conflict). An explicit `--config` flag overrides discovery entirely.
 
@@ -65,7 +65,7 @@ This skill gives **any SKILL.md-compatible agent** reliable Jira CRUD by combini
 
 **15. Per-issue-type field listing (`--fields-for-type`)** — `discover_fields.py --fields-for-type epic` fetches all available fields for a given issue type via the per-type createmeta endpoint, marks required fields, and prints allowed values for dropdown fields. This directly addresses the scenario where an agent needs to know what values are valid for a field like "QBR Theme" on an Epic.
 
-**16. Module structure** — `config_loader.py` handles configuration loading, credential resolution, shell detection, and manifest I/O. All scripts share the same `--config` argument definition via `add_config_arg()` for consistency.
+**16. Module structure** — `jira_config_loader.py` handles configuration loading, credential resolution, shell detection, and manifest I/O. All scripts share the same `--config` argument definition via `add_config_arg()` for consistency.
 
 ---
 

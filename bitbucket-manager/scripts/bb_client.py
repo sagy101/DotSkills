@@ -70,7 +70,7 @@ class BitbucketClient:
         if _DEBUG:
             print(f"DEBUG: {method} {url}", file=sys.stderr)
             if body:
-                print(f"DEBUG: body={body[:500]}", file=sys.stderr)
+                print(f"DEBUG: body={body[:500].decode()!r}", file=sys.stderr)
 
         try:
             with urllib.request.urlopen(req, timeout=60) as resp:
@@ -172,7 +172,7 @@ class BitbucketClient:
             payload["description"] = description
         if reviewers:
             payload["reviewers"] = [{"uuid": r} for r in reviewers]
-        return self._request(
+        return self._request(  # type: ignore[no-any-return]
             "POST",
             f"/repositories/{workspace}/{repo_slug}/pullrequests",
             data=payload,
@@ -195,7 +195,7 @@ class BitbucketClient:
             payload["destination"] = {"branch": {"name": fields["destination"]}}
         if "reviewers" in fields:
             payload["reviewers"] = [{"uuid": r} for r in fields["reviewers"]]
-        return self._request(
+        return self._request(  # type: ignore[no-any-return]
             "PUT",
             f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}",
             data=payload,
@@ -203,7 +203,7 @@ class BitbucketClient:
 
     def get_pr(self, workspace: str, repo_slug: str, pr_id: int) -> dict:
         """Fetch a single pull request by ID."""
-        return self._request(
+        return self._request(  # type: ignore[no-any-return]
             "GET",
             f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}",
         )
@@ -239,7 +239,7 @@ class BitbucketClient:
         }
         if message:
             payload["message"] = message
-        return self._request(
+        return self._request(  # type: ignore[no-any-return]
             "POST",
             f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/merge",
             data=payload,
@@ -247,7 +247,7 @@ class BitbucketClient:
 
     def decline_pr(self, workspace: str, repo_slug: str, pr_id: int) -> dict:
         """Decline a pull request."""
-        return self._request(
+        return self._request(  # type: ignore[no-any-return]
             "POST",
             f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/decline",
         )
@@ -272,7 +272,7 @@ class BitbucketClient:
             payload["inline"] = inline
         if parent_id:
             payload["parent"] = {"id": parent_id}
-        return self._request(
+        return self._request(  # type: ignore[no-any-return]
             "POST",
             f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments",
             data=payload,
@@ -286,7 +286,7 @@ class BitbucketClient:
         comment_id: int,
     ) -> dict:
         """Fetch a single comment on a PR."""
-        return self._request(
+        return self._request(  # type: ignore[no-any-return]
             "GET",
             f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments/{comment_id}",
         )
@@ -299,7 +299,7 @@ class BitbucketClient:
         comment_id: int,
     ) -> dict:
         """Mark a PR comment thread as resolved via POST .../comments/{id}/resolve."""
-        return self._request(
+        return self._request(  # type: ignore[no-any-return]
             "POST",
             f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments/{comment_id}/resolve",
         )
@@ -312,7 +312,7 @@ class BitbucketClient:
         comment_id: int,
     ) -> dict:
         """Reopen a resolved comment thread via DELETE .../comments/{id}/resolve."""
-        return self._request(
+        return self._request(  # type: ignore[no-any-return]
             "DELETE",
             f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments/{comment_id}/resolve",
         )

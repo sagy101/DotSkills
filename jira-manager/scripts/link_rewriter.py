@@ -18,14 +18,13 @@ import argparse
 import re
 import sys
 from pathlib import Path
-from typing import Optional
 from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import JiraConfig, add_config_arg, load_config
+from jira_config_loader import JiraConfig, add_config_arg, load_config
 
 
-def _git_remote_to_browse_base(remote_url: str, branch: str) -> Optional[str]:
+def _git_remote_to_browse_base(remote_url: str, branch: str) -> str | None:
     """Convert a git remote URL to a browsable base URL.
 
     Examples:
@@ -51,13 +50,12 @@ def _git_remote_to_browse_base(remote_url: str, branch: str) -> Optional[str]:
 
     if "bitbucket" in host:
         return f"https://{host}/{path}/src/{branch}/"
-    elif "github" in host:
+    if "github" in host:
         return f"https://{host}/{path}/blob/{branch}/"
-    elif "gitlab" in host:
+    if "gitlab" in host:
         return f"https://{host}/{path}/-/blob/{branch}/"
-    else:
-        # Generic: assume a /blob/ pattern
-        return f"https://{host}/{path}/blob/{branch}/"
+    # Generic: assume a /blob/ pattern
+    return f"https://{host}/{path}/blob/{branch}/"
 
 
 def rewrite_links_to_git(text: str, config: JiraConfig) -> str:
@@ -78,7 +76,7 @@ def rewrite_links_to_git(text: str, config: JiraConfig) -> str:
     if not browse_base:
         return text
 
-    def _replace_link(match):
+    def _replace_link(match: re.Match[str]) -> str:
         full_match = match.group(0)
         link_text = match.group(1)
         link_target = match.group(2)
@@ -111,19 +109,19 @@ def rewrite_links_to_local(text: str, config: JiraConfig) -> str:
     if not browse_base:
         return text
 
-    def _replace_link(match):
+    def _replace_link(match: re.Match[str]) -> str:
         link_text = match.group(1)
         link_target = match.group(2)
 
         if link_target.startswith(browse_base):
-            relative = link_target[len(browse_base):]
+            relative = link_target[len(browse_base) :]
             return f"[{link_text}]({relative})"
         return match.group(0)
 
     return re.sub(r"\[([^\]]+)\]\(([^)]+)\)", _replace_link, text)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Rewrite links in text")
     add_config_arg(parser)
     parser.add_argument(

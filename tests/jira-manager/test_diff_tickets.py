@@ -12,6 +12,8 @@ if _SCRIPTS_DIR not in sys.path:
 
 _MODULE_PATH = Path(_SCRIPTS_DIR) / "diff_tickets.py"
 _spec = importlib.util.spec_from_file_location("diff_tickets", _MODULE_PATH)
+assert _spec is not None
+assert _spec.loader is not None
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 sys.modules["diff_tickets"] = _mod
@@ -21,7 +23,7 @@ _normalize_text = _mod._normalize_text
 _compare_fields = _mod._compare_fields
 
 
-def _make_config():
+def _make_config() -> mock.MagicMock:
     config = mock.MagicMock()
     config.resolve_git_remote_url.return_value = None  # no link rewriting
     config.resolve_git_branch.return_value = "main"
@@ -31,6 +33,7 @@ def _make_config():
 # ---------------------------------------------------------------------------
 # _sp_differs
 # ---------------------------------------------------------------------------
+
 
 class TestSpDiffers:
     def test_both_none(self):
@@ -65,6 +68,7 @@ class TestSpDiffers:
 # _normalize_text
 # ---------------------------------------------------------------------------
 
+
 class TestNormalizeText:
     def test_none(self):
         assert _normalize_text(None) == ""
@@ -93,6 +97,7 @@ class TestNormalizeText:
 # ---------------------------------------------------------------------------
 # _compare_fields
 # ---------------------------------------------------------------------------
+
 
 class TestCompareFields:
     def test_all_match(self):
@@ -126,7 +131,6 @@ class TestCompareFields:
         remote = {"summary": "T", "description": "hello\nworld"}
         # Note: _compare_fields converts local MD → Jira, so for plain text they should be close
         diffs = _compare_fields(local, remote, None, _make_config())
-        desc_diffs = [d for d in diffs if d[0] == "description"]
         # May or may not diff depending on MD conversion, but test it doesn't crash
         assert isinstance(diffs, list)
 
@@ -145,4 +149,5 @@ class TestCompareFields:
 
 if __name__ == "__main__":
     import subprocess
+
     sys.exit(subprocess.call([sys.executable, "-m", "pytest", __file__, "-v"]))

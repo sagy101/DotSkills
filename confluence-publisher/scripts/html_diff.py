@@ -9,8 +9,7 @@ Used by surgical_edit.py and diff_versions.py.
 
 import re
 from dataclasses import dataclass
-from typing import Optional, TypedDict
-
+from typing import TypedDict
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -20,6 +19,7 @@ from typing import Optional, TypedDict
 @dataclass
 class DiffChange:
     """A single semantic change between two HTML strings."""
+
     change_type: str  # 'replace', 'insert', 'delete'
     old_text: str
     new_text: str
@@ -51,6 +51,7 @@ def normalize_html(html: str) -> str:
 
 class SectionStatus(TypedDict):
     """Result of a single section integrity check."""
+
     section: str
     in_old: bool
     in_new: bool
@@ -101,11 +102,13 @@ def semantic_diff(old_html: str, new_html: str) -> list[DiffChange]:
         new_text = _strip_tags("".join(new_tokens[j1:j2]))
 
         if old_text or new_text:
-            changes.append(DiffChange(
-                change_type=tag,
-                old_text=old_text,
-                new_text=new_text,
-            ))
+            changes.append(
+                DiffChange(
+                    change_type=tag,
+                    old_text=old_text,
+                    new_text=new_text,
+                )
+            )
 
     return changes
 
@@ -113,7 +116,7 @@ def semantic_diff(old_html: str, new_html: str) -> list[DiffChange]:
 def section_integrity_check(
     old_html: str,
     new_html: str,
-    markers: Optional[list[str]] = None,
+    markers: list[str] | None = None,
 ) -> list[SectionStatus]:
     """Check that named sections are preserved between two HTML versions.
 
@@ -130,7 +133,7 @@ def section_integrity_check(
         markers = re.findall(r"<h[1-6][^>]*>(.*?)</h[1-6]>", old_html)
         markers = [_strip_tags(m) for m in markers if _strip_tags(m)]
 
-    results = []
+    results: list[SectionStatus] = []
     for m in markers:
         in_old = m in old_html
         in_new = m in new_html
@@ -140,12 +143,14 @@ def section_integrity_check(
             status = "MISSING"
         else:
             status = "ADDED"
-        results.append({
-            "section": m,
-            "in_old": in_old,
-            "in_new": in_new,
-            "status": status,
-        })
+        results.append(
+            SectionStatus(
+                section=m,
+                in_old=in_old,
+                in_new=in_new,
+                status=status,
+            )
+        )
     return results
 
 
@@ -186,7 +191,7 @@ def _format_integrity(integrity: list[SectionStatus]) -> list[str]:
 
 def format_diff_report(
     changes: list[DiffChange],
-    integrity: Optional[list[SectionStatus]] = None,
+    integrity: list[SectionStatus] | None = None,
     max_text_len: int = 500,
 ) -> str:
     """Format a semantic diff and optional integrity check into a readable report.

@@ -95,11 +95,13 @@ def _entropy_redact(text: str) -> str:
         ):
             lines = text.split("\n")
             for i, line in enumerate(lines):
+                if "[REDACTED" in line:
+                    continue  # already handled by pattern-based redaction
                 secrets = scan_line(line)
                 if secrets:
                     for secret in secrets:
                         val = secret.secret_value
-                        if val and len(val) > 16:
+                        if val and len(val) > 60:
                             lines[i] = lines[i].replace(val, "[REDACTED HIGH-ENTROPY]")
             return "\n".join(lines)
     except Exception:

@@ -6,9 +6,15 @@ Provides:
 - build_jql_from_filters: Build JQL from key=value filter pairs
 """
 
+from __future__ import annotations
+
 import re
 import sys
-from typing import List, Optional
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from jira_client import JiraClient
+    from jira_config_loader import JiraConfig
 
 # JQL functions that should NOT be quoted when used as filter values.
 # Matches patterns like: currentUser(), now(), startOfDay(), startOfWeek(-1w), etc.
@@ -24,11 +30,11 @@ def _format_jql_value(value: str) -> str:
 
 
 def build_board_jql(
-    client,
+    client: JiraClient,
     board_id: int,
-    filter_pairs: Optional[List[str]] = None,
+    filter_pairs: list[str] | None = None,
     fetch_all: bool = False,
-) -> Optional[str]:
+) -> str | None:
     """Build JQL for board fetch. By default restricts to active sprint(s).
 
     Shared by fetch_tickets.py and bulk_update.py.
@@ -55,7 +61,10 @@ def build_board_jql(
                 clauses.append(f"sprint in ({', '.join(sprint_ids)})")
             print(f"Filtering to active sprint(s): {', '.join(sprint_names)}", file=sys.stderr)
         else:
-            print("WARNING: No active sprints found for this board. Showing all issues.", file=sys.stderr)
+            print(
+                "WARNING: No active sprints found for this board. Showing all issues.",
+                file=sys.stderr,
+            )
 
     if filter_pairs:
         for pair in filter_pairs:
@@ -63,14 +72,14 @@ def build_board_jql(
                 print(f"ERROR: --filter must be 'field=value', got: {pair}", file=sys.stderr)
                 sys.exit(1)
             field, _, value = pair.partition("=")
-            clauses.append(f'{field.strip()} = {_format_jql_value(value)}')
+            clauses.append(f"{field.strip()} = {_format_jql_value(value)}")
 
     return " AND ".join(clauses) if clauses else None
 
 
 def build_jql_from_filters(
-    filter_pairs: List[str],
-    config,
+    filter_pairs: list[str],
+    config: JiraConfig,
     include_project_scope: bool = True,
 ) -> str:
     """Build a JQL query string from key=value pairs.
@@ -94,6 +103,6 @@ def build_jql_from_filters(
             print(f"ERROR: --filter must be 'field=value', got: {pair}", file=sys.stderr)
             sys.exit(1)
         field, _, value = pair.partition("=")
-        clauses.append(f'{field.strip()} = {_format_jql_value(value)}')
+        clauses.append(f"{field.strip()} = {_format_jql_value(value)}")
 
     return " AND ".join(clauses) + " ORDER BY key ASC"

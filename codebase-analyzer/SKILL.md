@@ -75,7 +75,7 @@ Check if the virtual environment already exists and has dependencies installed:
 If the venv does not exist or dependencies are missing, run the setup script:
 
 ```bash
-python3 <skill_dir>/scripts/setup_env.py
+python3 <skill_dir>/scripts/analyzer_setup_env.py
 ```
 
 This creates a virtual environment at `.codebase-analyzer-venv/` and installs all dependencies. If it fails, tell the user exactly what is missing and how to install it (e.g. `brew install python3` on macOS, `apt install python3` on Linux).
@@ -204,8 +204,8 @@ The scripts print descriptive error messages to stderr with fix instructions. Ex
 | Error | Cause | Fix |
 |---|---|---|
 | `python3: command not found` | Python not installed | macOS: `brew install python3` / Linux: `apt install python3` |
-| `ERROR: PyYAML is not installed` | Dependencies not installed | Run `python3 <skill_dir>/scripts/setup_env.py` then use the venv Python |
-| `ERROR: Rich library is not installed` | Dependencies not installed | Run `python3 <skill_dir>/scripts/setup_env.py`, or use `--output json` / `--output markdown` which need no extra deps |
+| `ERROR: PyYAML is not installed` | Dependencies not installed | Run `python3 <skill_dir>/scripts/analyzer_setup_env.py` then use the venv Python |
+| `ERROR: Rich library is not installed` | Dependencies not installed | Run `python3 <skill_dir>/scripts/analyzer_setup_env.py`, or use `--output json` / `--output markdown` which need no extra deps |
 | `ERROR: Path does not exist` | Invalid `--path` argument | Verify the path exists |
 | `ERROR: ... is a file, not a directory` | `--path` points to a file | Provide a directory path |
 | `ERROR: Config file not found` | `--config` points to missing file | Fix the path or omit `--config` to use defaults |

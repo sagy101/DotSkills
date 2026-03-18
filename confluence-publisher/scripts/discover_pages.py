@@ -11,28 +11,33 @@ Usage:
     python discover_pages.py --config .confluence.json --dry-run
 """
 
+from __future__ import annotations
+
 import argparse
 import fnmatch
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from atlassian import Confluence
+    from confluence_config import ConfluenceConfig
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config_loader import (
+from confluence_config import (  # noqa: E402
     add_config_arg,
-    load_config,
     connect,
+    load_config,
     load_manifest,
     save_manifest,
 )
-from page_utils import resolve_title, get_all_children
+from page_utils import get_all_children, resolve_title  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Discover Confluence pages and build manifest"
-    )
+    parser = argparse.ArgumentParser(description="Discover Confluence pages and build manifest")
     add_config_arg(parser)
     parser.add_argument(
         "--dry-run",
@@ -42,17 +47,15 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def find_md_files(config) -> dict:
+def find_md_files(config: ConfluenceConfig) -> dict[str, str]:
     """Find all .md files under docs_dir, returning {relative_path: title}."""
-    files = {}
+    files: dict[str, str] = {}
     docs_root = config.docs_root
 
     for md_file in sorted(docs_root.rglob("*.md")):
         rel = str(md_file.relative_to(docs_root))
 
-        excluded = any(
-            fnmatch.fnmatch(rel, pattern) for pattern in config.exclude_patterns
-        )
+        excluded = any(fnmatch.fnmatch(rel, pattern) for pattern in config.exclude_patterns)
         if excluded:
             continue
 
@@ -63,9 +66,9 @@ def find_md_files(config) -> dict:
     return files
 
 
-def walk_confluence_tree(confluence, page_id) -> list:
+def walk_confluence_tree(confluence: Confluence, page_id: str) -> list[tuple[str, str, str]]:
     """Recursively walk Confluence tree, returning list of (id, title, parent_id)."""
-    pages = []
+    pages: list[tuple[str, str, str]] = []
     children = get_all_children(confluence, page_id)
     for child in children:
         cid = child["id"]
@@ -75,15 +78,17 @@ def walk_confluence_tree(confluence, page_id) -> list:
     return pages
 
 
-def match_pages_to_files(confluence_pages, local_files) -> dict:
+def match_pages_to_files(
+    confluence_pages: list[tuple[str, str, str | None]], local_files: dict[str, str]
+) -> dict[str, dict[str, Any]]:
     """Match Confluence pages to local files by title similarity.
     Returns {relative_path: {id, title, parent_id}}."""
-    title_to_page = {}
+    title_to_page: dict[str, tuple[str, str, str | None]] = {}
     for pid, ptitle, pparent in confluence_pages:
         normalized = ptitle.strip().lower()
         title_to_page[normalized] = (pid, ptitle, pparent)
 
-    matches = {}
+    matches: dict[str, dict[str, Any]] = {}
     for rel_path, local_title in local_files.items():
         normalized = local_title.strip().lower()
         if normalized in title_to_page:
@@ -120,9 +125,7 @@ def main():
 
     # Walk Confluence tree
     confluence_pages = [(config.root_page_id, root["title"], None)]
-    confluence_pages.extend(
-        walk_confluence_tree(confluence, config.root_page_id)
-    )
+    confluence_pages.extend(walk_confluence_tree(confluence, config.root_page_id))
     print(f"Found {len(confluence_pages)} pages on Confluence")
 
     # Find local files
@@ -154,7 +157,7 @@ def main():
     print()
     print("--- Confluence pages not matched to local files ---")
     unmatched_count = 0
-    for pid, ptitle, pparent in confluence_pages:
+    for pid, ptitle, _pparent in confluence_pages:
         if pid not in matched_ids:
             print(f"  {ptitle} (id={pid})")
             unmatched_count += 1
@@ -162,9 +165,11 @@ def main():
         print("  (none)")
 
     print()
-    print(f"Summary: {len(matches)} matched, "
-          f"{len(local_files) - len(matches)} unmatched local files, "
-          f"{unmatched_count} unmatched Confluence pages")
+    print(
+        f"Summary: {len(matches)} matched, "
+        f"{len(local_files) - len(matches)} unmatched local files, "
+        f"{unmatched_count} unmatched Confluence pages"
+    )
 
     if args.dry_run:
         print("\n[DRY RUN] Manifest not saved.")

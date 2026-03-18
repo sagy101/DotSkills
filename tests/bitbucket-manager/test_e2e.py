@@ -14,7 +14,7 @@ Usage:
   python3 tests/bitbucket-manager/test_e2e.py --keep   # skip cleanup (for debugging)
 """
 
-import json
+import contextlib
 import subprocess
 import sys
 import time
@@ -36,14 +36,17 @@ _pr_id = None
 def _run(script: str, *args: str, expect_fail: bool = False) -> subprocess.CompletedProcess:
     """Run a skill script and return the result."""
     cmd = [_PYTHON, str(_SCRIPT_DIR / script), *args]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    return result
+    return subprocess.run(cmd, capture_output=True, text=True)
 
 
-def _check(name: str, result: subprocess.CompletedProcess, *,
-           expect_exit: int = 0,
-           stdout_contains: str | None = None,
-           stdout_not_contains: str | None = None) -> bool:
+def _check(
+    name: str,
+    result: subprocess.CompletedProcess,
+    *,
+    expect_exit: int = 0,
+    stdout_contains: str | None = None,
+    stdout_not_contains: str | None = None,
+) -> bool:
     """Evaluate a test step. Returns True if passed."""
     global _passed, _failed
 
@@ -91,7 +94,8 @@ def _cleanup() -> None:
     try:
         result = subprocess.run(
             ["git", "push", "origin", "--delete", _BRANCH],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         if result.returncode == 0:
             print(f"[CLEANUP] Remote branch {_BRANCH} deleted")
@@ -101,29 +105,28 @@ def _cleanup() -> None:
         print(f"[CLEANUP] Error deleting remote branch: {e}")
 
     # Switch back and delete local branch
-    try:
+    with contextlib.suppress(Exception):
         subprocess.run(["git", "checkout", "-"], capture_output=True, text=True)
         subprocess.run(["git", "branch", "-D", _BRANCH], capture_output=True, text=True)
         print(f"[CLEANUP] Local branch {_BRANCH} deleted")
-    except Exception:
-        pass
 
 
 def main() -> None:
     global _pr_id, _passed, _failed
 
     import argparse
+
     parser = argparse.ArgumentParser(description="E2E test for bitbucket-manager")
     parser.add_argument("--keep", action="store_true", help="Skip cleanup (for debugging)")
     args = parser.parse_args()
 
-    print(f"Bitbucket Manager — E2E Test")
+    print("Bitbucket Manager — E2E Test")
     print(f"Test branch: {_BRANCH}")
     print("=" * 50)
     print()
 
     # ── 0. Preflight ──────────────────────────────────────────────
-    r = _run("preflight.py")
+    r = _run("bb_preflight.py")
     if not _check("preflight", r):
         print("\nPre-flight failed. Fix issues above before running e2e tests.")
         sys.exit(1)
@@ -134,12 +137,14 @@ def main() -> None:
     # Save current branch to return later
     current_branch = subprocess.run(
         ["git", "branch", "--show-current"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     ).stdout.strip()
 
     result = subprocess.run(
         ["git", "checkout", "-b", _BRANCH],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         print(f"[FAIL] Could not create branch {_BRANCH}: {result.stderr.strip()}")
@@ -148,11 +153,13 @@ def main() -> None:
     # Create an empty commit so the branch has something to diff
     subprocess.run(
         ["git", "commit", "--allow-empty", "-m", f"test: e2e bitbucket-manager {_TIMESTAMP}"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     result = subprocess.run(
         ["git", "push", "-u", "origin", _BRANCH],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         print(f"[FAIL] Could not push branch {_BRANCH}: {result.stderr.strip()}")
@@ -169,30 +176,38 @@ def main() -> None:
         print("── PR Operations ──")
 
         # Dry run — as documented in SKILL.md
-        r = _run("pr_create.py",
-                  "--title", f"E2E test {_TIMESTAMP}",
-                  "--source", _BRANCH,
-                  "--description", "Automated e2e test — will be declined",
-                  "--dry-run")
+        r = _run(
+            "pr_create.py",
+            "--title",
+            f"E2E test {_TIMESTAMP}",
+            "--source",
+            _BRANCH,
+            "--description",
+            "Automated e2e test — will be declined",
+            "--dry-run",
+        )
         _check("pr_create --dry-run", r, stdout_contains="DRY RUN")
 
         # Real create
-        r = _run("pr_create.py",
-                  "--title", f"E2E test {_TIMESTAMP}",
-                  "--source", _BRANCH,
-                  "--description", "Automated e2e test — will be declined")
+        r = _run(
+            "pr_create.py",
+            "--title",
+            f"E2E test {_TIMESTAMP}",
+            "--source",
+            _BRANCH,
+            "--description",
+            "Automated e2e test — will be declined",
+        )
         if _check("pr_create", r, stdout_contains="created"):
             # Extract PR ID from output like "PR #42 created: ..."
             for line in r.stdout.splitlines():
                 if "PR #" in line:
-                    try:
+                    with contextlib.suppress(ValueError, IndexError):
                         _pr_id = int(line.split("PR #")[1].split()[0])
-                    except (ValueError, IndexError):
-                        pass
             if _pr_id:
                 print(f"       PR ID: {_pr_id}")
             else:
-                print(f"[FAIL] Could not extract PR ID from output")
+                print("[FAIL] Could not extract PR ID from output")
                 _failed += 1
 
         if not _pr_id:
@@ -219,14 +234,18 @@ def main() -> None:
         _check("pr_list --branch", r, stdout_contains=pr)
 
         # ── 5. pr_update (dry-run first, then real) ──────────────
-        r = _run("pr_update.py", "--pr", pr,
-                  "--title", f"E2E UPDATED {_TIMESTAMP}",
-                  "--dry-run")
+        r = _run("pr_update.py", "--pr", pr, "--title", f"E2E UPDATED {_TIMESTAMP}", "--dry-run")
         _check("pr_update --dry-run", r, stdout_contains="DRY RUN")
 
-        r = _run("pr_update.py", "--pr", pr,
-                  "--title", f"E2E UPDATED {_TIMESTAMP}",
-                  "--description", "Updated description")
+        r = _run(
+            "pr_update.py",
+            "--pr",
+            pr,
+            "--title",
+            f"E2E UPDATED {_TIMESTAMP}",
+            "--description",
+            "Updated description",
+        )
         _check("pr_update", r, stdout_contains="updated")
 
         # Verify update took effect
@@ -234,12 +253,10 @@ def main() -> None:
         _check("pr_get (after update)", r, stdout_contains=f"E2E UPDATED {_TIMESTAMP}")
 
         # ── 6. pr_comment (dry-run first, then real) ─────────────
-        r = _run("pr_comment.py", "--pr", pr,
-                  "--body", "E2E test comment", "--dry-run")
+        r = _run("pr_comment.py", "--pr", pr, "--body", "E2E test comment", "--dry-run")
         _check("pr_comment --dry-run", r, stdout_contains="DRY RUN")
 
-        r = _run("pr_comment.py", "--pr", pr,
-                  "--body", f"E2E test comment {_TIMESTAMP}")
+        r = _run("pr_comment.py", "--pr", pr, "--body", f"E2E test comment {_TIMESTAMP}")
         _check("pr_comment", r, stdout_contains="posted")
 
         # ── 7. pr_comments ───────────────────────────────────────
@@ -273,7 +290,8 @@ def main() -> None:
         # Get the HEAD commit of the test branch
         head_sha = subprocess.run(
             ["git", "rev-parse", "HEAD"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         ).stdout.strip()
 
         r = _run("build_status.py", "--commit", head_sha)

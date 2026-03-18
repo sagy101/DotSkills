@@ -8,8 +8,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from bb_config import add_common_args, load_config, resolve_repo, resolve_workspace
 from bb_client import BitbucketClient
+from bb_config import add_common_args, load_config, resolve_repo, resolve_workspace
 
 
 def main() -> None:
@@ -20,10 +20,15 @@ def main() -> None:
     parser.add_argument("--file", help="File path for inline comment")
     parser.add_argument("--line", type=int, help="Line number for inline comment (requires --file)")
     parser.add_argument("--parent-id", type=int, help="Parent comment ID for threaded reply")
-    parser.add_argument("--resolve", type=int, metavar="COMMENT_ID",
-                        help="Resolve a comment by ID (no --body needed)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Show comment preview without posting")
+    parser.add_argument(
+        "--resolve",
+        type=int,
+        metavar="COMMENT_ID",
+        help="Resolve a comment by ID (no --body needed)",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show comment preview without posting"
+    )
     args = parser.parse_args()
 
     if args.line and not args.file:

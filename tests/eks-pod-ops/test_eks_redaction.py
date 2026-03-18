@@ -6,9 +6,7 @@ from pathlib import Path
 # Add scripts dir to path so we can import lib
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "eks-pod-ops" / "scripts"))
 
-import pytest
-from lib.redaction import redact_text, check_exec_allowed
-
+from lib.redaction import check_exec_allowed, redact_text
 
 # ─── Redaction Tests ──────────────────────────────────────────────────────────
 
@@ -22,7 +20,7 @@ class TestBearerTokens:
 
     def test_short_bearer_not_redacted(self):
         # Short tokens (<8 chars) are not redacted to avoid false positives
-        assert "Bearer short" == redact_text("Bearer short")
+        assert redact_text("Bearer short") == "Bearer short"
 
     def test_authorization_header(self):
         assert "Authorization: [REDACTED]" in redact_text("Authorization: Basic dXNlcjpwYXNz")
@@ -138,7 +136,7 @@ class TestCustomPatterns:
 
     def test_disabled_redaction(self):
         config = {"redaction": {"disabled": True}}
-        assert "password=hunter2" == redact_text("password=hunter2", config)
+        assert redact_text("password=hunter2", config) == "password=hunter2"
 
 
 # ─── Exec Blocklist Tests ────────────────────────────────────────────────────

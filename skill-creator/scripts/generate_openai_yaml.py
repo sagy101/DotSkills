@@ -11,7 +11,7 @@ import re
 import sys
 from pathlib import Path
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 ACRONYMS = {
     "GH",
@@ -49,12 +49,12 @@ ALLOWED_INTERFACE_KEYS = {
 }
 
 
-def yaml_quote(value):
+def yaml_quote(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
     return f'"{escaped}"'
 
 
-def format_display_name(skill_name):
+def format_display_name(skill_name: str) -> str:
     words = [word for word in skill_name.split("-") if word]
     formatted = []
     for index, word in enumerate(words):
@@ -73,7 +73,7 @@ def format_display_name(skill_name):
     return " ".join(formatted)
 
 
-def generate_short_description(display_name):
+def generate_short_description(display_name: str) -> str:
     description = f"Help with {display_name} tasks"
 
     if len(description) < 25:
@@ -103,7 +103,7 @@ def generate_short_description(display_name):
     return description
 
 
-def read_frontmatter_name(skill_dir):
+def read_frontmatter_name(skill_dir: str | Path) -> str | None:
     skill_md = Path(skill_dir) / "SKILL.md"
     if not skill_md.exists():
         print(f"[ERROR] SKILL.md not found in {skill_dir}")
@@ -129,7 +129,9 @@ def read_frontmatter_name(skill_dir):
     return name.strip()
 
 
-def parse_interface_overrides(raw_overrides):
+def parse_interface_overrides(
+    raw_overrides: list[str],
+) -> tuple[dict[str, str] | None, list[str] | None]:
     overrides = {}
     optional_order = []
     for item in raw_overrides:
@@ -152,19 +154,20 @@ def parse_interface_overrides(raw_overrides):
     return overrides, optional_order
 
 
-def write_openai_yaml(skill_dir, skill_name, raw_overrides):
+def write_openai_yaml(
+    skill_dir: str | Path, skill_name: str, raw_overrides: list[str]
+) -> Path | None:
     overrides, optional_order = parse_interface_overrides(raw_overrides)
     if overrides is None:
         return None
 
     display_name = overrides.get("display_name") or format_display_name(skill_name)
-    short_description = overrides.get("short_description") or generate_short_description(display_name)
+    short_description = overrides.get("short_description") or generate_short_description(
+        display_name
+    )
 
     if not (25 <= len(short_description) <= 64):
-        print(
-            "[ERROR] short_description must be 25-64 characters "
-            f"(got {len(short_description)})."
-        )
+        print(f"[ERROR] short_description must be 25-64 characters (got {len(short_description)}).")
         return None
 
     agents_dir = Path(skill_dir) / "agents"
@@ -172,7 +175,7 @@ def write_openai_yaml(skill_dir, skill_name, raw_overrides):
     output_path = agents_dir / "openai.yaml"
 
     # Read existing file if it exists
-    existing_data = {}
+    existing_data: dict[str, object] = {}
     if output_path.exists():
         try:
             text = output_path.read_text()
@@ -181,11 +184,11 @@ def write_openai_yaml(skill_dir, skill_name, raw_overrides):
             pass
 
     # Update interface section
-    interface_data = existing_data.get("interface", {})
+    interface_data: dict[str, str] = existing_data.get("interface", {})  # type: ignore[assignment]
     interface_data["display_name"] = display_name
     interface_data["short_description"] = short_description
-    
-    for key in optional_order:
+
+    for key in optional_order or []:
         value = overrides.get(key)
         if value is not None:
             interface_data[key] = value
@@ -193,14 +196,14 @@ def write_openai_yaml(skill_dir, skill_name, raw_overrides):
     existing_data["interface"] = interface_data
 
     # Write back
-    with open(output_path, 'w') as f:
+    with open(output_path, "w") as f:
         yaml.dump(existing_data, f, default_flow_style=False, sort_keys=False)
-        
+
     print("[OK] Created/Updated agents/openai.yaml")
     return output_path
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Create agents/openai.yaml for a skill directory.",
     )

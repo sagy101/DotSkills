@@ -8,11 +8,6 @@ All metric computation is delegated to analyze.py shared helpers.
 
 from pathlib import Path
 
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
-
 from analyze import (
     AnalysisResult,
     compute_file_distribution,
@@ -21,6 +16,10 @@ from analyze import (
     compute_summary,
     compute_todo_files,
 )
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
 HEADER_STYLE = "bold cyan"
 
@@ -199,7 +198,7 @@ def _render_large_files(result: AnalysisResult, console: Console) -> None:
 def _render_todos(result: AnalysisResult, console: Console) -> None:
     """Print files with TODOs/FIXMEs."""
     todo_files = compute_todo_files(result)
-    
+
     table = Table(title="Files with TODOs/FIXMEs", show_header=True, header_style=HEADER_STYLE)
     table.add_column("File", style="dim")
     table.add_column("TODOs", justify="right", style="cyan")

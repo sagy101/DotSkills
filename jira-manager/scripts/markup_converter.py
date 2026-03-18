@@ -17,6 +17,8 @@ Mirrors the confluence-publisher skill pattern (markdown + markdownify deps).
 import html as html_lib
 import re
 import sys
+import types
+from collections.abc import Callable
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -25,15 +27,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # Lazy dependency loading
 # ---------------------------------------------------------------------------
 
-_markdown_lib = None
-_markdownify = None
+_markdown_lib: types.ModuleType | None = None
+_markdownify: Callable[..., str] | None = None
 
 
-def _get_markdown():
+def _get_markdown() -> types.ModuleType:
     global _markdown_lib
     if _markdown_lib is None:
         try:
-            import markdown
+            import markdown  # type: ignore[import-untyped]
+
             _markdown_lib = markdown
         except ImportError:
             print(
@@ -45,11 +48,12 @@ def _get_markdown():
     return _markdown_lib
 
 
-def _get_markdownify():
+def _get_markdownify() -> Callable[..., str]:
     global _markdownify
     if _markdownify is None:
         try:
-            from markdownify import markdownify as md_convert
+            from markdownify import markdownify as md_convert  # type: ignore[import-untyped]
+
             _markdownify = md_convert
         except ImportError:
             print(
@@ -74,7 +78,11 @@ def _html_to_jira(html_content: str) -> str:
     # Fenced code blocks with language
     text = re.sub(
         r'<pre><code class="(?:language-)?(\w+)">(.*?)</code></pre>',
-        lambda m: "{code:" + m.group(1) + "}\n" + html_lib.unescape(m.group(2)).strip() + "\n{code}",
+        lambda m: "{code:"
+        + m.group(1)
+        + "}\n"
+        + html_lib.unescape(m.group(2)).strip()
+        + "\n{code}",
         text,
         flags=re.DOTALL,
     )
@@ -110,10 +118,8 @@ def _html_to_jira(html_content: str) -> str:
     text = re.sub(r'<a href="([^"]+)">(.*?)</a>', r"[\2|\1]", text)
 
     # --- Images ---
-    text = re.sub(r'<img[^>]+src="([^"]+)"[^>]*alt="([^"]*)"[^>]*/?>',
-                  r"!\1!", text)
-    text = re.sub(r'<img[^>]+src="([^"]+)"[^>]*/?>',
-                  r"!\1!", text)
+    text = re.sub(r'<img[^>]+src="([^"]+)"[^>]*alt="([^"]*)"[^>]*/?>', r"!\1!", text)
+    text = re.sub(r'<img[^>]+src="([^"]+)"[^>]*/?>', r"!\1!", text)
 
     # --- Tables ---
     text = _convert_html_tables(text)
@@ -153,7 +159,7 @@ def _html_to_jira(html_content: str) -> str:
 def _convert_html_tables(text: str) -> str:
     """Convert HTML tables to Jira wiki markup tables."""
 
-    def _table_to_jira(match):
+    def _table_to_jira(match: re.Match[str]) -> str:
         table_html = match.group(0)
         rows = re.findall(r"<tr>(.*?)</tr>", table_html, re.DOTALL)
         jira_rows = []
@@ -180,7 +186,7 @@ def _convert_html_tables(text: str) -> str:
 def _convert_html_lists(text: str) -> str:
     """Convert HTML lists to Jira wiki markup lists."""
 
-    def _process_list(html_text, prefix="*", depth=0):
+    def _process_list(html_text: str, prefix: str = "*", depth: int = 0) -> list[str]:
         """Recursively process list items."""
         lines = []
         bullet = prefix * (depth + 1)
@@ -198,22 +204,18 @@ def _convert_html_lists(text: str) -> str:
                 lines.append(f"{bullet} {item_text}")
 
             if nested_ul:
-                lines.extend(
-                    _process_list(nested_ul.group(0), "*", depth + 1)
-                )
+                lines.extend(_process_list(nested_ul.group(0), "*", depth + 1))
             if nested_ol:
-                lines.extend(
-                    _process_list(nested_ol.group(0), "#", depth + 1)
-                )
+                lines.extend(_process_list(nested_ol.group(0), "#", depth + 1))
 
         return lines
 
     # Process unordered lists (outermost first)
-    def _replace_ul(match):
+    def _replace_ul(match: re.Match[str]) -> str:
         lines = _process_list(match.group(0), "*", 0)
         return "\n".join(lines)
 
-    def _replace_ol(match):
+    def _replace_ol(match: re.Match[str]) -> str:
         lines = _process_list(match.group(0), "#", 0)
         return "\n".join(lines)
 
@@ -221,9 +223,7 @@ def _convert_html_lists(text: str) -> str:
     # We need to be careful to only match top-level lists
     # Simple approach: process all <ul>...</ul> and <ol>...</ol>
     text = re.sub(r"<ul>(.*?)</ul>", _replace_ul, text, flags=re.DOTALL)
-    text = re.sub(r"<ol>(.*?)</ol>", _replace_ol, text, flags=re.DOTALL)
-
-    return text
+    return re.sub(r"<ol>(.*?)</ol>", _replace_ol, text, flags=re.DOTALL)
 
 
 def md_to_jira_markup(text: str) -> str:
@@ -421,9 +421,7 @@ def _jira_lists_to_md(text: str) -> str:
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Convert between Markdown and Jira wiki markup"
-    )
+    parser = argparse.ArgumentParser(description="Convert between Markdown and Jira wiki markup")
     parser.add_argument(
         "--direction",
         choices=["md2jira", "jira2md"],

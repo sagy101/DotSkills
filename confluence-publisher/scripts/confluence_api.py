@@ -10,18 +10,17 @@ Used by surgical_edit.py, diff_versions.py, and page_versions.py.
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config_loader import (
+from confluence_config import (  # noqa: E402
     ConfluenceConfig,
     resolve_credentials,
 )
-
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -31,6 +30,7 @@ from config_loader import (
 @dataclass
 class PageSnapshot:
     """A snapshot of a Confluence page at a specific version."""
+
     page_id: str
     title: str
     version: int
@@ -43,6 +43,7 @@ class PageSnapshot:
 @dataclass
 class VersionInfo:
     """Summary of a single page version."""
+
     number: int
     by: str
     when: str
@@ -69,7 +70,7 @@ def _wiki_base(config: ConfluenceConfig) -> str:
 def _rest_get(
     config: ConfluenceConfig,
     path: str,
-    params: Optional[dict[str, str]] = None,
+    params: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Make a GET request to the Confluence REST API."""
     username, token = resolve_credentials(config)
@@ -83,7 +84,7 @@ def _rest_get(
         print(f"ERROR: GET {path} returned {resp.status_code}: {resp.text[:300]}")
         sys.exit(1)
     try:
-        return resp.json()
+        return resp.json()  # type: ignore[no-any-return]
     except ValueError:
         print(f"ERROR: GET {path} returned non-JSON response ({len(resp.text)} chars)")
         sys.exit(1)
@@ -99,7 +100,8 @@ def _rest_put(
     url = f"{_wiki_base(config)}/rest/api{path}"
     try:
         resp = requests.put(
-            url, auth=(username, token),
+            url,
+            auth=(username, token),
             headers={"Content-Type": "application/json"},
             json=json_body,
             timeout=120,
@@ -111,7 +113,7 @@ def _rest_put(
         print(f"ERROR: PUT {path} returned {resp.status_code}: {resp.text[:500]}")
         sys.exit(1)
     try:
-        return resp.json()
+        return resp.json()  # type: ignore[no-any-return]
     except ValueError:
         print(f"ERROR: PUT {path} returned non-JSON response ({len(resp.text)} chars)")
         sys.exit(1)
@@ -125,7 +127,7 @@ def _rest_put(
 def fetch_page(
     config: ConfluenceConfig,
     page_id: str,
-    version: Optional[int] = None,
+    version: int | None = None,
 ) -> PageSnapshot:
     """Fetch a Confluence page, optionally at a specific version.
 
@@ -177,15 +179,15 @@ def list_versions(
         params={"limit": str(limit)},
     )
 
-    versions = []
-    for v in data.get("results", []):
-        versions.append(VersionInfo(
+    return [
+        VersionInfo(
             number=v["number"],
             by=v.get("by", {}).get("displayName", "unknown"),
             when=v.get("when", ""),
             message=v.get("message", ""),
-        ))
-    return versions
+        )
+        for v in data.get("results", [])
+    ]
 
 
 def update_page_body(
@@ -193,7 +195,7 @@ def update_page_body(
     page_id: str,
     title: str,
     html: str,
-    message: Optional[str] = None,
+    message: str | None = None,
 ) -> int:
     """Push new HTML content as a new version of an existing page.
 
@@ -210,8 +212,9 @@ def update_page_body(
     current = _rest_get(config, f"/content/{page_id}", {"expand": "version"})
     current_version = current["version"]["number"]
 
+    version_info: dict[str, Any] = {"number": current_version + 1}
     body = {
-        "version": {"number": current_version + 1},
+        "version": version_info,
         "title": title,
         "type": "page",
         "body": {
@@ -222,7 +225,7 @@ def update_page_body(
         },
     }
     if message:
-        body["version"]["message"] = message
+        version_info["message"] = message
 
     result = _rest_put(config, f"/content/{page_id}", body)
-    return result["version"]["number"]
+    return result["version"]["number"]  # type: ignore[no-any-return]

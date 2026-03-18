@@ -5,6 +5,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -40,8 +41,8 @@ def main() -> None:
         return
 
     # Build threaded view
-    roots = []
-    children = {}
+    roots: list[dict[str, Any]] = []
+    children: dict[int, list[dict[str, Any]]] = {}
     for c in comments:
         parent_id = c.get("parent", {}).get("id")
         if parent_id:
@@ -71,7 +72,7 @@ def main() -> None:
             print(f"{prefix}  {line}")
         print()
 
-        for child in children.get(c.get("id"), []):
+        for child in children.get(c.get("id", 0), []):
             _print_comment(child, indent + 1)
 
     print(f"Comments on PR #{args.pr}:")

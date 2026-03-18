@@ -179,7 +179,7 @@ def cmd_restart(args: argparse.Namespace, config: dict[str, Any]) -> int:
 # ─── Argument Parsing ─────────────────────────────────────────────────────────
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="EKS Pod Operations — kubectl wrapper with secret redaction.",
     )

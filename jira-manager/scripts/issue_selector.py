@@ -8,22 +8,24 @@ Used by fetch_tickets.py, bulk_update.py, and potentially future scripts.
 """
 
 import sys
-from typing import List, Optional
+from typing import Any
 
+from jira_client import JiraClient
+from jira_config_loader import JiraConfig
 from jql_builder import build_board_jql, build_jql_from_filters
 
 
 def select_issues(
-    client,
-    config,
-    tickets: Optional[str] = None,
-    board_id: Optional[int] = None,
-    jql: Optional[str] = None,
-    filter_pairs: Optional[List[str]] = None,
+    client: JiraClient,
+    config: JiraConfig,
+    tickets: str | None = None,
+    board_id: int | None = None,
+    jql: str | None = None,
+    filter_pairs: list[str] | None = None,
     fetch_all: bool = False,
     max_results: int = 0,
-    fields: Optional[List[str]] = None,
-) -> List[dict]:
+    fields: list[str] | None = None,
+) -> list[dict[str, Any]]:
     """Fetch issues from the appropriate source based on provided arguments.
 
     Args:
@@ -59,12 +61,12 @@ def select_issues(
 
 
 def _fetch_by_keys(
-    client,
+    client: JiraClient,
     tickets: str,
-    fields: Optional[List[str]] = None,
-) -> List[dict]:
+    fields: list[str] | None = None,
+) -> list[dict[str, Any]]:
     """Fetch issues by comma-separated keys."""
-    issues: List[dict] = []
+    issues: list[dict[str, Any]] = []
     keys = [k.strip() for k in tickets.split(",") if k.strip()]
     for key in keys:
         try:
@@ -76,13 +78,13 @@ def _fetch_by_keys(
 
 
 def _fetch_from_board(
-    client,
+    client: JiraClient,
     board_id: int,
-    filter_pairs: Optional[List[str]],
+    filter_pairs: list[str] | None,
     fetch_all: bool,
     max_results: int,
-    fields: Optional[List[str]],
-) -> List[dict]:
+    fields: list[str] | None,
+) -> list[dict[str, Any]]:
     """Fetch issues from an Agile board."""
     print(f"Fetching issues from board {board_id}...", file=sys.stderr)
     jql = build_board_jql(client, board_id, filter_pairs=filter_pairs, fetch_all=fetch_all)

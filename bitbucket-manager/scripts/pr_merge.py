@@ -2,28 +2,32 @@
 """Merge a Bitbucket pull request."""
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from bb_config import add_common_args, load_config, resolve_repo, resolve_workspace
 from bb_client import BitbucketClient
+from bb_config import add_common_args, load_config, resolve_repo, resolve_workspace
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Merge a Bitbucket pull request")
     add_common_args(parser)
     parser.add_argument("--pr", required=True, type=int, help="PR ID to merge")
-    parser.add_argument("--strategy", default="merge_commit",
-                        choices=["merge_commit", "squash", "fast_forward"],
-                        help="Merge strategy (default: merge_commit)")
-    parser.add_argument("--close-source-branch", action="store_true",
-                        help="Close source branch after merge")
+    parser.add_argument(
+        "--strategy",
+        default="merge_commit",
+        choices=["merge_commit", "squash", "fast_forward"],
+        help="Merge strategy (default: merge_commit)",
+    )
+    parser.add_argument(
+        "--close-source-branch", action="store_true", help="Close source branch after merge"
+    )
     parser.add_argument("--message", help="Merge commit message")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Show merge preconditions without merging")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show merge preconditions without merging"
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)

@@ -11,6 +11,8 @@ if _SCRIPTS_DIR not in sys.path:
 
 _MODULE_PATH = Path(_SCRIPTS_DIR) / "markup_converter.py"
 _spec = importlib.util.spec_from_file_location("markup_converter", _MODULE_PATH)
+assert _spec is not None
+assert _spec.loader is not None
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 sys.modules["markup_converter"] = _mod
@@ -27,6 +29,7 @@ _jira_lists_to_md = _mod._jira_lists_to_md
 # ---------------------------------------------------------------------------
 # md_to_jira_markup — full pipeline
 # ---------------------------------------------------------------------------
+
 
 class TestMdToJira:
     def test_empty_string(self):
@@ -119,6 +122,7 @@ class TestMdToJira:
 # _html_to_jira — direct HTML conversion
 # ---------------------------------------------------------------------------
 
+
 class TestHtmlToJira:
     def test_code_block_with_html_entities(self):
         html = '<pre><code class="language-python">x &lt; y &amp; z</code></pre>'
@@ -158,6 +162,7 @@ class TestHtmlToJira:
 # _convert_html_tables
 # ---------------------------------------------------------------------------
 
+
 class TestConvertHtmlTables:
     def test_header_and_data_rows(self):
         html = "<table><tr><th>H1</th><th>H2</th></tr><tr><td>a</td><td>b</td></tr></table>"
@@ -177,6 +182,7 @@ class TestConvertHtmlTables:
 # ---------------------------------------------------------------------------
 # _convert_html_lists
 # ---------------------------------------------------------------------------
+
 
 class TestConvertHtmlLists:
     def test_simple_ul(self):
@@ -209,6 +215,7 @@ class TestConvertHtmlLists:
 # ---------------------------------------------------------------------------
 # jira_markup_to_md — full pipeline
 # ---------------------------------------------------------------------------
+
 
 class TestJiraToMd:
     def test_empty_string(self):
@@ -312,6 +319,7 @@ class TestJiraToMd:
 # _jira_tables_to_md
 # ---------------------------------------------------------------------------
 
+
 class TestJiraTablesToMd:
     def test_header_row(self):
         jira = "|| Name || Age ||\n| Alice | 30 |"
@@ -337,6 +345,7 @@ class TestJiraTablesToMd:
 # ---------------------------------------------------------------------------
 # _jira_lists_to_md
 # ---------------------------------------------------------------------------
+
 
 class TestJiraListsToMd:
     def test_unordered(self):
@@ -377,4 +386,5 @@ class TestJiraListsToMd:
 
 if __name__ == "__main__":
     import subprocess
+
     sys.exit(subprocess.call([sys.executable, "-m", "pytest", __file__, "-v"]))

@@ -21,6 +21,7 @@ import platform
 import shutil
 import sys
 from pathlib import Path
+from typing import TypedDict
 
 # ---------------------------------------------------------------------------
 # IDE definitions
@@ -87,6 +88,7 @@ def _matches_ignore(name: str, patterns: list[str]) -> bool:
         return True
     return any(fnmatch.fnmatch(name, p) for p in patterns)
 
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -106,14 +108,19 @@ def discover_skills(source: Path, patterns: list[str]) -> list[Path]:
 
 
 def _resolve_ide_paths(
-    info: dict, level: str, home: Path, project: Path | None,
-) -> dict | None:
+    info: dict[str, str],
+    level: str,
+    home: Path,
+    project: Path | None,
+) -> dict[str, str | Path | None] | None:
     """Resolve user/project paths for a single IDE entry. Returns None if not detected."""
     user_path = home / info["user_dir"]
     user_ok = user_path.parent.exists() and level in ("user", "both")
 
     project_path = (project / info["project_dir"]) if project else None
-    project_ok = project_path is not None and project_path.parent.exists() and level in ("project", "both")
+    project_ok = (
+        project_path is not None and project_path.parent.exists() and level in ("project", "both")
+    )
 
     if not user_ok and not project_ok:
         return None
@@ -125,7 +132,7 @@ def _resolve_ide_paths(
     }
 
 
-def detect_ides(level: str, project: Path | None = None) -> dict[str, dict]:
+def detect_ides(level: str, project: Path | None = None) -> dict[str, dict[str, str | Path | None]]:
     """Detect which IDEs have skill directories present.
 
     Returns a dict of ide_key -> {name, user_path, project_path}.
@@ -140,7 +147,9 @@ def detect_ides(level: str, project: Path | None = None) -> dict[str, dict]:
     return detected
 
 
-def copy_skill(skill_dir: Path, target_dir: Path, patterns: list[str], dry_run: bool = False) -> int:
+def copy_skill(
+    skill_dir: Path, target_dir: Path, patterns: list[str], dry_run: bool = False
+) -> int:
     """Copy a single skill directory to target, returning files copied."""
     dest = target_dir / skill_dir.name
     if dry_run:
@@ -150,17 +159,20 @@ def copy_skill(skill_dir: Path, target_dir: Path, patterns: list[str], dry_run: 
     if dest.exists():
         shutil.rmtree(dest)
 
-    def _ignore(directory, contents):
+    def _ignore(directory: str, contents: list[str]) -> set[str]:
         return {item for item in contents if _matches_ignore(item, patterns)}
 
     shutil.copytree(skill_dir, dest, ignore=_ignore)
-    count = sum(1 for _ in dest.rglob("*") if _.is_file())
-    return count
+    return sum(1 for _ in dest.rglob("*") if _.is_file())
 
 
 def _sync_to_target(
-    target_path: Path, label: str, ide_name: str,
-    skills: list[Path], patterns: list[str], dry_run: bool,
+    target_path: Path,
+    label: str,
+    ide_name: str,
+    skills: list[Path],
+    patterns: list[str],
+    dry_run: bool,
 ) -> tuple[int, int]:
     """Sync all skills to a single target path. Returns (synced_count, file_count)."""
     print(f"\n  {ide_name} ({label}): {target_path}")
@@ -177,26 +189,34 @@ def _sync_to_target(
     return synced, files
 
 
+class _SyncStats(TypedDict):
+    name: str
+    synced: int
+    files: int
+    paths: list[str]
+
+
 def sync_skills(
     skills: list[Path],
-    detected_ides: dict,
+    detected_ides: dict[str, dict[str, str | Path | None]],
     targets: list[str],
     patterns: list[str],
     dry_run: bool = False,
-) -> dict:
+) -> dict[str, _SyncStats]:
     """Sync skills to all target IDE directories. Returns summary stats."""
-    stats = {}
+    stats: dict[str, _SyncStats] = {}
     for ide_key in targets:
         if ide_key not in detected_ides:
             continue
         ide = detected_ides[ide_key]
-        stats[ide_key] = {"name": ide["name"], "synced": 0, "files": 0, "paths": []}
+        stats[ide_key] = {"name": str(ide["name"]), "synced": 0, "files": 0, "paths": []}
 
         for label in ("user", "project"):
             target_path = ide.get(f"{label}_path")
             if not target_path:
                 continue
-            s, f = _sync_to_target(target_path, label, ide["name"], skills, patterns, dry_run)
+            tp = Path(target_path) if not isinstance(target_path, Path) else target_path
+            s, f = _sync_to_target(tp, label, str(ide["name"]), skills, patterns, dry_run)
             stats[ide_key]["synced"] += s
             stats[ide_key]["files"] += f
             stats[ide_key]["paths"].append(str(target_path))
@@ -210,9 +230,7 @@ def sync_skills(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Sync Agent Skills to IDE skill directories"
-    )
+    parser = argparse.ArgumentParser(description="Sync Agent Skills to IDE skill directories")
     parser.add_argument(
         "--source",
         required=True,
@@ -263,7 +281,12 @@ def _resolve_args(args: argparse.Namespace) -> tuple[Path, Path | None]:
     return source, project
 
 
-def _print_detection(detected: dict, source: Path, project: Path | None, level: str):
+def _print_detection(
+    detected: dict[str, dict[str, str | Path | None]],
+    source: Path,
+    project: Path | None,
+    level: str,
+) -> None:
     """Print detected IDE info and exit."""
     print(f"OS: {platform.system()} ({platform.machine()})")
     print(f"Home: {Path.home()}")
@@ -282,7 +305,9 @@ def _print_detection(detected: dict, source: Path, project: Path | None, level: 
         print(f"  {info['name']:15s} [{key}]  {', '.join(paths)}")
 
 
-def _resolve_targets(args_targets: str, detected: dict) -> list[str]:
+def _resolve_targets(
+    args_targets: str, detected: dict[str, dict[str, str | Path | None]]
+) -> list[str]:
     """Resolve target IDE keys from CLI arg, filtering to detected only."""
     if args_targets == "all":
         return list(detected.keys())
@@ -293,18 +318,20 @@ def _resolve_targets(args_targets: str, detected: dict) -> list[str]:
     return [t for t in requested if t in detected]
 
 
-def _print_summary(stats: dict, skills_count: int, dry_run: bool):
+def _print_summary(stats: dict[str, _SyncStats], skills_count: int, dry_run: bool) -> None:
     """Print sync summary."""
     ide_count = len(stats)
     total_files = sum(s["files"] for s in stats.values())
     prefix = "[DRY RUN] " if dry_run else ""
-    print(f"\n{prefix}Done: {skills_count} skill(s) synced to {ide_count} IDE(s), {total_files} files copied")
+    print(
+        f"\n{prefix}Done: {skills_count} skill(s) synced to {ide_count} IDE(s), {total_files} files copied"
+    )
     for s in stats.values():
         for p in s["paths"]:
             print(f"  {s['name']}: {p}")
 
 
-def main():
+def main() -> None:
     args = parse_args()
     source, project = _resolve_args(args)
     detected = detect_ides(args.level, project)

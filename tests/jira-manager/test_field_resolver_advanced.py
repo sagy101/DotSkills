@@ -14,6 +14,8 @@ if _SCRIPTS_DIR not in sys.path:
 
 _MODULE_PATH = Path(_SCRIPTS_DIR) / "field_resolver.py"
 _spec = importlib.util.spec_from_file_location("field_resolver", _MODULE_PATH)
+assert _spec is not None
+assert _spec.loader is not None
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 sys.modules["field_resolver"] = _mod
@@ -26,29 +28,47 @@ build_update_fields = _mod.build_update_fields
 validate_required_fields = _mod.validate_required_fields
 
 
-def _make_config(catalog=None, mappings=None, fields_index=None, create_meta=None):
+def _make_config(
+    catalog: dict[str, object] | None = None,
+    mappings: dict[str, str] | None = None,
+    fields_index: dict[str, object] | None = None,
+    create_meta: dict[str, object] | None = None,
+) -> mock.MagicMock:
     config = mock.MagicMock()
     config.field_catalog = catalog or {}
     if fields_index:
         config.field_catalog["_fields_index"] = fields_index
 
-    def get_field_id(name):
+    def get_field_id(name: str) -> str | None:
         return (mappings or {}).get(name)
+
     config.get_field_id = get_field_id
 
     config.create_meta = create_meta or {}
     return config
 
 
-def _make_args(**kwargs):
+def _make_args(**kwargs: object) -> argparse.Namespace:
     """Build a namespace with common defaults for field_resolver functions."""
-    defaults = dict(
-        summary=None, description=None, description_file=None,
-        story_points=None, labels=None, status=None, priority=None,
-        assignee=None, component=None, fix_version=None, sprint=None,
-        set=None, fields=None, rewrite_links=False, no_convert=True,
-        attachment=[], dry_run=False,
-    )
+    defaults: dict[str, object] = {
+        "summary": None,
+        "description": None,
+        "description_file": None,
+        "story_points": None,
+        "labels": None,
+        "status": None,
+        "priority": None,
+        "assignee": None,
+        "component": None,
+        "fix_version": None,
+        "sprint": None,
+        "set": None,
+        "fields": None,
+        "rewrite_links": False,
+        "no_convert": True,
+        "attachment": [],
+        "dry_run": False,
+    }
     defaults.update(kwargs)
     return argparse.Namespace(**defaults)
 
@@ -57,14 +77,19 @@ def _make_args(**kwargs):
 # resolve_set_field — 4-level cascade
 # ---------------------------------------------------------------------------
 
+
 class TestResolveSetField:
     def test_level1_catalog_status(self):
         """Status field returns (None, None, status_value)."""
-        config = _make_config(catalog={
-            "status": {"type": "status", "id": "status", "values": {
-                "done": {"id": "10", "name": "Done"}
-            }}
-        })
+        config = _make_config(
+            catalog={
+                "status": {
+                    "type": "status",
+                    "id": "status",
+                    "values": {"done": {"id": "10", "name": "Done"}},
+                }
+            }
+        )
         jira_id, jira_val, status_val = resolve_set_field(config, "status", "Done")
         assert jira_id is None
         assert jira_val is None
@@ -72,11 +97,15 @@ class TestResolveSetField:
 
     def test_level1_catalog_priority(self):
         """Priority returns name object."""
-        config = _make_config(catalog={
-            "priority": {"type": "priority", "id": "priority", "values": {
-                "high": {"id": "2", "name": "High"}
-            }}
-        })
+        config = _make_config(
+            catalog={
+                "priority": {
+                    "type": "priority",
+                    "id": "priority",
+                    "values": {"high": {"id": "2", "name": "High"}},
+                }
+            }
+        )
         jira_id, jira_val, status_val = resolve_set_field(config, "priority", "High")
         assert jira_id == "priority"
         assert jira_val == {"name": "High"}
@@ -84,20 +113,24 @@ class TestResolveSetField:
 
     def test_level1_catalog_component(self):
         """Component returns array of id objects."""
-        config = _make_config(catalog={
-            "components": {"type": "component", "id": "components", "values": {
-                "backend": {"id": "100", "name": "Backend"}
-            }}
-        })
+        config = _make_config(
+            catalog={
+                "components": {
+                    "type": "component",
+                    "id": "components",
+                    "values": {"backend": {"id": "100", "name": "Backend"}},
+                }
+            }
+        )
         jira_id, jira_val, status_val = resolve_set_field(config, "components", "Backend")
         assert jira_id == "components"
         assert jira_val == [{"id": "100"}]
 
     def test_level1_catalog_unresolved_priority(self):
         """Priority not in catalog values — uses raw name."""
-        config = _make_config(catalog={
-            "priority": {"type": "priority", "id": "priority", "values": {}}
-        })
+        config = _make_config(
+            catalog={"priority": {"type": "priority", "id": "priority", "values": {}}}
+        )
         jira_id, jira_val, _ = resolve_set_field(config, "priority", "Custom")
         assert jira_val == {"name": "Custom"}
 
@@ -116,9 +149,7 @@ class TestResolveSetField:
 
     def test_level3_fields_index(self):
         """Falls through to _fields_index."""
-        config = _make_config(fields_index={
-            "custom_qbr": {"id": "customfield_99999"}
-        })
+        config = _make_config(fields_index={"custom_qbr": {"id": "customfield_99999"}})
         jira_id, jira_val, _ = resolve_set_field(config, "custom_qbr", "value")
         assert jira_id == "customfield_99999"
         assert jira_val == "value"
@@ -135,6 +166,7 @@ class TestResolveSetField:
 # _resolve_from_catalog — type-specific formatting
 # ---------------------------------------------------------------------------
 
+
 class TestResolveFromCatalog:
     def test_status_type(self):
         config = _make_config()
@@ -145,22 +177,30 @@ class TestResolveFromCatalog:
 
     def test_resolution_type(self):
         """Resolution is a name-object type."""
-        config = _make_config(catalog={
-            "resolution": {"type": "resolution", "id": "resolution", "values": {
-                "fixed": {"id": "1", "name": "Fixed"}
-            }}
-        })
+        config = _make_config(
+            catalog={
+                "resolution": {
+                    "type": "resolution",
+                    "id": "resolution",
+                    "values": {"fixed": {"id": "1", "name": "Fixed"}},
+                }
+            }
+        )
         entry = config.field_catalog["resolution"]
         jira_id, jira_val, _ = _resolve_from_catalog(config, "resolution", "Fixed", entry)
         assert jira_val == {"name": "Fixed"}
 
     def test_version_type(self):
         """Version is an array-object type."""
-        config = _make_config(catalog={
-            "fix_versions": {"type": "version", "id": "fixVersions", "values": {
-                "v1": {"id": "200", "name": "v1.0"}
-            }}
-        })
+        config = _make_config(
+            catalog={
+                "fix_versions": {
+                    "type": "version",
+                    "id": "fixVersions",
+                    "values": {"v1": {"id": "200", "name": "v1.0"}},
+                }
+            }
+        )
         entry = config.field_catalog["fix_versions"]
         jira_id, jira_val, _ = _resolve_from_catalog(config, "fix_versions", "v1.0", entry)
         assert jira_id == "fixVersions"
@@ -171,13 +211,18 @@ class TestResolveFromCatalog:
 # apply_set_pairs
 # ---------------------------------------------------------------------------
 
+
 class TestApplySetPairs:
     def test_single_set(self):
-        config = _make_config(catalog={
-            "priority": {"type": "priority", "id": "priority", "values": {
-                "high": {"id": "2", "name": "High"}
-            }}
-        })
+        config = _make_config(
+            catalog={
+                "priority": {
+                    "type": "priority",
+                    "id": "priority",
+                    "values": {"high": {"id": "2", "name": "High"}},
+                }
+            }
+        )
         args = _make_args(set=["priority=High"])
         fields = {}
         status = apply_set_pairs(fields, args, config)
@@ -185,9 +230,7 @@ class TestApplySetPairs:
         assert status is None
 
     def test_status_extraction(self):
-        config = _make_config(catalog={
-            "status": {"type": "status", "id": "status", "values": {}}
-        })
+        config = _make_config(catalog={"status": {"type": "status", "id": "status", "values": {}}})
         args = _make_args(set=["status=In Progress"])
         fields = {}
         status = apply_set_pairs(fields, args, config)
@@ -221,6 +264,7 @@ class TestApplySetPairs:
 
     def test_invalid_format_exits(self):
         import pytest
+
         config = _make_config()
         args = _make_args(set=["no_equals"])
         fields = {}
@@ -232,6 +276,7 @@ class TestApplySetPairs:
 # build_update_fields
 # ---------------------------------------------------------------------------
 
+
 class TestBuildUpdateFields:
     def test_summary_only(self):
         config = _make_config()
@@ -241,11 +286,15 @@ class TestBuildUpdateFields:
         assert status is None
 
     def test_summary_with_priority(self):
-        config = _make_config(catalog={
-            "priority": {"type": "priority", "id": "priority", "values": {
-                "high": {"id": "2", "name": "High"}
-            }}
-        })
+        config = _make_config(
+            catalog={
+                "priority": {
+                    "type": "priority",
+                    "id": "priority",
+                    "values": {"high": {"id": "2", "name": "High"}},
+                }
+            }
+        )
         args = _make_args(summary="Title", priority="High")
         fields, _ = build_update_fields(args, config)
         assert fields["summary"] == "Title"
@@ -259,12 +308,18 @@ class TestBuildUpdateFields:
 
     def test_set_overrides_named(self):
         """--set and --priority both set priority — --set runs after named fields."""
-        config = _make_config(catalog={
-            "priority": {"type": "priority", "id": "priority", "values": {
-                "low": {"id": "3", "name": "Low"},
-                "high": {"id": "2", "name": "High"},
-            }}
-        })
+        config = _make_config(
+            catalog={
+                "priority": {
+                    "type": "priority",
+                    "id": "priority",
+                    "values": {
+                        "low": {"id": "3", "name": "Low"},
+                        "high": {"id": "2", "name": "High"},
+                    },
+                }
+            }
+        )
         args = _make_args(priority="High", set=["priority=Low"])
         fields, _ = build_update_fields(args, config)
         assert fields["priority"] == {"name": "Low"}
@@ -281,28 +336,39 @@ class TestBuildUpdateFields:
 # validate_required_fields
 # ---------------------------------------------------------------------------
 
+
 class TestValidateRequiredFields:
     def test_all_present(self):
-        config = _make_config(create_meta={
-            "story": {"id": "28", "required_fields": [
-                {"id": "issuetype", "name": "Issue Type"},
-                {"id": "project", "name": "Project"},
-                {"id": "summary", "name": "Summary"},
-            ]}
-        })
+        config = _make_config(
+            create_meta={
+                "story": {
+                    "id": "28",
+                    "required_fields": [
+                        {"id": "issuetype", "name": "Issue Type"},
+                        {"id": "project", "name": "Project"},
+                        {"id": "summary", "name": "Summary"},
+                    ],
+                }
+            }
+        )
         fields = {"customfield_1": "val"}
         missing = validate_required_fields(config, "story", fields)
         assert missing == []  # implicit fields cover issuetype, project, summary
 
     def test_missing_custom_required(self):
-        config = _make_config(create_meta={
-            "bug": {"id": "15", "required_fields": [
-                {"id": "issuetype", "name": "Issue Type"},
-                {"id": "project", "name": "Project"},
-                {"id": "summary", "name": "Summary"},
-                {"id": "customfield_29823", "name": "Bug source"},
-            ]}
-        })
+        config = _make_config(
+            create_meta={
+                "bug": {
+                    "id": "15",
+                    "required_fields": [
+                        {"id": "issuetype", "name": "Issue Type"},
+                        {"id": "project", "name": "Project"},
+                        {"id": "summary", "name": "Summary"},
+                        {"id": "customfield_29823", "name": "Bug source"},
+                    ],
+                }
+            }
+        )
         fields = {}
         missing = validate_required_fields(config, "bug", fields)
         assert len(missing) == 1
@@ -314,34 +380,42 @@ class TestValidateRequiredFields:
         assert missing == []
 
     def test_unknown_type(self):
-        config = _make_config(create_meta={
-            "story": {"id": "28", "required_fields": []}
-        })
+        config = _make_config(create_meta={"story": {"id": "28", "required_fields": []}})
         missing = validate_required_fields(config, "unknown_type", {})
         assert missing == []
 
     def test_parent_is_implicit(self):
         """Parent field should not be flagged as missing for subtasks."""
-        config = _make_config(create_meta={
-            "sub_task": {"id": "10", "required_fields": [
-                {"id": "parent", "name": "Parent"},
-                {"id": "issuetype", "name": "Issue Type"},
-                {"id": "project", "name": "Project"},
-                {"id": "summary", "name": "Summary"},
-            ]}
-        })
+        config = _make_config(
+            create_meta={
+                "sub_task": {
+                    "id": "10",
+                    "required_fields": [
+                        {"id": "parent", "name": "Parent"},
+                        {"id": "issuetype", "name": "Issue Type"},
+                        {"id": "project", "name": "Project"},
+                        {"id": "summary", "name": "Summary"},
+                    ],
+                }
+            }
+        )
         missing = validate_required_fields(config, "sub-task", {})
         assert missing == []
 
     def test_provided_field_not_flagged(self):
-        config = _make_config(create_meta={
-            "bug": {"id": "15", "required_fields": [
-                {"id": "issuetype", "name": "Issue Type"},
-                {"id": "project", "name": "Project"},
-                {"id": "summary", "name": "Summary"},
-                {"id": "customfield_100", "name": "Required Field"},
-            ]}
-        })
+        config = _make_config(
+            create_meta={
+                "bug": {
+                    "id": "15",
+                    "required_fields": [
+                        {"id": "issuetype", "name": "Issue Type"},
+                        {"id": "project", "name": "Project"},
+                        {"id": "summary", "name": "Summary"},
+                        {"id": "customfield_100", "name": "Required Field"},
+                    ],
+                }
+            }
+        )
         fields = {"customfield_100": "value"}
         missing = validate_required_fields(config, "bug", fields)
         assert missing == []
@@ -349,4 +423,5 @@ class TestValidateRequiredFields:
 
 if __name__ == "__main__":
     import subprocess
+
     sys.exit(subprocess.call([sys.executable, "-m", "pytest", __file__, "-v"]))

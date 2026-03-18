@@ -10,11 +10,12 @@ import os
 import re
 import subprocess
 from pathlib import Path
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Dependencies (must be installed before importing this module)
 # ---------------------------------------------------------------------------
-import markdown as md_lib
+import markdown as md_lib  # type: ignore[import-untyped]
 
 # ---------------------------------------------------------------------------
 # Mermaid regex (shared constant)
@@ -27,9 +28,7 @@ MERMAID_BLOCK_RE = re.compile(r"```mermaid\s*\n(.*?)```", re.DOTALL)
 # ---------------------------------------------------------------------------
 
 
-ATTACHMENT_LINK_RE = re.compile(
-    r'<a href="attachment:([^"]+)">(.*?)</a>', re.DOTALL
-)
+ATTACHMENT_LINK_RE = re.compile(r'<a href="attachment:([^"]+)">(.*?)</a>', re.DOTALL)
 
 
 def rewrite_attachment_links(html_content: str) -> str:
@@ -43,14 +42,15 @@ def rewrite_attachment_links(html_content: str) -> str:
     This function converts those into Confluence storage-format
     ``<ac:link><ri:attachment …/></ac:link>`` macros.
     """
-    def _replace(match):
+
+    def _replace(match: re.Match[str]) -> str:
         filename = html.unescape(match.group(1))
         link_text = match.group(2)
         return (
-            f'<ac:link>'
+            f"<ac:link>"
             f'<ri:attachment ri:filename="{filename}"/>'
-            f'<ac:plain-text-link-body><![CDATA[{link_text}]]></ac:plain-text-link-body>'
-            f'</ac:link>'
+            f"<ac:plain-text-link-body><![CDATA[{link_text}]]></ac:plain-text-link-body>"
+            f"</ac:link>"
         )
 
     return ATTACHMENT_LINK_RE.sub(_replace, html_content)
@@ -58,7 +58,7 @@ def rewrite_attachment_links(html_content: str) -> str:
 
 def markdown_to_confluence_storage(md_content: str) -> str:
     """Convert Markdown to Confluence storage format (XHTML-based)."""
-    html_content = md_lib.markdown(
+    html_content: str = md_lib.markdown(
         md_content,
         extensions=[
             "tables",
@@ -95,14 +95,12 @@ def markdown_to_confluence_storage(md_content: str) -> str:
     )
 
     # Code blocks without language
-    html_content = re.sub(
+    return re.sub(
         r"<pre><code>(.*?)</code></pre>",
         lambda m: make_code_macro(m.group(1)),
         html_content,
         flags=re.DOTALL,
     )
-
-    return html_content
 
 
 def preprocess_confluence_storage(html_content: str) -> str:
@@ -111,7 +109,8 @@ def preprocess_confluence_storage(html_content: str) -> str:
     Converts <ac:structured-macro ac:name="code"> to <pre><code> blocks
     so they are correctly converted to fenced code blocks.
     """
-    def replace_code_macro(match):
+
+    def replace_code_macro(match: re.Match[str]) -> str:
         content = match.group(0)
         # Extract language
         lang_match = re.search(r'<ac:parameter ac:name="language">(\w+)</ac:parameter>', content)
@@ -119,30 +118,29 @@ def preprocess_confluence_storage(html_content: str) -> str:
 
         # Extract body
         # Try CDATA first
-        body_match = re.search(r'<ac:plain-text-body><!\[CDATA\[(.*?)\]\]></ac:plain-text-body>', content, re.DOTALL)
+        body_match = re.search(
+            r"<ac:plain-text-body><!\[CDATA\[(.*?)\]\]></ac:plain-text-body>", content, re.DOTALL
+        )
         if body_match:
             code = body_match.group(1)
         else:
             # Fallback for non-CDATA (rare but possible)
-            body_match = re.search(r'<ac:plain-text-body>(.*?)</ac:plain-text-body>', content, re.DOTALL)
+            body_match = re.search(
+                r"<ac:plain-text-body>(.*?)</ac:plain-text-body>", content, re.DOTALL
+            )
             code = body_match.group(1) if body_match else ""
 
         # Unescape HTML entities in the code
         code = html.unescape(code)
 
         class_attr = f' class="language-{lang}"' if lang else ""
-        return f'<pre><code{class_attr}>{code}</code></pre>'
+        return f"<pre><code{class_attr}>{code}</code></pre>"
 
     # Regex to find code macros
     # We use a non-greedy match for the content between tags
     pattern = r'<ac:structured-macro[^>]+ac:name="code"[^>]*>.*?</ac:structured-macro>'
-    
-    return re.sub(
-        pattern,
-        replace_code_macro,
-        html_content,
-        flags=re.DOTALL
-    )
+
+    return re.sub(pattern, replace_code_macro, html_content, flags=re.DOTALL)
 
 
 # ---------------------------------------------------------------------------
@@ -150,14 +148,16 @@ def preprocess_confluence_storage(html_content: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def rewrite_md_links(html_content: str, current_file: str, manifest: dict, space_key: str) -> str:
+def rewrite_md_links(
+    html_content: str, current_file: str, manifest: dict[str, Any], space_key: str
+) -> str:
     """
     Replace <a href="something.md"> links with Confluence page link macros,
     using the manifest to resolve relative paths to page IDs/titles.
     """
     current_dir = Path(current_file).parent
 
-    def replace_link(match):
+    def replace_link(match: re.Match[str]) -> str:
         href = match.group(1)
         link_text = match.group(2)
 
@@ -182,10 +182,10 @@ def rewrite_md_links(html_content: str, current_file: str, manifest: dict, space
             page_title = manifest[resolved]["title"]
             anchor_attr = f' ac:anchor="{anchor[1:]}"' if anchor else ""
             return (
-                f'<ac:link{anchor_attr}>'
+                f"<ac:link{anchor_attr}>"
                 f'<ri:page ri:content-title="{page_title}" ri:space-key="{space_key}"/>'
-                f'<ac:plain-text-link-body><![CDATA[{link_text}]]></ac:plain-text-link-body>'
-                f'</ac:link>'
+                f"<ac:plain-text-link-body><![CDATA[{link_text}]]></ac:plain-text-link-body>"
+                f"</ac:link>"
             )
 
         return match.group(0)
@@ -203,17 +203,17 @@ def rewrite_md_links(html_content: str, current_file: str, manifest: dict, space
 # ---------------------------------------------------------------------------
 
 
-def render_mermaid_blocks(md_content: str, tmp_dir: Path) -> tuple:
+def render_mermaid_blocks(md_content: str, tmp_dir: Path) -> tuple[str, list[Path]]:
     """
     Find ```mermaid blocks, render each to PNG via mmdc, and replace
     with a placeholder that will become a Confluence attachment image macro.
 
     Returns (modified_markdown, list_of_png_paths).
     """
-    png_files: list = []
+    png_files: list[Path] = []
     counter = 0
 
-    def replace_block(match):
+    def replace_block(match: re.Match[str]) -> str:
         nonlocal counter
         counter += 1
         mmd_content = match.group(1)
@@ -225,11 +225,19 @@ def render_mermaid_blocks(md_content: str, tmp_dir: Path) -> tuple:
         try:
             subprocess.run(
                 [
-                    "npx", "-y", "-p", "@mermaid-js/mermaid-cli", "mmdc",
-                    "-i", str(mmd_file),
-                    "-o", str(png_file),
-                    "-b", "transparent",
-                    "--scale", "2",
+                    "npx",
+                    "-y",
+                    "-p",
+                    "@mermaid-js/mermaid-cli",
+                    "mmdc",
+                    "-i",
+                    str(mmd_file),
+                    "-o",
+                    str(png_file),
+                    "-b",
+                    "transparent",
+                    "--scale",
+                    "2",
                 ],
                 capture_output=True,
                 text=True,
@@ -243,9 +251,8 @@ def render_mermaid_blocks(md_content: str, tmp_dir: Path) -> tuple:
         if png_file.exists():
             png_files.append(png_file)
             return f"<!-- MERMAID_IMG:diagram-{counter}.png -->"
-        else:
-            print(f"  WARNING: PNG not generated for diagram-{counter}")
-            return f"```\n{mmd_content}```"
+        print(f"  WARNING: PNG not generated for diagram-{counter}")
+        return f"```\n{mmd_content}```"
 
     modified = MERMAID_BLOCK_RE.sub(replace_block, md_content)
     return modified, png_files
@@ -253,13 +260,10 @@ def render_mermaid_blocks(md_content: str, tmp_dir: Path) -> tuple:
 
 def inject_image_macros(html: str) -> str:
     """Replace mermaid placeholders with Confluence attachment image macros."""
-    def replace_placeholder(match):
+
+    def replace_placeholder(match: re.Match[str]) -> str:
         filename = match.group(1)
-        return (
-            f'<ac:image ac:width="800">'
-            f'<ri:attachment ri:filename="{filename}"/>'
-            f'</ac:image>'
-        )
+        return f'<ac:image ac:width="800"><ri:attachment ri:filename="{filename}"/></ac:image>'
 
     return re.sub(
         r"<!-- MERMAID_IMG:(\S+?) -->",
@@ -277,7 +281,7 @@ def strip_mermaid_blocks(md_content: str) -> str:
     """Replace mermaid blocks with stable placeholders for diffing."""
     counter = 0
 
-    def replace_block(match):
+    def replace_block(match: re.Match[str]) -> str:
         nonlocal counter
         counter += 1
         return f"[mermaid-diagram-{counter}]"
@@ -290,7 +294,7 @@ def normalize_remote_mermaid_macros(html: str) -> str:
     stable placeholders used by strip_mermaid_blocks."""
     counter = 0
 
-    def replace_diagram_image(match):
+    def replace_diagram_image(match: re.Match[str]) -> str:
         nonlocal counter
         counter += 1
         return f"[mermaid-diagram-{counter}]"

@@ -11,7 +11,7 @@ from pathlib import Path
 MAX_SKILL_NAME_LENGTH = 64
 
 
-def parse_frontmatter_simple(raw_yaml):
+def parse_frontmatter_simple(raw_yaml: str) -> dict[str, str]:
     """Parse simple YAML frontmatter without PyYAML.
 
     Handles flat key: value pairs and multi-line block scalars (>).
@@ -34,10 +34,7 @@ def parse_frontmatter_simple(raw_yaml):
             current_key = top_match.group(1)
             value = top_match.group(2).strip()
             # Block scalar indicator — value follows on next lines
-            if value in (">", "|", ">-", "|-"):
-                current_value_lines = []
-            else:
-                current_value_lines = [value]
+            current_value_lines = [] if value in (">", "|", ">-", "|-") else [value]
         elif is_continuation and current_key is not None:
             current_value_lines.append(line.strip())
 
@@ -48,7 +45,9 @@ def parse_frontmatter_simple(raw_yaml):
     return result
 
 
-def parse_frontmatter(skill_path):
+def parse_frontmatter(
+    skill_path: str | Path,
+) -> tuple[dict[str, str] | None, str | None, str | None]:
     """Parse YAML frontmatter from SKILL.md."""
     skill_md = Path(skill_path) / "SKILL.md"
     if not skill_md.exists():
@@ -67,14 +66,21 @@ def parse_frontmatter(skill_path):
         return None, None, "Frontmatter is empty"
 
     # Body is everything after the closing ---
-    body = content[match.end():].strip()
+    body = content[match.end() :].strip()
     return frontmatter, body, None
 
 
-def validate_keys(frontmatter):
+def validate_keys(frontmatter: dict[str, str]) -> tuple[bool, str | None]:
     """Validate presence of required keys and absence of unknown keys."""
-    allowed_properties = {"name", "description", "license", "allowed-tools", "metadata", "compatibility"}
-    
+    allowed_properties = {
+        "name",
+        "description",
+        "license",
+        "allowed-tools",
+        "metadata",
+        "compatibility",
+    }
+
     unexpected_keys = set(frontmatter.keys()) - allowed_properties
     if unexpected_keys:
         allowed = ", ".join(sorted(allowed_properties))
@@ -88,15 +94,15 @@ def validate_keys(frontmatter):
         return False, "Missing 'name' in frontmatter"
     if "description" not in frontmatter:
         return False, "Missing 'description' in frontmatter"
-    
+
     return True, None
 
 
-def validate_name(name):
+def validate_name(name: str | None) -> tuple[bool, str | None]:
     """Validate skill name format."""
     if not isinstance(name, str):
         return False, f"Name must be a string, got {type(name).__name__}"
-    
+
     name = name.strip()
     if not name:
         return False, "Name cannot be empty"
@@ -120,11 +126,11 @@ def validate_name(name):
     return True, None
 
 
-def validate_description(description):
+def validate_description(description: str | None) -> tuple[bool, str | None]:
     """Validate description format and length."""
     if not isinstance(description, str):
         return False, f"Description must be a string, got {type(description).__name__}"
-    
+
     description = description.strip()
     if not description:
         return False, "Description cannot be empty"
@@ -139,7 +145,7 @@ def validate_description(description):
     return True, None
 
 
-def validate_body(body):
+def validate_body(body: str | None) -> tuple[bool, str | None]:
     """Validate that the SKILL.md body has basic structure."""
     if not body:
         return False, "SKILL.md body is empty (no content after frontmatter)"
@@ -155,7 +161,8 @@ def validate_body(body):
 
     # Check body has meaningful content (not just headings)
     non_heading_lines = [
-        line.strip() for line in body.splitlines()
+        line.strip()
+        for line in body.splitlines()
         if line.strip() and not re.match(r"^#{1,6}\s", line)
     ]
     if len(non_heading_lines) < 2:
@@ -164,27 +171,34 @@ def validate_body(body):
     return True, None
 
 
-def validate_skill(skill_path):
+def validate_skill(skill_path: str | Path) -> tuple[bool, str]:
     """Basic validation of a skill"""
     frontmatter, body, error = parse_frontmatter(skill_path)
     if error:
         return False, error
 
-    valid_keys, error = validate_keys(frontmatter)
+    if frontmatter is None:
+        return False, "Missing frontmatter"
+
+    valid_keys, msg = validate_keys(frontmatter)
     if not valid_keys:
-        return False, error
+        assert msg is not None
+        return False, msg
 
-    valid_name, error = validate_name(frontmatter.get("name"))
+    valid_name, msg = validate_name(frontmatter.get("name"))
     if not valid_name:
-        return False, error
+        assert msg is not None
+        return False, msg
 
-    valid_desc, error = validate_description(frontmatter.get("description"))
+    valid_desc, msg = validate_description(frontmatter.get("description"))
     if not valid_desc:
-        return False, error
+        assert msg is not None
+        return False, msg
 
-    valid_body, error = validate_body(body)
+    valid_body, msg = validate_body(body)
     if not valid_body:
-        return False, error
+        assert msg is not None
+        return False, msg
 
     return True, "Skill is valid!"
 

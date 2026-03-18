@@ -40,19 +40,20 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config_loader import add_config_arg, load_config
-from page_utils import extract_page_id
-from confluence_api import fetch_page, update_page_body
-from html_diff import (
-    normalize_html,
-    semantic_diff,
-    section_integrity_check,
+from confluence_api import fetch_page, update_page_body  # noqa: E402
+from confluence_config import add_config_arg, load_config  # noqa: E402
+from html_diff import (  # noqa: E402
     format_diff_report,
+    normalize_html,
+    section_integrity_check,
+    semantic_diff,
 )
+from page_utils import extract_page_id  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -96,7 +97,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _validate_replacement_item(item, idx: int) -> None:
+def _validate_replacement_item(item: Any, idx: int) -> None:
     """Validate a single replacement dict from a JSON file. Exits on error."""
     if not isinstance(item, dict):
         print(f"ERROR: Replacement #{idx} is not an object")
@@ -109,7 +110,7 @@ def _validate_replacement_item(item, idx: int) -> None:
         sys.exit(1)
 
 
-def _load_replacements_file(path: Path) -> list[dict]:
+def _load_replacements_file(path: Path) -> list[dict[str, str]]:
     """Load and validate a replacements JSON file. Exits on error."""
     if not path.exists():
         print(f"ERROR: Replacements file not found: {path}")
@@ -123,19 +124,21 @@ def _load_replacements_file(path: Path) -> list[dict]:
     return data
 
 
-def load_replacements(args: argparse.Namespace) -> list[dict]:
+def load_replacements(args: argparse.Namespace) -> list[dict[str, Any]]:
     """Build the replacement list from CLI args."""
-    replacements = []
+    replacements: list[dict[str, Any]] = []
 
     if args.replacements:
         replacements.extend(_load_replacements_file(Path(args.replacements)))
 
     if args.find is not None and args.replace is not None:
-        replacements.append({
-            "find": args.find,
-            "replace": args.replace,
-            "replace_all": args.replace_all,
-        })
+        replacements.append(
+            {
+                "find": args.find,
+                "replace": args.replace,
+                "replace_all": args.replace_all,
+            }
+        )
     elif args.find is not None or args.replace is not None:
         print("ERROR: --find and --replace must be used together")
         sys.exit(1)
@@ -147,7 +150,7 @@ def load_replacements(args: argparse.Namespace) -> list[dict]:
     return replacements
 
 
-def apply_replacements(html: str, replacements: list[dict]) -> tuple[str, list[str]]:
+def apply_replacements(html: str, replacements: list[dict[str, Any]]) -> tuple[str, list[str]]:
     """Apply replacements to HTML. Returns (modified_html, log_messages)."""
     log = []
     for i, r in enumerate(replacements, 1):
@@ -166,10 +169,14 @@ def apply_replacements(html: str, replacements: list[dict]) -> tuple[str, list[s
 
         if replace_all:
             html = html.replace(find, replace)
-            log.append(f"  #{i} Replaced {count} occurrence(s): {find[:60]}... -> {replace[:60]}...")
+            log.append(
+                f"  #{i} Replaced {count} occurrence(s): {find[:60]}... -> {replace[:60]}..."
+            )
         else:
             html = html.replace(find, replace, 1)
-            log.append(f"  #{i} Replaced 1 of {count} occurrence(s): {find[:60]}... -> {replace[:60]}...")
+            log.append(
+                f"  #{i} Replaced 1 of {count} occurrence(s): {find[:60]}... -> {replace[:60]}..."
+            )
 
     return html, log
 
@@ -221,7 +228,9 @@ def main():
         print(report)
 
     # Summary
-    print(f"HTML size: {len(snapshot.html)} -> {len(modified_html)} ({len(modified_html) - len(snapshot.html):+d} chars)")
+    print(
+        f"HTML size: {len(snapshot.html)} -> {len(modified_html)} ({len(modified_html) - len(snapshot.html):+d} chars)"
+    )
 
     if args.dry_run:
         print("\n[DRY RUN] No changes pushed to Confluence.")
@@ -230,7 +239,11 @@ def main():
     # Push update
     version_msg = args.message or f"Surgical edit: {len(replacements)} replacement(s)"
     new_version = update_page_body(
-        config, page_id, snapshot.title, modified_html, message=version_msg,
+        config,
+        page_id,
+        snapshot.title,
+        modified_html,
+        message=version_msg,
     )
     print(f"\nPage updated to version {new_version}")
     print(f"  {config.confluence_url}/pages/{page_id}")

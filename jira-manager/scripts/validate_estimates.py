@@ -15,13 +15,14 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import add_config_arg, load_config, load_manifest
 from jira_client import JiraClient
+from jira_config_loader import JiraConfig, add_config_arg, load_config, load_manifest
 
 
-def _get_story_points(fields, sp_field):
+def _get_story_points(fields: dict[str, Any], sp_field: str | None) -> float | None:
     """Extract story points from issue fields."""
     if not sp_field:
         return None
@@ -31,7 +32,9 @@ def _get_story_points(fields, sp_field):
     return None
 
 
-def validate_epic_from_jira(client, config, epic_key):
+def validate_epic_from_jira(
+    client: JiraClient, config: JiraConfig, epic_key: str
+) -> dict[str, Any]:
     """Validate all stories under an epic and their subtasks."""
     sp_field = config.get_field_id("story_points")
     if not sp_field:
@@ -58,22 +61,21 @@ def validate_epic_from_jira(client, config, epic_key):
 
         # Fetch subtasks
         subtasks = client.get_children(story_key, fields=[sp_field, "summary"])
-        subtask_sum = sum(
-            _get_story_points(st.get("fields", {}), sp_field) or 0
-            for st in subtasks
-        )
+        subtask_sum = sum(_get_story_points(st.get("fields", {}), sp_field) or 0 for st in subtasks)
 
         if story_sp is not None:
             total_story_sp += story_sp
 
-        results.append({
-            "key": story_key,
-            "summary": story_summary,
-            "estimate": story_sp,
-            "subtask_sum": subtask_sum,
-            "subtask_count": len(subtasks),
-            "match": _check_match(story_sp, subtask_sum, len(subtasks)),
-        })
+        results.append(
+            {
+                "key": story_key,
+                "summary": story_summary,
+                "estimate": story_sp,
+                "subtask_sum": subtask_sum,
+                "subtask_count": len(subtasks),
+                "match": _check_match(story_sp, subtask_sum, len(subtasks)),
+            }
+        )
 
     return {
         "epic_key": epic_key,
@@ -84,7 +86,9 @@ def validate_epic_from_jira(client, config, epic_key):
     }
 
 
-def validate_story_from_jira(client, config, story_key):
+def validate_story_from_jira(
+    client: JiraClient, config: JiraConfig, story_key: str
+) -> dict[str, Any]:
     """Validate subtasks of a single story."""
     sp_field = config.get_field_id("story_points")
     if not sp_field:
@@ -96,28 +100,27 @@ def validate_story_from_jira(client, config, story_key):
     story_summary = story.get("fields", {}).get("summary", "?")
 
     subtasks = client.get_children(story_key, fields=[sp_field, "summary"])
-    subtask_sum = sum(
-        _get_story_points(st.get("fields", {}), sp_field) or 0
-        for st in subtasks
-    )
+    subtask_sum = sum(_get_story_points(st.get("fields", {}), sp_field) or 0 for st in subtasks)
 
     return {
         "epic_key": None,
         "epic_summary": None,
         "epic_estimate": None,
         "story_sum": story_sp or 0,
-        "stories": [{
-            "key": story_key,
-            "summary": story_summary,
-            "estimate": story_sp,
-            "subtask_sum": subtask_sum,
-            "subtask_count": len(subtasks),
-            "match": _check_match(story_sp, subtask_sum, len(subtasks)),
-        }],
+        "stories": [
+            {
+                "key": story_key,
+                "summary": story_summary,
+                "estimate": story_sp,
+                "subtask_sum": subtask_sum,
+                "subtask_count": len(subtasks),
+                "match": _check_match(story_sp, subtask_sum, len(subtasks)),
+            }
+        ],
     }
 
 
-def validate_from_source(source_path, config):
+def validate_from_source(source_path: str, config: JiraConfig) -> dict[str, Any]:
     """Validate estimates from a local source file (pre-creation)."""
     from bulk_create import load_source
 
@@ -127,20 +130,20 @@ def validate_from_source(source_path, config):
 
     for story in data.get("stories", []):
         story_sp = story.get("story_points")
-        subtask_sum = sum(
-            st.get("story_points") or 0 for st in story.get("subtasks", [])
-        )
+        subtask_sum = sum(st.get("story_points") or 0 for st in story.get("subtasks", []))
         if story_sp is not None:
             total_story_sp += story_sp
 
-        results.append({
-            "key": f"S{story['id']}",
-            "summary": story["summary"],
-            "estimate": story_sp,
-            "subtask_sum": subtask_sum,
-            "subtask_count": len(story.get("subtasks", [])),
-            "match": _check_match(story_sp, subtask_sum, len(story.get("subtasks", []))),
-        })
+        results.append(
+            {
+                "key": f"S{story['id']}",
+                "summary": story["summary"],
+                "estimate": story_sp,
+                "subtask_sum": subtask_sum,
+                "subtask_count": len(story.get("subtasks", [])),
+                "match": _check_match(story_sp, subtask_sum, len(story.get("subtasks", []))),
+            }
+        )
 
     epic = data.get("epic", {}) or {}
     return {
@@ -152,7 +155,7 @@ def validate_from_source(source_path, config):
     }
 
 
-def validate_from_manifest(config):
+def validate_from_manifest(config: JiraConfig) -> dict[str, Any]:
     """Validate estimates from the manifest file."""
     manifest = load_manifest(config)
     if not manifest:
@@ -170,24 +173,23 @@ def validate_from_manifest(config):
 
         # Find subtasks belonging to this story
         story_subtasks = {
-            stid: stdata for stid, stdata in subtasks.items()
-            if stid.startswith(f"{sid}.")
+            stid: stdata for stid, stdata in subtasks.items() if stid.startswith(f"{sid}.")
         }
-        subtask_sum = sum(
-            st.get("story_points") or 0 for st in story_subtasks.values()
-        )
+        subtask_sum = sum(st.get("story_points") or 0 for st in story_subtasks.values())
 
         if story_sp is not None:
             total_story_sp += story_sp
 
-        results.append({
-            "key": story_key,
-            "summary": sdata.get("summary", "?"),
-            "estimate": story_sp,
-            "subtask_sum": subtask_sum,
-            "subtask_count": len(story_subtasks),
-            "match": _check_match(story_sp, subtask_sum, len(story_subtasks)),
-        })
+        results.append(
+            {
+                "key": story_key,
+                "summary": sdata.get("summary", "?"),
+                "estimate": story_sp,
+                "subtask_sum": subtask_sum,
+                "subtask_count": len(story_subtasks),
+                "match": _check_match(story_sp, subtask_sum, len(story_subtasks)),
+            }
+        )
 
     epic = manifest.get("epic", {})
     return {
@@ -199,7 +201,7 @@ def validate_from_manifest(config):
     }
 
 
-def _check_match(parent_sp, child_sum, child_count):
+def _check_match(parent_sp: float | None, child_sum: float, child_count: int) -> str:
     """Determine match status."""
     if child_count == 0:
         return "NO_CHILDREN"
@@ -211,19 +213,19 @@ def _check_match(parent_sp, child_sum, child_count):
     return f"MISMATCH ({diff:+.1f})"
 
 
-def _format_story_row(story):
+def _format_story_row(story: dict[str, Any]) -> tuple[str, bool]:
     """Format a single story row for the report."""
     est = f"{story['estimate']:.1f}" if story["estimate"] is not None else "?"
     sub = f"{story['subtask_sum']:.1f}"
     ok = "MATCH" in story["match"] and "MIS" not in story["match"]
     marker = "OK" if ok else story["match"]
     is_mismatch = "MISMATCH" in story["match"]
-    
+
     line = f"  {story['key']:<16} {est:>8} {sub:>9} {story['subtask_count']:>6}  {marker}"
     return line, is_mismatch
 
 
-def format_report(data):
+def format_report(data: dict[str, Any]) -> tuple[str, int]:
     """Format validation results as a table."""
     lines = []
     lines.append("")
@@ -266,7 +268,7 @@ def format_report(data):
     return "\n".join(lines), mismatches
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Validate estimation consistency")
     add_config_arg(parser)
 
@@ -274,13 +276,9 @@ def main():
     group.add_argument("--epic", help="Validate all stories under an epic (live Jira)")
     group.add_argument("--story", help="Validate subtasks of a single story (live Jira)")
     group.add_argument("--source", help="Validate from local source file (.md or .json)")
-    group.add_argument(
-        "--manifest", action="store_true", help="Validate from .jira-manifest.json"
-    )
+    group.add_argument("--manifest", action="store_true", help="Validate from .jira-manifest.json")
 
-    parser.add_argument(
-        "--json", action="store_true", help="Output raw JSON instead of table"
-    )
+    parser.add_argument("--json", action="store_true", help="Output raw JSON instead of table")
     args = parser.parse_args()
 
     config = load_config(args.config)

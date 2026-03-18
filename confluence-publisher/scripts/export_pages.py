@@ -26,32 +26,31 @@ import argparse
 import re
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config_loader import (
+from confluence_config import (  # noqa: E402
+    ConfluenceConfig,
     add_config_arg,
-    load_config,
     connect,
+    ensure_deps,
+    load_config,
     load_manifest,
     save_manifest,
-    ensure_deps,
 )
-from page_utils import get_all_children, extract_page_id
+from page_utils import extract_page_id, get_all_children  # noqa: E402
 
 ensure_deps({"atlassian-python-api": "atlassian", "markdownify": "markdownify"})
 
 from atlassian import Confluence  # noqa: E402
-from markdownify import markdownify as md_convert  # noqa: E402
+from markdownify import markdownify as md_convert  # type: ignore[import-untyped]  # noqa: E402
 from transforms import preprocess_confluence_storage  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Export Confluence pages to local markdown"
-    )
+    parser = argparse.ArgumentParser(description="Export Confluence pages to local markdown")
     add_config_arg(parser)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
@@ -74,7 +73,8 @@ def parse_args() -> argparse.Namespace:
         help="Show what would be exported without writing files",
     )
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         help="Output file path (only for --page mode, default: stdout)",
     )
     return parser.parse_args()
@@ -85,7 +85,7 @@ def html_to_markdown(html_content: str) -> str:
     # Preprocess specific Confluence macros (like code blocks)
     html_content = preprocess_confluence_storage(html_content)
 
-    markdown_content = md_convert(
+    markdown_content: str = md_convert(
         html_content,
         heading_style="atx",
         bullets="-",
@@ -94,7 +94,7 @@ def html_to_markdown(html_content: str) -> str:
     return markdown_content.strip()
 
 
-def fetch_page(confluence: Confluence, page_id: str) -> Optional[dict]:
+def fetch_page(confluence: Confluence, page_id: str) -> dict[str, Any] | None:
     """Fetch a single page with its content. Returns dict with title, html, markdown."""
     page = confluence.get_page_by_id(
         page_id=page_id,
@@ -113,15 +113,15 @@ def fetch_page(confluence: Confluence, page_id: str) -> Optional[dict]:
     }
 
 
-def get_children(confluence: Confluence, page_id: str) -> list:
+def get_children(confluence: Confluence, page_id: str) -> list[tuple[str, str]]:
     """Get child pages of a given page."""
     children = get_all_children(confluence, page_id)
     return [(c["id"], c["title"]) for c in children]
 
 
-def walk_tree(confluence: Confluence, page_id: str) -> list:
+def walk_tree(confluence: Confluence, page_id: str) -> list[tuple[str, str, str]]:
     """Walk full tree under page_id. Returns list of (id, title, parent_id)."""
-    pages = []
+    pages: list[tuple[str, str, str]] = []
     children = get_children(confluence, page_id)
     for child_id, child_title in children:
         pages.append((child_id, child_title, page_id))
@@ -137,7 +137,9 @@ def title_to_filename(title: str) -> str:
     return name + ".md"
 
 
-def export_single_page(confluence, page_ref, output_path, dry_run):
+def export_single_page(
+    confluence: Confluence, page_ref: str, output_path: str | None, dry_run: bool
+) -> None:
     """Export a single page by ID or URL."""
     page_id = extract_page_id(page_ref)
     print(f"Fetching page {page_id}...")
@@ -163,7 +165,9 @@ def export_single_page(confluence, page_ref, output_path, dry_run):
         print(result["markdown"])
 
 
-def export_from_manifest(confluence, config, manifest, dry_run):
+def export_from_manifest(
+    confluence: Confluence, config: ConfluenceConfig, manifest: dict[str, Any], dry_run: bool
+) -> None:
     """Export all pages listed in the manifest."""
     if not manifest:
         print("ERROR: Manifest is empty. Nothing to export.")
@@ -184,17 +188,19 @@ def export_from_manifest(confluence, config, manifest, dry_run):
 
         file_path = config.docs_root / rel_path
         if dry_run:
-            print(f"  EXPORT  {rel_path} <- \"{result['title']}\" (id={page_id})")
+            print(f'  EXPORT  {rel_path} <- "{result["title"]}" (id={page_id})')
         else:
             file_path.parent.mkdir(parents=True, exist_ok=True)
             file_path.write_text(result["markdown"] + "\n", encoding="utf-8")
-            print(f"  SAVED   {rel_path} <- \"{result['title']}\"")
+            print(f'  SAVED   {rel_path} <- "{result["title"]}"')
         exported += 1
 
     print(f"\nSummary: {exported} exported, {failed} failed")
 
 
-def export_tree(confluence, config, manifest, dry_run):
+def export_tree(
+    confluence: Confluence, config: ConfluenceConfig, manifest: dict[str, Any], dry_run: bool
+) -> None:
     """Export full tree under root_page_id."""
     root_id = config.root_page_id
     root = fetch_page(confluence, root_id)
@@ -205,7 +211,7 @@ def export_tree(confluence, config, manifest, dry_run):
     print(f"Exporting tree under: {root['title']} (id={root_id})")
 
     # Build tree
-    tree_pages = [(root_id, root["title"], None)]
+    tree_pages: list[tuple[str, str, str | None]] = [(root_id, root["title"], None)]
     tree_pages.extend(walk_tree(confluence, root_id))
     print(f"Found {len(tree_pages)} pages\n")
 
@@ -222,7 +228,7 @@ def export_tree(confluence, config, manifest, dry_run):
         if page_id in id_to_path:
             rel_path = id_to_path[page_id]
         else:
-            parent_dir = id_to_dir.get(parent_id, Path("."))
+            parent_dir = id_to_dir.get(parent_id, Path(".")) if parent_id is not None else Path(".")
             filename = title_to_filename(title)
             rel_path = str(parent_dir / filename)
 
@@ -237,11 +243,11 @@ def export_tree(confluence, config, manifest, dry_run):
 
         file_path = config.docs_root / rel_path
         if dry_run:
-            print(f"  EXPORT  {rel_path} <- \"{title}\" (id={page_id})")
+            print(f'  EXPORT  {rel_path} <- "{title}" (id={page_id})')
         else:
             file_path.parent.mkdir(parents=True, exist_ok=True)
             file_path.write_text(result["markdown"] + "\n", encoding="utf-8")
-            print(f"  SAVED   {rel_path} <- \"{title}\"")
+            print(f'  SAVED   {rel_path} <- "{title}"')
 
         new_manifest_entries[rel_path] = {
             "id": page_id,

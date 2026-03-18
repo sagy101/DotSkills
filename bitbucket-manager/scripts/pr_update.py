@@ -2,14 +2,13 @@
 """Update an existing Bitbucket pull request."""
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from bb_config import add_common_args, load_config, resolve_repo, resolve_workspace
 from bb_client import BitbucketClient
+from bb_config import add_common_args, load_config, resolve_repo, resolve_workspace
 
 
 def main() -> None:
@@ -20,12 +19,15 @@ def main() -> None:
     parser.add_argument("--description", help="New PR description")
     parser.add_argument("--destination", help="New destination branch")
     parser.add_argument("--reviewers", help="Comma-separated reviewer UUIDs (replaces existing)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Show current vs proposed diff without updating")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show current vs proposed diff without updating"
+    )
     args = parser.parse_args()
 
     if not any([args.title, args.description, args.destination, args.reviewers]):
-        parser.error("Provide at least one field to update: --title, --description, --destination, --reviewers")
+        parser.error(
+            "Provide at least one field to update: --title, --description, --destination, --reviewers"
+        )
 
     config = load_config(args.config)
     workspace = resolve_workspace(config, args.workspace)

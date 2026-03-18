@@ -36,21 +36,19 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config_loader import add_config_arg, load_config
-from page_utils import extract_page_id
-from confluence_api import fetch_page
-from html_diff import (
-    normalize_html,
-    semantic_diff,
-    section_integrity_check,
+from confluence_api import fetch_page  # noqa: E402
+from confluence_config import add_config_arg, load_config  # noqa: E402
+from html_diff import (  # noqa: E402
     format_diff_report,
+    normalize_html,
+    section_integrity_check,
+    semantic_diff,
 )
+from page_utils import extract_page_id  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Compare two versions of a Confluence page"
-    )
+    parser = argparse.ArgumentParser(description="Compare two versions of a Confluence page")
     add_config_arg(parser)
     parser.add_argument(
         "--page",
@@ -76,7 +74,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--check-sections",
         help="Comma-separated list of section markers to verify. "
-             "Default: auto-detect from headings in the older version",
+        "Default: auto-detect from headings in the older version",
     )
     parser.add_argument(
         "--max-text-len",

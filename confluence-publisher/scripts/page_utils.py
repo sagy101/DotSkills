@@ -1,7 +1,7 @@
 """
 Page reference utilities for confluence-publisher skill scripts.
 
-Extracted from config_loader.py to reduce module coupling.
+Extracted from confluence_config.py to reduce module coupling.
 Contains: page ID extraction, tiny link encoding/decoding, title resolution,
 and child page pagination.
 """
@@ -10,15 +10,16 @@ import base64
 import re
 import struct
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from config_loader import ConfluenceConfig
+    from atlassian import Confluence
+    from confluence_config import ConfluenceConfig
 
 
-def get_all_children(confluence, page_id: str) -> list:
+def get_all_children(confluence: "Confluence", page_id: str) -> list[dict[str, Any]]:
     """Fetch all child pages with pagination (handles >100 children)."""
-    all_children = []
+    all_children: list[dict[str, Any]] = []
     start = 0
     limit = 100
     while True:
@@ -56,7 +57,7 @@ def decode_tiny_link(tiny_id: str) -> int:
         remainder = 2
     raw += b"=" * ((4 - remainder) % 4)
     page_id_bytes = (base64.b64decode(raw, altchars=b"_-") + b"\x00\x00\x00\x00")[:4]
-    return struct.unpack("<L", page_id_bytes)[0]
+    return struct.unpack("<L", page_id_bytes)[0]  # type: ignore[no-any-return]
 
 
 def encode_tiny_id(page_id: int) -> str:
@@ -103,7 +104,7 @@ def resolve_title(file_path: str, md_content: str, config: "ConfluenceConfig") -
     """Resolve page title using: title_map > first heading > filename."""
     # 1. Explicit title_map
     if file_path in config.title_map:
-        return config.title_map[file_path]
+        return config.title_map[file_path]  # type: ignore[no-any-return]
 
     # 2. First # heading in the markdown
     match = re.search(r"^#\s+(.+)$", md_content, re.MULTILINE)

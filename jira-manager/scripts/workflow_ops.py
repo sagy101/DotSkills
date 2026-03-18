@@ -8,17 +8,18 @@ Provides:
 """
 
 import sys
-from typing import Optional, Tuple
 
 from field_resolver import normalize_key, resolve_catalog_value
+from jira_client import JiraClient
+from jira_config_loader import JiraConfig
 
 
 def resolve_transition(
-    client,
+    client: JiraClient,
     issue_key: str,
     target_status: str,
-    config,
-) -> Optional[Tuple[str, str, str]]:
+    config: JiraConfig,
+) -> tuple[str, str, str] | None:
     """Find the transition that leads to the target status.
 
     Returns (transition_id, transition_name, target_status_name) or None.
@@ -49,10 +50,10 @@ def resolve_transition(
 
 
 def handle_status_transition(
-    client,
+    client: JiraClient,
     issue_key: str,
     target_status: str,
-    config,
+    config: JiraConfig,
     warn_only: bool = False,
 ) -> bool:
     """Resolve and execute a workflow transition.
@@ -91,7 +92,7 @@ def handle_status_transition(
         sys.exit(1)
 
 
-def upload_attachments(client, issue_key: str, file_paths: list[str]) -> bool:
+def upload_attachments(client: JiraClient, issue_key: str, file_paths: list[str]) -> bool:
     """Upload attachment files to an issue. Returns True if all succeeded."""
     all_ok = True
     for fpath in file_paths:

@@ -6,8 +6,15 @@ import sys
 from pathlib import Path
 from unittest import mock
 
-_MODULE_PATH = Path(__file__).resolve().parent.parent.parent / "confluence-publisher" / "scripts" / "page_utils.py"
+_MODULE_PATH = (
+    Path(__file__).resolve().parent.parent.parent
+    / "confluence-publisher"
+    / "scripts"
+    / "page_utils.py"
+)
 _spec = importlib.util.spec_from_file_location("confluence_page_utils", _MODULE_PATH)
+assert _spec is not None
+assert _spec.loader is not None
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 sys.modules["confluence_page_utils"] = _mod
@@ -21,6 +28,7 @@ resolve_title = _mod.resolve_title
 # ---------------------------------------------------------------------------
 # decode_tiny_link / encode_tiny_id roundtrip
 # ---------------------------------------------------------------------------
+
 
 class TestTinyLinkCodec:
     def test_roundtrip_known_id(self):
@@ -43,6 +51,7 @@ class TestTinyLinkCodec:
 # extract_page_id
 # ---------------------------------------------------------------------------
 
+
 class TestExtractPageId:
     def test_plain_numeric(self):
         assert extract_page_id("774112245") == "774112245"
@@ -59,6 +68,7 @@ class TestExtractPageId:
 
     def test_invalid_raises(self):
         import pytest
+
         with pytest.raises(ValueError, match="Could not extract"):
             extract_page_id("not-a-page-ref")
 
@@ -67,8 +77,9 @@ class TestExtractPageId:
 # resolve_title
 # ---------------------------------------------------------------------------
 
+
 class TestResolveTitle:
-    def _make_config(self, title_map=None):
+    def _make_config(self, title_map: dict[str, str] | None = None) -> mock.MagicMock:
         """Create a mock ConfluenceConfig with title_map."""
         cfg = mock.MagicMock()
         cfg.title_map = title_map or {}
@@ -98,4 +109,5 @@ class TestResolveTitle:
 
 if __name__ == "__main__":
     import subprocess
+
     sys.exit(subprocess.call([sys.executable, "-m", "pytest", __file__, "-v"]))

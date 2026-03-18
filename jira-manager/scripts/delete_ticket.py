@@ -11,16 +11,16 @@ Usage:
 """
 
 import argparse
-import json
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import add_config_arg, load_config, load_manifest, save_manifest
 from jira_client import JiraClient
+from jira_config_loader import JiraConfig, add_config_arg, load_config, load_manifest, save_manifest
 
 
-def _print_issue_details(issue, delete_subtasks_flag):
+def _print_issue_details(issue: dict[str, Any], delete_subtasks_flag: bool) -> str:
     """Print issue summary and subtask status."""
     fields = issue.get("fields", {})
     summary = fields.get("summary", "?")
@@ -42,25 +42,25 @@ def _print_issue_details(issue, delete_subtasks_flag):
     print(f"Status:      {status}")
     if subtask_info:
         print(subtask_info)
-    
-    return summary
+
+    return summary  # type: ignore[no-any-return]
 
 
-def _cleanup_manifest(config, key):
+def _cleanup_manifest(config: JiraConfig, key: str) -> None:
     """Remove the deleted key from the manifest."""
     manifest = load_manifest(config)
     changed = False
-    
+
     for category in ("stories", "subtasks", "epic"):
         if not isinstance(manifest.get(category), dict):
             continue
-            
+
         # Collect keys to remove first to avoid modifying during iteration
         to_remove = []
         for mid, mdata in manifest[category].items():
             if isinstance(mdata, dict) and mdata.get("key") == key:
                 to_remove.append(mid)
-        
+
         for mid in to_remove:
             del manifest[category][mid]
             print(f"  Removed from manifest: {category}/{mid}")
@@ -70,7 +70,7 @@ def _cleanup_manifest(config, key):
         save_manifest(config, manifest)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Delete a Jira issue")
     add_config_arg(parser)
     parser.add_argument("--key", required=True, help="Issue key to delete (e.g. API-123)")

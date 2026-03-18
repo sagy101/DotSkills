@@ -12,14 +12,20 @@ Usage:
     python validate_manifest.py --config .confluence.json
 """
 
+from __future__ import annotations
+
 import argparse
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from atlassian import Confluence
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config_loader import add_config_arg, load_config, connect, load_manifest
+from confluence_config import add_config_arg, connect, load_config, load_manifest  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,7 +34,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def fetch_page_title(confluence, page_id: str):
+def fetch_page_title(confluence: Confluence, page_id: str) -> tuple[bool, str | None]:
     """Fetch page title from Confluence. Returns (exists: bool, title: str|None)."""
     try:
         page = confluence.get_page_by_id(page_id)
@@ -39,7 +45,9 @@ def fetch_page_title(confluence, page_id: str):
     return False, None
 
 
-def classify_entry(file_exists: bool, page_exists: bool, actual_title, expected_title) -> str:
+def classify_entry(
+    file_exists: bool, page_exists: bool, actual_title: str | None, expected_title: str
+) -> str:
     """Return a status string for one manifest entry."""
     if file_exists and page_exists and actual_title == expected_title:
         return "OK"
@@ -50,7 +58,7 @@ def classify_entry(file_exists: bool, page_exists: bool, actual_title, expected_
     return "TITLE"
 
 
-def print_suggested_fixes(results: list) -> None:
+def print_suggested_fixes(results: list[tuple[str, str, dict[str, Any], str | None]]) -> None:
     """Print suggested fixes for entries with issues."""
     print("\nSuggested fixes:")
     for md_file, status, info, actual_title in results:

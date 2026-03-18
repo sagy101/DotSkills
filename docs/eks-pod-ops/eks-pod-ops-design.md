@@ -33,7 +33,7 @@ eks_ops.py ─────── Interface: argparse + subcommand dispatch
     └── lib/pods.py ─────── Pod resolution (label selector → name prefix fallback)
                              Container selection (skip known sidecars)
 
-preflight.py ──── Standalone pre-flight checks (one command, all checks)
+eks_preflight.py ──── Standalone pre-flight checks (one command, all checks)
 ```
 
 ### Design Decisions
@@ -58,7 +58,7 @@ eks-pod-ops/
 ├── README.md                # Human-facing: architecture, design decisions
 ├── scripts/
 │   ├── eks_ops.py           # Main entry point (4 subcommands)
-│   ├── preflight.py         # Pre-flight checks (standalone)
+│   ├── eks_preflight.py         # Pre-flight checks (standalone)
 │   └── lib/
 │       ├── __init__.py
 │       ├── config.py        # Config loading, env resolution
@@ -104,14 +104,14 @@ The preflight script shows whether each is installed:
 ## Setup
 
 1. Ensure kubeconfigs exist per environment (`~/.kube/config_<env>`) and AWS CLI profiles are configured in `~/.aws/config`
-2. Run preflight: `python3 scripts/preflight.py` — it auto-discovers environments and generates `~/.eks-config.json`
+2. Run preflight: `python3 scripts/eks_preflight.py` — it auto-discovers environments and generates `~/.eks-config.json`
 3. Log in to AWS SSO: `aws sso login --sso-session <session>` (session name shown in preflight output)
-4. Verify a specific env: `python3 scripts/preflight.py --env stg`
+4. Verify a specific env: `python3 scripts/eks_preflight.py --env stg`
 
 ## Quick Test
 
 ```bash
-python3 scripts/preflight.py --env stg
+python3 scripts/eks_preflight.py --env stg
 python3 scripts/eks_ops.py pods --env stg --service my-service
 python3 scripts/eks_ops.py logs --env stg --service my-service --tail 10
 ```

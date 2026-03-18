@@ -7,7 +7,9 @@ import sys
 from pathlib import Path
 from unittest import mock
 
-_MODULE_PATH = Path(__file__).resolve().parent.parent.parent / "jira-manager" / "scripts" / "field_resolver.py"
+_MODULE_PATH = (
+    Path(__file__).resolve().parent.parent.parent / "jira-manager" / "scripts" / "field_resolver.py"
+)
 
 # field_resolver imports from sibling modules, so add scripts dir to path
 _SCRIPTS_DIR = str(_MODULE_PATH.parent)
@@ -15,6 +17,8 @@ if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
 _spec = importlib.util.spec_from_file_location("field_resolver", _MODULE_PATH)
+assert _spec is not None
+assert _spec.loader is not None
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 sys.modules["field_resolver"] = _mod
@@ -29,10 +33,10 @@ normalize_key = _mod.normalize_key
 # apply_assignee — including empty-string unassign
 # ---------------------------------------------------------------------------
 
+
 class TestApplyAssignee:
-    def _make_args(self, assignee_value):
-        args = argparse.Namespace(assignee=assignee_value)
-        return args
+    def _make_args(self, assignee_value: str | None) -> argparse.Namespace:
+        return argparse.Namespace(assignee=assignee_value)
 
     def test_normal_assignee(self):
         fields = {}
@@ -54,6 +58,7 @@ class TestApplyAssignee:
 # normalize_key
 # ---------------------------------------------------------------------------
 
+
 class TestNormalizeKey:
     def test_spaces_to_underscores(self):
         assert normalize_key("Story Points") == "story_points"
@@ -72,8 +77,9 @@ class TestNormalizeKey:
 # resolve_catalog_value
 # ---------------------------------------------------------------------------
 
+
 class TestResolveCatalogValue:
-    def _make_config(self):
+    def _make_config(self) -> mock.MagicMock:
         config = mock.MagicMock()
         config.field_catalog = {
             "priority": {
@@ -112,8 +118,9 @@ class TestResolveCatalogValue:
 # apply_priority
 # ---------------------------------------------------------------------------
 
+
 class TestApplyPriority:
-    def _make_config(self):
+    def _make_config(self) -> mock.MagicMock:
         config = mock.MagicMock()
         config.field_catalog = {
             "priority": {
@@ -145,4 +152,5 @@ class TestApplyPriority:
 
 if __name__ == "__main__":
     import subprocess
+
     sys.exit(subprocess.call([sys.executable, "-m", "pytest", __file__, "-v"]))

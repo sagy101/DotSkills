@@ -8,6 +8,7 @@ All metric computation is delegated to analyze.py shared helpers.
 
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from analyze import (
@@ -44,16 +45,14 @@ def _build_categories(result: AnalysisResult) -> dict:
 
 
 # Section name → builder mapping
-_BUILDERS: dict[str, callable] = {
+_BUILDERS: dict[str, Callable[[AnalysisResult], object]] = {
     "summary": lambda r: compute_summary(r),
     "categories": lambda r: _build_categories(r),
     "languages": lambda r: compute_language_breakdown(r),
     "file-distribution": lambda r: compute_file_distribution(r),
     "large-files": lambda r: compute_large_files(r),
     "todos": lambda r: compute_todo_files(r),
-    "churn": lambda r: [
-        {"file": Path(f).name, "changes": c} for f, c in r.most_changed
-    ],
+    "churn": lambda r: [{"file": Path(f).name, "changes": c} for f, c in r.most_changed],
 }
 
 

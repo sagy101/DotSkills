@@ -20,9 +20,15 @@ Usage:
     python delete_page.py --config .confluence.json --file plan/old-design.md --dry-run
 """
 
+from __future__ import annotations
+
 import argparse
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from atlassian import Confluence
 
 # ---------------------------------------------------------------------------
 # Ensure script dir is on path for shared module imports
@@ -30,14 +36,13 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config_loader import (
+from confluence_config import (  # noqa: E402
     add_config_arg,
+    connect,
     load_config,
     load_manifest,
     save_manifest,
-    connect,
 )
-
 
 # ---------------------------------------------------------------------------
 # CLI
@@ -71,7 +76,7 @@ def parse_args() -> argparse.Namespace:
 # ---------------------------------------------------------------------------
 
 
-def delete_page(confluence, page_id: str, title: str, dry_run: bool) -> bool:
+def delete_page(confluence: Confluence, page_id: str, title: str, dry_run: bool) -> bool:
     """Delete a single Confluence page. Returns True on success."""
     if dry_run:
         print(f"  [DRY RUN] Would delete: {title} (id={page_id})")
@@ -86,7 +91,9 @@ def delete_page(confluence, page_id: str, title: str, dry_run: bool) -> bool:
         return False
 
 
-def _delete_by_page_id(confluence, page_id, manifest, dry_run):
+def _delete_by_page_id(
+    confluence: Confluence, page_id: str, manifest: dict[str, Any], dry_run: bool
+) -> tuple[list[str], list[str]]:
     """Delete a page by its Confluence ID. Returns (deleted_keys, failed)."""
     page = confluence.get_page_by_id(page_id)
     if not page:
@@ -99,14 +106,13 @@ def _delete_by_page_id(confluence, page_id, manifest, dry_run):
     if not delete_page(confluence, page_id, title, dry_run):
         return [], [page_id]
 
-    matched = [
-        key for key, entry in manifest.items()
-        if str(entry.get("id")) == str(page_id)
-    ]
+    matched = [key for key, entry in manifest.items() if str(entry.get("id")) == str(page_id)]
     return matched, []
 
 
-def _delete_by_file_keys(confluence, file_keys, manifest, dry_run):
+def _delete_by_file_keys(
+    confluence: Confluence, file_keys: list[str], manifest: dict[str, Any], dry_run: bool
+) -> tuple[list[str], list[str]]:
     """Delete pages by manifest file keys. Returns (deleted_keys, failed)."""
     deleted_keys = []
     failed = []
@@ -147,16 +153,12 @@ def main():
     print(f"  Manifest: {len(manifest)} pages known")
 
     if args.page_id:
-        deleted_keys, failed = _delete_by_page_id(
-            confluence, args.page_id, manifest, args.dry_run
-        )
+        deleted_keys, failed = _delete_by_page_id(confluence, args.page_id, manifest, args.dry_run)
     else:
         file_keys = [f.strip() for f in args.file.split(",") if f.strip()]
         print(f"Deleting {len(file_keys)} page(s)")
         print()
-        deleted_keys, failed = _delete_by_file_keys(
-            confluence, file_keys, manifest, args.dry_run
-        )
+        deleted_keys, failed = _delete_by_file_keys(confluence, file_keys, manifest, args.dry_run)
 
     # Update manifest
     if deleted_keys and not args.dry_run:
@@ -167,8 +169,7 @@ def main():
     # Summary
     print()
     if args.dry_run:
-        print(f"[DRY RUN] Would delete {len(deleted_keys)} page(s), "
-              f"{len(failed)} skipped/failed")
+        print(f"[DRY RUN] Would delete {len(deleted_keys)} page(s), {len(failed)} skipped/failed")
     else:
         print(f"Deleted {len(deleted_keys)} page(s), {len(failed)} failed")
         if deleted_keys:

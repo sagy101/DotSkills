@@ -6,8 +6,12 @@ import sys
 from pathlib import Path
 from unittest import mock
 
-_MODULE_PATH = Path(__file__).resolve().parent.parent.parent / "jira-manager" / "scripts" / "jql_builder.py"
+_MODULE_PATH = (
+    Path(__file__).resolve().parent.parent.parent / "jira-manager" / "scripts" / "jql_builder.py"
+)
 _spec = importlib.util.spec_from_file_location("jql_builder", _MODULE_PATH)
+assert _spec is not None
+assert _spec.loader is not None
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 sys.modules["jql_builder"] = _mod
@@ -20,6 +24,7 @@ build_jql_from_filters = _mod.build_jql_from_filters
 # ---------------------------------------------------------------------------
 # _format_jql_value — JQL function detection
 # ---------------------------------------------------------------------------
+
 
 class TestFormatJqlValue:
     def test_plain_string_is_quoted(self):
@@ -63,6 +68,7 @@ class TestFormatJqlValue:
 # _JQL_FUNCTION_RE — regex edge cases
 # ---------------------------------------------------------------------------
 
+
 class TestJqlFunctionRegex:
     def test_underscore_function(self):
         assert _JQL_FUNCTION_RE.match("my_func()")
@@ -81,8 +87,9 @@ class TestJqlFunctionRegex:
 # build_jql_from_filters
 # ---------------------------------------------------------------------------
 
+
 class TestBuildJqlFromFilters:
-    def _make_config(self, project_key="TEST"):
+    def _make_config(self, project_key: str = "TEST") -> mock.MagicMock:
         return mock.MagicMock(project_key=project_key)
 
     def test_single_filter(self):
@@ -99,18 +106,14 @@ class TestBuildJqlFromFilters:
 
     def test_multiple_filters(self):
         config = self._make_config()
-        jql = build_jql_from_filters(
-            ["assignee=currentUser()", "status=In Progress"], config
-        )
+        jql = build_jql_from_filters(["assignee=currentUser()", "status=In Progress"], config)
         assert "assignee = currentUser()" in jql
         assert 'status = "In Progress"' in jql
         assert " AND " in jql
 
     def test_no_project_scope(self):
         config = self._make_config()
-        jql = build_jql_from_filters(
-            ["status=Done"], config, include_project_scope=False
-        )
+        jql = build_jql_from_filters(["status=Done"], config, include_project_scope=False)
         assert "project" not in jql
         assert 'status = "Done"' in jql
 
@@ -121,6 +124,7 @@ class TestBuildJqlFromFilters:
 
     def test_invalid_filter_exits(self):
         import pytest
+
         config = self._make_config()
         with pytest.raises(SystemExit):
             build_jql_from_filters(["no_equals_sign"], config)
@@ -128,4 +132,5 @@ class TestBuildJqlFromFilters:
 
 if __name__ == "__main__":
     import subprocess
+
     sys.exit(subprocess.call([sys.executable, "-m", "pytest", __file__, "-v"]))

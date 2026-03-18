@@ -19,12 +19,11 @@ import sys
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 try:
-    import yaml
+    import yaml  # type: ignore[import-untyped]
 except ImportError:
     yaml = None
 
@@ -50,16 +49,39 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "plan_patterns": ["plans", "planning", "rfcs", "proposals", "adrs"],
     "doc_extensions": [".md", ".rst", ".txt"],
     "skip_extensions": [
-        ".lock", ".svg", ".png", ".jpg", ".jpeg", ".ico", ".gif",
-        ".pdf", ".woff", ".woff2", ".ttf", ".eot", ".webp",
-        ".mp4", ".mp3",
+        ".lock",
+        ".svg",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".ico",
+        ".gif",
+        ".pdf",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".eot",
+        ".webp",
+        ".mp4",
+        ".mp3",
     ],
     "skip_files": [
-        "pnpm-lock.yaml", "package-lock.json", "yarn.lock", "uv.lock", ".DS_Store",
+        "pnpm-lock.yaml",
+        "package-lock.json",
+        "yarn.lock",
+        "uv.lock",
+        ".DS_Store",
     ],
     "skip_dirs": [
-        "node_modules", ".git", "dist", "build", "__pycache__",
-        ".next", ".venv", "venv", ".codebase-analyzer-venv",
+        "node_modules",
+        ".git",
+        "dist",
+        "build",
+        "__pycache__",
+        ".next",
+        ".venv",
+        "venv",
+        ".codebase-analyzer-venv",
     ],
     "large_file_threshold": 500,
     "top_files_count": 10,
@@ -224,13 +246,13 @@ def load_config(repo_root: Path, config_path: Path | None = None) -> dict[str, A
     try:
         if yaml is None:
             raise ImportError("PyYAML is not installed. Install it to load custom configuration.")
-            
+
         with open(config_path) as f:
             user_config = yaml.safe_load(f) or {}
     except ImportError as exc:
         print(
             f"ERROR: {exc}\n"
-            f"Fix: Run 'python3 <skill_dir>/scripts/setup_env.py' to install dependencies.",
+            f"Fix: Run 'python3 <skill_dir>/scripts/analyzer_setup_env.py' to install dependencies.",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -255,9 +277,15 @@ def load_config(repo_root: Path, config_path: Path | None = None) -> dict[str, A
 def _validate_list_config(config: dict[str, Any], config_path: Path) -> None:
     """Validate list-type config keys."""
     list_keys = [
-        "test_patterns", "test_file_patterns", "test_data_patterns",
-        "script_patterns", "plan_patterns", "doc_extensions",
-        "skip_extensions", "skip_files", "skip_dirs",
+        "test_patterns",
+        "test_file_patterns",
+        "test_data_patterns",
+        "script_patterns",
+        "plan_patterns",
+        "doc_extensions",
+        "skip_extensions",
+        "skip_files",
+        "skip_dirs",
     ]
     for key in list_keys:
         value = config.get(key)
@@ -316,7 +344,7 @@ def get_tracked_files(repo_root: Path) -> set[Path]:
             text=True,
             check=True,
         )
-        
+
         # Untracked files (respecting .gitignore)
         cmd_untracked = ["git", "ls-files", "--others", "--exclude-standard"]
         result_untracked = subprocess.run(
@@ -332,7 +360,7 @@ def get_tracked_files(repo_root: Path) -> set[Path]:
             for line in out.strip().split("\n"):
                 if line:
                     files.add(repo_root / line)
-        
+
         return files
 
     except (subprocess.CalledProcessError, FileNotFoundError):
@@ -345,7 +373,7 @@ def get_tracked_files(repo_root: Path) -> set[Path]:
         return {p for p in repo_root.rglob("*") if p.is_file()}
 
 
-def should_skip(file_path: Path, repo_root: Path, config: dict) -> bool:
+def should_skip(file_path: Path, repo_root: Path, config: dict[str, Any]) -> bool:
     """Check if a file should be excluded from analysis."""
     try:
         rel_path = file_path.relative_to(repo_root)
@@ -358,9 +386,7 @@ def should_skip(file_path: Path, repo_root: Path, config: dict) -> bool:
         return True
     if file_path.name in config["skip_files"]:
         return True
-    if any(d in parts for d in config["skip_dirs"]):
-        return True
-    return False
+    return any(d in parts for d in config["skip_dirs"])
 
 
 def detect_language(file_path: Path) -> str:
@@ -397,13 +423,13 @@ def detect_language(file_path: Path) -> str:
     return "Other"
 
 
-def categorize_file(file_path: Path, repo_root: Path, config: dict) -> str:
+def categorize_file(file_path: Path, repo_root: Path, config: dict[str, Any]) -> str:
     """Categorize a file into code, tests, test_data, docs, plans, or scripts."""
     try:
         rel_path = file_path.relative_to(repo_root)
     except ValueError:
         return "code"
-    
+
     parts = rel_path.parts
     name = file_path.name
     suffix = file_path.suffix.lower()
@@ -441,9 +467,7 @@ def categorize_file(file_path: Path, repo_root: Path, config: dict) -> str:
 # ============================================================================
 
 
-def _check_multiline_end(
-    stripped: str, multiline_end: str
-) -> tuple[str, bool, str | None]:
+def _check_multiline_end(stripped: str, multiline_end: str) -> tuple[str, bool, str | None]:
     """Check if multiline block ends on this line."""
     if multiline_end in stripped:
         end_idx = stripped.index(multiline_end)
@@ -494,9 +518,7 @@ def _classify_line(
 
     for start in multi_starts:
         if start in stripped:
-            return _check_multiline_start(
-                stripped, start, MULTILINE_END_MAP.get(start)
-            )
+            return _check_multiline_start(stripped, start, MULTILINE_END_MAP.get(start))
 
     if single_comment and stripped.startswith(single_comment):
         return "comment", False, multiline_end
@@ -575,7 +597,9 @@ def is_git_repo(repo_root: Path) -> bool:
         return False
 
 
-def get_most_changed_files(repo_root: Path, tracked_files: set[Path], limit: int = 10) -> list[tuple[str, int]]:
+def get_most_changed_files(
+    repo_root: Path, tracked_files: set[Path], limit: int = 10
+) -> list[tuple[str, int]]:
     """Get files with the most commits (high churn). Only includes currently tracked files."""
     if not is_git_repo(repo_root):
         return []
@@ -611,7 +635,7 @@ def run_analysis(
     repo_root: Path,
     config_path: Path | None = None,
     progress_callback: Any = None,
-    sections: list[str] = None,
+    sections: list[str] | None = None,
 ) -> AnalysisResult:
     """Perform full codebase analysis and return structured results."""
     start_time = time.time()
@@ -649,7 +673,9 @@ def run_analysis(
 
     most_changed = []
     if "churn" in sections:
-        most_changed = get_most_changed_files(repo_root, tracked_files, config.get("top_files_count", 10))
+        most_changed = get_most_changed_files(
+            repo_root, tracked_files, config.get("top_files_count", 10)
+        )
 
     return AnalysisResult(
         repo_root=repo_root,
@@ -758,7 +784,7 @@ def compute_large_files(result: AnalysisResult) -> list[dict[str, Any]]:
         return []
     large = [f for f in code_stats.files if f.code_lines > threshold]
     large.sort(key=lambda x: x.code_lines, reverse=True)
-    
+
     # Use relative path if possible for display
     def _fmt_path(p: str) -> str:
         try:
@@ -767,8 +793,7 @@ def compute_large_files(result: AnalysisResult) -> list[dict[str, Any]]:
             return p
 
     return [
-        {"file": _fmt_path(f.path), "lines": f.code_lines, "language": f.language}
-        for f in large
+        {"file": _fmt_path(f.path), "lines": f.code_lines, "language": f.language} for f in large
     ]
 
 
@@ -791,7 +816,7 @@ def compute_todo_files(result: AnalysisResult) -> list[dict[str, Any]]:
 
     return [
         {"file": _fmt_path(f.path), "todos": f.todo_count, "fixmes": f.fixme_count}
-        for f in todo_files[:result.config.get("top_files_count", 10)]
+        for f in todo_files[: result.config.get("top_files_count", 10)]
     ]
 
 
@@ -881,7 +906,7 @@ def main() -> None:
         except ImportError:
             print(
                 "ERROR: Rich library is not installed (required for terminal output).\n"
-                "Fix: Run 'python3 <skill_dir>/scripts/setup_env.py' to install dependencies,\n"
+                "Fix: Run 'python3 <skill_dir>/scripts/analyzer_setup_env.py' to install dependencies,\n"
                 "or use --output json or --output markdown which have no extra dependencies.",
                 file=sys.stderr,
             )
@@ -889,9 +914,11 @@ def main() -> None:
         render_terminal(result, sections)
     elif args.output == "json":
         from report_json import render_json
+
         render_json(result, sections)
     elif args.output == "markdown":
         from report_markdown import render_markdown
+
         render_markdown(result, sections)
 
 

@@ -16,7 +16,7 @@ Usage:
 
 import argparse
 import atexit
-import fcntl
+import contextlib
 import json
 import os
 import re
@@ -26,8 +26,9 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import uuid
-
+from typing import Any
 
 # ========== CONFIGURATION ==========
 MIN_VERSION = "0.106.0"
@@ -38,7 +39,9 @@ VALID_COLLISIONS = {"high", "medium"}
 DEFAULT_MAX_PARALLEL = 6
 PID_TRACKING_DIR = os.path.join(tempfile.gettempdir(), "codex-agent-pids")
 
-_SANDBOX_CONFIG_MSG = "BLOCKED: sandbox cannot be overridden via config. Use --mode read-only or --mode write."
+_SANDBOX_CONFIG_MSG = (
+    "BLOCKED: sandbox cannot be overridden via config. Use --mode read-only or --mode write."
+)
 
 # Flags that the wrapper handles automatically — reject if passed directly
 BLOCKED_WRAPPER_FLAGS = {
@@ -69,12 +72,13 @@ BLOCKED_WRAPPER_FLAGS = {
 _pid_file_path: str | None = None
 
 
-def eprint(*args, **kwargs) -> None:
+def eprint(*args: object, **kwargs: Any) -> None:
     """Print to stderr."""
     print(*args, file=sys.stderr, **kwargs)
 
 
 # ========== PARALLEL AGENT TRACKING ==========
+
 
 def _ensure_pid_dir() -> None:
     """Create the PID tracking directory if it doesn't exist."""
@@ -93,7 +97,7 @@ def _is_pid_alive(pid: int) -> bool:
 def _read_pid_metadata(filepath: str) -> dict:
     """Read metadata from a PID file. Returns dict with at least 'pid'."""
     try:
-        with open(filepath, "r") as f:
+        with open(filepath) as f:
             data = json.loads(f.read())
         if isinstance(data, dict):
             return data
@@ -125,11 +129,9 @@ def _scan_agents() -> tuple[list[dict], int]:
             meta["pid"] = pid
             active.append(meta)
         else:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(filepath)
                 stale_cleaned += 1
-            except OSError:
-                pass
     return active, stale_cleaned
 
 
@@ -163,13 +165,11 @@ def _register_agent(mode: str = "unknown") -> str:
 def _unregister_agent() -> None:
     """Remove this process's PID file on exit."""
     if _pid_file_path and os.path.exists(_pid_file_path):
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(_pid_file_path)
-        except OSError:
-            pass
 
 
-def _signal_cleanup(signum: int, _frame) -> None:
+def _signal_cleanup(signum: int, _frame: types.FrameType | None) -> None:
     """Signal handler that cleans up PID file then re-raises."""
     _unregister_agent()
     # Re-raise with default handler so exit code reflects the signal
@@ -237,9 +237,11 @@ def print_status() -> None:
 
 def version_gte(current: str, minimum: str) -> bool:
     """Check if current version >= minimum version using semantic versioning."""
+
     def parse(v: str) -> tuple:
         parts = v.split(".")
         return tuple(int(p) for p in parts)
+
     try:
         return parse(current) >= parse(minimum)
     except (ValueError, IndexError):
@@ -254,10 +256,7 @@ def check_version() -> str:
         sys.exit(127)
 
     try:
-        result = subprocess.run(
-            ["codex", "--version"],
-            capture_output=True, text=True, timeout=10
-        )
+        result = subprocess.run(["codex", "--version"], capture_output=True, text=True, timeout=10)
         output = result.stdout.strip() + result.stderr.strip()
     except (subprocess.TimeoutExpired, FileNotFoundError):
         eprint("ERROR: codex CLI not responding. Reinstall: npm i -g @openai/codex")
@@ -288,7 +287,9 @@ def _check_sandbox_flag(arg: str, next_arg: str | None) -> None:
         if arg == "--sandbox" and next_arg is not None and "danger" in next_arg:
             eprint(f"BLOCKED: '--sandbox {next_arg}' is not permitted by skill policy")
             sys.exit(2)
-        eprint("ERROR: --sandbox is controlled by --mode flag. Use --mode read-only or --mode write.")
+        eprint(
+            "ERROR: --sandbox is controlled by --mode flag. Use --mode read-only or --mode write."
+        )
         sys.exit(2)
     if arg == "-s" or (arg.startswith("-s") and not arg.startswith("--")):
         eprint(
@@ -312,7 +313,11 @@ def _is_sandbox_config_override(arg: str, next_arg: str | None) -> bool:
 
 def _is_scope_flag(arg: str) -> bool:
     """Check if arg is a scope-changing flag."""
-    return arg in ("--cd", "-C", "--add-dir") or arg.startswith("--cd=") or arg.startswith("--add-dir=")
+    return (
+        arg in ("--cd", "-C", "--add-dir")
+        or arg.startswith("--cd=")
+        or arg.startswith("--add-dir=")
+    )
 
 
 def _matches_blocked_flag(arg: str, blocked: str) -> bool:
@@ -321,7 +326,9 @@ def _matches_blocked_flag(arg: str, blocked: str) -> bool:
         return True
     if arg.startswith(blocked + "="):
         return True
-    return len(blocked) == 2 and arg.startswith(blocked) and not arg.startswith("--") and len(arg) > 2
+    return (
+        len(blocked) == 2 and arg.startswith(blocked) and not arg.startswith("--") and len(arg) > 2
+    )
 
 
 def _check_dangerous_flag(arg: str, next_arg: str | None) -> None:
@@ -333,8 +340,10 @@ def _check_dangerous_flag(arg: str, next_arg: str | None) -> None:
         eprint(_SANDBOX_CONFIG_MSG)
         sys.exit(2)
     if _is_scope_flag(arg):
-        eprint(f"BLOCKED: '{arg}' is not permitted — the wrapper controls working directory.\n"
-               "Use --collision medium for worktree isolation.")
+        eprint(
+            f"BLOCKED: '{arg}' is not permitted — the wrapper controls working directory.\n"
+            "Use --collision medium for worktree isolation."
+        )
         sys.exit(2)
     for blocked, msg in BLOCKED_WRAPPER_FLAGS.items():
         if _matches_blocked_flag(arg, blocked):
@@ -369,8 +378,7 @@ def setup_worktree(collision: str, mode: str) -> tuple[str | None, str | None, s
     worktree_dir = os.path.join(tempfile.gettempdir(), f"codex-wt-{worktree_id}")
 
     result = subprocess.run(
-        ["git", "worktree", "add", worktree_dir, "-b", worktree_id],
-        capture_output=True, text=True
+        ["git", "worktree", "add", worktree_dir, "-b", worktree_id], capture_output=True, text=True
     )
     if result.returncode != 0:
         eprint(
@@ -401,7 +409,7 @@ def build_prompt_file(tmpdir: str, review_prompt_path: str | None) -> str:
                     "Review prompt files can come from a review skill, project docs, or any .md file you create."
                 )
                 sys.exit(2)
-            with open(review_prompt_path, "r", encoding="utf-8") as rp:
+            with open(review_prompt_path, encoding="utf-8") as rp:
                 f.write(rp.read())
             f.write("\n\n--- Additional context from host agent ---\n")
 
@@ -430,7 +438,7 @@ def _extract_subcommand(passthrough: list[str]) -> tuple[str | None, list[str], 
                 skip_next = True
             continue
         if arg in known_subcommands:
-            return arg, passthrough[i + 1:], passthrough[:i]
+            return arg, passthrough[i + 1 :], passthrough[:i]
         break
     return None, [], passthrough
 
@@ -499,17 +507,13 @@ def build_codex_args(
 
 def _kill_process_group(proc: subprocess.Popen) -> None:
     """Send SIGTERM then SIGKILL to the process group."""
-    try:
+    with contextlib.suppress(OSError):
         os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-    except OSError:
-        pass
     try:
         proc.wait(timeout=10)
     except subprocess.TimeoutExpired:
-        try:
+        with contextlib.suppress(OSError):
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except OSError:
-            pass
         proc.wait()
 
 
@@ -527,9 +531,12 @@ def run_codex(codex_args: list[str], prompt_file: str, timeout: int) -> int:
     cmd = ["codex"] + codex_args
 
     try:
-        with open(prompt_file, "r", encoding="utf-8") as pf:
+        with open(prompt_file, encoding="utf-8") as pf:
             proc = subprocess.Popen(
-                cmd, stdin=pf, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                cmd,
+                stdin=pf,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
                 preexec_fn=os.setsid,
             )
 
@@ -575,8 +582,20 @@ def parse_args_with_passthrough(argv: list[str]) -> tuple[argparse.Namespace, li
     wrapper_args = []
     passthrough_args = []
     i = 0
-    wrapper_flags_with_value = {"--mode", "--collision", "--review-prompt", "--timeout", "--max-parallel"}
-    wrapper_flags_no_value = {"--web-search", "--resume", "--persist", "--skip-git-repo-check", "--status"}
+    wrapper_flags_with_value = {
+        "--mode",
+        "--collision",
+        "--review-prompt",
+        "--timeout",
+        "--max-parallel",
+    }
+    wrapper_flags_no_value = {
+        "--web-search",
+        "--resume",
+        "--persist",
+        "--skip-git-repo-check",
+        "--status",
+    }
 
     while i < len(argv):
         arg = argv[i]
@@ -628,12 +647,71 @@ def parse_args_with_passthrough(argv: list[str]) -> tuple[argparse.Namespace, li
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--persist", action="store_true")
     parser.add_argument("--skip-git-repo-check", action="store_true", dest="skip_git_repo_check")
-    parser.add_argument("--max-parallel", type=int, default=DEFAULT_MAX_PARALLEL, dest="max_parallel")
+    parser.add_argument(
+        "--max-parallel", type=int, default=DEFAULT_MAX_PARALLEL, dest="max_parallel"
+    )
     parser.add_argument("--status", action="store_true")
 
     parsed = parser.parse_args(wrapper_args)
 
     return parsed, passthrough_args
+
+
+def _validate_args(args: argparse.Namespace) -> None:
+    """Validate wrapper arguments, exiting on invalid input."""
+    if args.timeout not in VALID_TIMEOUTS:
+        eprint(f"ERROR: --timeout must be 300, 600, 1200, or 2400 (seconds). Got: {args.timeout}")
+        sys.exit(2)
+
+    if args.mode == "write" and not args.resume and args.collision not in VALID_COLLISIONS:
+        eprint(
+            f"ERROR: --collision must be 'high' or 'medium'. Got: {args.collision}\n"
+            "Low confidence = do NOT delegate writes. Use --mode read-only instead."
+        )
+        sys.exit(2)
+
+    if args.max_parallel < 1:
+        eprint("ERROR: --max-parallel must be >= 1.")
+        sys.exit(2)
+    if args.max_parallel > DEFAULT_MAX_PARALLEL:
+        eprint(
+            f"WARNING: --max-parallel {args.max_parallel} exceeds the default limit of "
+            f"{DEFAULT_MAX_PARALLEL}. This is NOT RECOMMENDED — it increases resource usage, "
+            "cost, and system load. Proceeding anyway."
+        )
+
+
+def _validate_prompt(prompt_file: str) -> None:
+    """Validate prompt file size, exiting on empty prompt."""
+    prompt_size = os.path.getsize(prompt_file)
+    if prompt_size == 0:
+        eprint(
+            "ERROR: Empty prompt. Pipe prompt content via stdin: echo '<prompt>' | run_codex.py ... -"
+        )
+        sys.exit(2)
+    if prompt_size > MAX_PROMPT_CHARS:
+        eprint(f"WARNING: Prompt is very large ({prompt_size} chars). Consider trimming context.")
+
+
+def _report_exit_error(exit_code: int) -> None:
+    """Print a diagnostic message to stderr for non-zero exit codes."""
+    skill_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if exit_code == 101:
+        eprint(
+            f"EXIT_CODE={exit_code} — Rust panic in codex. Do NOT retry — report this to the user."
+        )
+    elif exit_code == 137:
+        eprint(
+            f"EXIT_CODE={exit_code} — Process killed (OOM or SIGKILL). "
+            "Retry with a simpler task or smaller context, or report to user."
+        )
+    elif exit_code == 143:
+        eprint(
+            f"EXIT_CODE={exit_code} — Process terminated (SIGTERM). "
+            "Check the result file for partial output before retrying."
+        )
+    else:
+        eprint(f"EXIT_CODE={exit_code} — see {skill_dir}/references/ERROR_HANDLING.md")
 
 
 def main() -> None:
@@ -645,30 +723,9 @@ def main() -> None:
         return
 
     # ========== INPUT VALIDATION ==========
-    if args.timeout not in VALID_TIMEOUTS:
-        eprint(
-            f"ERROR: --timeout must be 300, 600, 1200, or 2400 (seconds). Got: {args.timeout}"
-        )
-        sys.exit(2)
-
-    if args.mode == "write" and not args.resume:
-        if args.collision not in VALID_COLLISIONS:
-            eprint(
-                f"ERROR: --collision must be 'high' or 'medium'. Got: {args.collision}\n"
-                "Low confidence = do NOT delegate writes. Use --mode read-only instead."
-            )
-            sys.exit(2)
+    _validate_args(args)
 
     # ========== PARALLEL LIMIT ==========
-    if args.max_parallel < 1:
-        eprint("ERROR: --max-parallel must be >= 1.")
-        sys.exit(2)
-    if args.max_parallel > DEFAULT_MAX_PARALLEL:
-        eprint(
-            f"WARNING: --max-parallel {args.max_parallel} exceeds the default limit of "
-            f"{DEFAULT_MAX_PARALLEL}. This is NOT RECOMMENDED — it increases resource usage, "
-            "cost, and system load. Proceeding anyway."
-        )
     enforce_parallel_limit(args.max_parallel, mode=args.mode)
 
     # ========== SAFETY SCAN ==========
@@ -685,12 +742,7 @@ def main() -> None:
     prompt_file = build_prompt_file(tmpdir, args.review_prompt)
 
     # ========== PROMPT VALIDATION ==========
-    prompt_size = os.path.getsize(prompt_file)
-    if prompt_size == 0:
-        eprint("ERROR: Empty prompt. Pipe prompt content via stdin: echo '<prompt>' | run_codex.py ... -")
-        sys.exit(2)
-    if prompt_size > MAX_PROMPT_CHARS:
-        eprint(f"WARNING: Prompt is very large ({prompt_size} chars). Consider trimming context.")
+    _validate_prompt(prompt_file)
 
     # ========== GIT WORKTREE (after prompt validation to avoid orphans) ==========
     worktree_dir = None
@@ -721,24 +773,7 @@ def main() -> None:
         print(f"WORKTREE_DIR={worktree_dir}")
 
     if exit_code != 0:
-        skill_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        if exit_code == 101:
-            eprint(
-                f"EXIT_CODE={exit_code} — Rust panic in codex. "
-                "Do NOT retry — report this to the user."
-            )
-        elif exit_code == 137:
-            eprint(
-                f"EXIT_CODE={exit_code} — Process killed (OOM or SIGKILL). "
-                "Retry with a simpler task or smaller context, or report to user."
-            )
-        elif exit_code == 143:
-            eprint(
-                f"EXIT_CODE={exit_code} — Process terminated (SIGTERM). "
-                "Check the result file for partial output before retrying."
-            )
-        else:
-            eprint(f"EXIT_CODE={exit_code} — see {skill_dir}/references/ERROR_HANDLING.md")
+        _report_exit_error(exit_code)
 
     sys.exit(exit_code)
 

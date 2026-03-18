@@ -35,13 +35,13 @@ Use this skill when the user wants to:
 Run the pre-flight script before the first operation in a conversation:
 
 ```bash
-python3 <skill_dir>/scripts/preflight.py
+python3 <skill_dir>/scripts/eks_preflight.py
 ```
 
 To also verify a specific environment (kubeconfig + SSO):
 
 ```bash
-python3 <skill_dir>/scripts/preflight.py --env stg
+python3 <skill_dir>/scripts/eks_preflight.py --env stg
 ```
 
 If SSO is expired, tell the user: `aws sso login --sso-session <session>` (session name is in the preflight output).

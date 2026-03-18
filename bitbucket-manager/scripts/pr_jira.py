@@ -14,14 +14,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from bb_config import add_common_args, load_config, resolve_repo, resolve_workspace
 from bb_client import BitbucketClient
+from bb_config import add_common_args, load_config, resolve_repo, resolve_workspace
 
 # Match Jira-style issue keys: 2+ uppercase letters, dash, 1+ digits
 _JIRA_KEY_RE = re.compile(r"\b([A-Z]{2,}-\d+)\b")
 
 
-def _extract_keys(*texts: str) -> list:
+def _extract_keys(*texts: str) -> list[str]:
     """Extract unique Jira keys from multiple text sources, preserving order."""
     seen = set()
     keys = []
@@ -36,13 +36,15 @@ def _extract_keys(*texts: str) -> list:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Extract Jira issue keys linked to a Bitbucket PR"
-    )
+    parser = argparse.ArgumentParser(description="Extract Jira issue keys linked to a Bitbucket PR")
     add_common_args(parser)
     parser.add_argument("--pr", required=True, type=int, help="PR ID")
-    parser.add_argument("--format", choices=["table", "json"], default="table",
-                        help="Output format (default: table)")
+    parser.add_argument(
+        "--format",
+        choices=["table", "json"],
+        default="table",
+        help="Output format (default: table)",
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -59,9 +61,7 @@ def main() -> None:
     commits_data = client._paginate(
         f"/repositories/{workspace}/{repo_slug}/pullrequests/{args.pr}/commits",
     )
-    commit_messages = " ".join(
-        c.get("message", "") for c in commits_data
-    )
+    commit_messages = " ".join(c.get("message", "") for c in commits_data)
 
     keys = _extract_keys(branch, title, description, commit_messages)
 

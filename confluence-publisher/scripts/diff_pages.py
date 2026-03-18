@@ -31,30 +31,37 @@ import difflib
 import re
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config_loader import add_config_arg, load_config, connect, load_manifest, ensure_deps
+from confluence_config import (  # noqa: E402
+    ConfluenceConfig,
+    add_config_arg,
+    connect,
+    ensure_deps,
+    load_config,
+    load_manifest,
+)
 
-ensure_deps({"atlassian-python-api": "atlassian", "markdownify": "markdownify", "markdown": "markdown"})
+ensure_deps(
+    {"atlassian-python-api": "atlassian", "markdownify": "markdownify", "markdown": "markdown"}
+)
 
 from atlassian import Confluence  # noqa: E402
-from markdownify import markdownify as md_convert  # noqa: E402
+from markdownify import markdownify as md_convert  # type: ignore[import-untyped]  # noqa: E402
 from transforms import (  # noqa: E402
     markdown_to_confluence_storage,
-    rewrite_md_links,
-    strip_mermaid_blocks,
     normalize_remote_mermaid_macros,
     preprocess_confluence_storage,
+    rewrite_md_links,
+    strip_mermaid_blocks,
 )
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Diff local markdown against Confluence pages"
-    )
+    parser = argparse.ArgumentParser(description="Diff local markdown against Confluence pages")
     add_config_arg(parser)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--file", help="Single file to diff (relative to docs_dir)")
@@ -75,12 +82,13 @@ def parse_args() -> argparse.Namespace:
 # Normalization helpers
 # ---------------------------------------------------------------------------
 
+
 def storage_html_to_normalized_md(html: str) -> str:
     """Convert Confluence storage HTML to normalized markdown for diffing."""
     # Preprocess specific Confluence macros (like code blocks)
     html = preprocess_confluence_storage(html)
 
-    markdown_content = md_convert(
+    markdown_content: str = md_convert(
         html,
         heading_style="atx",
         bullets="-",
@@ -89,21 +97,23 @@ def storage_html_to_normalized_md(html: str) -> str:
     return markdown_content.strip()
 
 
-def local_md_to_storage_html(md_content: str, rel_path: str, manifest: dict, space_key: str) -> str:
+def local_md_to_storage_html(
+    md_content: str, rel_path: str, manifest: dict[str, Any], space_key: str
+) -> str:
     """Transform local markdown through the publish pipeline to produce
     Confluence storage HTML (without actually publishing).
     Mermaid blocks are replaced with stable placeholders."""
     processed = strip_mermaid_blocks(md_content)
     html = markdown_to_confluence_storage(processed)
-    html = rewrite_md_links(html, rel_path, manifest, space_key)
-    return html
+    return rewrite_md_links(html, rel_path, manifest, space_key)
 
 
 # ---------------------------------------------------------------------------
 # Fetch + diff
 # ---------------------------------------------------------------------------
 
-def fetch_page_storage_html(confluence: Confluence, page_id: str) -> Optional[str]:
+
+def fetch_page_storage_html(confluence: Confluence, page_id: str) -> str | None:
     """Fetch a Confluence page's raw storage format HTML."""
     page = confluence.get_page_by_id(
         page_id=page_id,
@@ -111,23 +121,27 @@ def fetch_page_storage_html(confluence: Confluence, page_id: str) -> Optional[st
     )
     if not page:
         return None
-    return page["body"]["storage"]["value"]
+    return page["body"]["storage"]["value"]  # type: ignore[no-any-return]
 
 
-def normalize_for_diff(text: str) -> list:
+def normalize_for_diff(text: str) -> list[str]:
     """Normalize text for diffing — strip trailing whitespace per line."""
     return [line.rstrip() for line in text.splitlines()]
 
 
-def compute_diff(remote_lines, local_lines, remote_label, local_label):
+def compute_diff(
+    remote_lines: list[str], local_lines: list[str], remote_label: str, local_label: str
+) -> tuple[list[str], int, int]:
     """Compute unified diff and return (diff_lines, added_count, removed_count)."""
-    diff_result = list(difflib.unified_diff(
-        remote_lines,
-        local_lines,
-        fromfile=remote_label,
-        tofile=local_label,
-        lineterm="",
-    ))
+    diff_result = list(
+        difflib.unified_diff(
+            remote_lines,
+            local_lines,
+            fromfile=remote_label,
+            tofile=local_label,
+            lineterm="",
+        )
+    )
     added = sum(1 for line in diff_result if line.startswith("+") and not line.startswith("+++"))
     removed = sum(1 for line in diff_result if line.startswith("-") and not line.startswith("---"))
     return diff_result, added, removed
@@ -135,8 +149,8 @@ def compute_diff(remote_lines, local_lines, remote_label, local_label):
 
 def diff_file(
     confluence: Confluence,
-    config,
-    manifest: dict,
+    config: ConfluenceConfig,
+    manifest: dict[str, Any],
     rel_path: str,
     show_full_diff: bool,
 ) -> str:
@@ -220,19 +234,18 @@ def main():
     show_full_diff = not args.summary
     counts = {"changed": 0, "unchanged": 0, "new": 0, "no_page": 0, "no_file": 0}
 
-    if args.file:
-        files_to_diff = [args.file]
-    else:
-        files_to_diff = sorted(manifest.keys())
+    files_to_diff = [args.file] if args.file else sorted(manifest.keys())
 
     for rel_path in files_to_diff:
         status = diff_file(confluence, config, manifest, rel_path, show_full_diff)
         counts[status] = counts.get(status, 0) + 1
 
     print("-" * 60)
-    print(f"Summary: {counts['changed']} changed, {counts['unchanged']} unchanged, "
-          f"{counts['new']} new, {counts['no_page']} missing on Confluence, "
-          f"{counts['no_file']} missing locally")
+    print(
+        f"Summary: {counts['changed']} changed, {counts['unchanged']} unchanged, "
+        f"{counts['new']} new, {counts['no_page']} missing on Confluence, "
+        f"{counts['no_file']} missing locally"
+    )
 
     if output_file:
         output_file.close()

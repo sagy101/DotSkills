@@ -49,11 +49,11 @@ This skill gives **any SKILL.md-compatible agent** the ability to publish, sync,
 
 **7. Credentials via environment variables** — Never hardcoded, never logged. The config file (`.confluence.json`) stores only the *names* of the env vars, not the values. Pre-flight checks confirm they're set without printing them. Optional `.env` file support via the `env_file` config key (path-traversal protected — must resolve inside the project root). Environment variable names are validated against `[A-Za-z_][A-Za-z0-9_]*` to prevent shell injection in credential hints.
 
-**8. Virtual environment isolation** — `setup_env.py` creates `.venv/` inside the skill directory (e.g., `confluence-publisher/.venv/`). The agent invokes scripts using the absolute path to the venv Python interpreter (e.g., `/path/to/confluence-publisher/.venv/bin/python`) — no shell activation required. This keeps the skill self-contained and works identically whether installed in the repo or synced to `~/.codeium/windsurf/skills/`.
+**8. Virtual environment isolation** — `confluence_setup_env.py` creates `.venv/` inside the skill directory (e.g., `confluence-publisher/.venv/`). The agent invokes scripts using the absolute path to the venv Python interpreter (e.g., `/path/to/confluence-publisher/.venv/bin/python`) — no shell activation required. This keeps the skill self-contained and works identically whether installed in the repo or synced to `~/.codeium/windsurf/skills/`.
 
 **9. Config discovery with git root boundary** — `.confluence.json` is discovered by walking up from CWD, stopping at the nearest git root to avoid picking up configs from unrelated parent directories. Global config (`~/.confluence.json`) is merged underneath project-level config (project wins on conflict). An explicit `--config` flag overrides discovery entirely.
 
-**10. Module structure** — `config_loader.py` handles configuration loading, credential resolution, shell detection, and manifest I/O. `page_utils.py` contains page reference utilities (tiny link codec, page ID extraction, title resolution, child page pagination). All scripts share the same `--config` argument definition via `add_config_arg()` for consistency.
+**10. Module structure** — `confluence_config.py` handles configuration loading, credential resolution, shell detection, and manifest I/O. `page_utils.py` contains page reference utilities (tiny link codec, page ID extraction, title resolution, child page pagination). All scripts share the same `--config` argument definition via `add_config_arg()` for consistency.
 
 ---
 

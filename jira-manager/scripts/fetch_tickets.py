@@ -13,20 +13,23 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import add_config_arg, load_config
 from jira_client import JiraClient
+from jira_config_loader import JiraConfig, add_config_arg, load_config
 from jql_builder import build_board_jql, build_jql_from_filters
 from markup_converter import jira_markup_to_md
 
 
-def format_issue_table(issues, config):
+def format_issue_table(issues: list[dict[str, Any]], config: JiraConfig) -> str:
     """Format issues as a readable table."""
     sp_field = config.get_field_id("story_points")
 
     lines = []
-    lines.append(f"{'Key':<12} {'Type':<12} {'SP':>4}  {'Priority':<12} {'Status':<14} {'Sprint':<20} Summary")
+    lines.append(
+        f"{'Key':<12} {'Type':<12} {'SP':>4}  {'Priority':<12} {'Status':<14} {'Sprint':<20} Summary"
+    )
     lines.append("-" * 116)
 
     for issue in issues:
@@ -42,12 +45,14 @@ def format_issue_table(issues, config):
         sprint = _extract_sprint_name(fields, config) or ""
         if len(sprint) > 18:
             sprint = sprint[:17] + "\u2026"
-        lines.append(f"{key:<12} {itype:<12} {sp:>4}  {priority:<12} {status:<14} {sprint:<20} {summary}")
+        lines.append(
+            f"{key:<12} {itype:<12} {sp:>4}  {priority:<12} {status:<14} {sprint:<20} {summary}"
+        )
 
     return "\n".join(lines)
 
 
-def _extract_sprint_from_value(sprint_data):
+def _extract_sprint_from_value(sprint_data: object) -> str | None:
     """Parse a sprint value which may be a dict, list, or legacy string."""
     if isinstance(sprint_data, dict):
         return sprint_data.get("name")
@@ -60,7 +65,7 @@ def _extract_sprint_from_value(sprint_data):
     return None
 
 
-def _extract_sprint_name(fields, config):
+def _extract_sprint_name(fields: dict[str, Any], config: JiraConfig) -> str | None:
     """Extract sprint name from issue fields (standard API sprint custom field)."""
     sprint_field = config.get_field_id("sprint")
     if not sprint_field:
@@ -68,7 +73,9 @@ def _extract_sprint_name(fields, config):
     return _extract_sprint_from_value(fields.get(sprint_field))
 
 
-def format_issue_detail(issue, config, convert_markup=True):
+def format_issue_detail(
+    issue: dict[str, Any], config: JiraConfig, convert_markup: bool = True
+) -> str:
     """Format a single issue with full details."""
     sp_field = config.get_field_id("story_points")
     fields = issue.get("fields", {})
@@ -97,7 +104,9 @@ def format_issue_detail(issue, config, convert_markup=True):
 
     parent = fields.get("parent")
     if parent:
-        lines.append(f"Parent:      {parent['key']} - {parent.get('fields', {}).get('summary', '')}")
+        lines.append(
+            f"Parent:      {parent['key']} - {parent.get('fields', {}).get('summary', '')}"
+        )
 
     desc = fields.get("description", "")
     if desc:
@@ -110,7 +119,14 @@ def format_issue_detail(issue, config, convert_markup=True):
     return "\n".join(lines)
 
 
-def _handle_key(client, config, key, format_type, fields, convert=True):
+def _handle_key(
+    client: JiraClient,
+    config: JiraConfig,
+    key: str,
+    format_type: str,
+    fields: list[str] | None,
+    convert: bool = True,
+) -> None:
     try:
         issue = client.get_issue(key, fields=fields)
         if format_type == "json":
@@ -124,11 +140,17 @@ def _handle_key(client, config, key, format_type, fields, convert=True):
         sys.exit(1)
 
 
-def _handle_jql(client, config, jql, format_type, fields, max_results, convert=True):
+def _handle_jql(
+    client: JiraClient,
+    config: JiraConfig,
+    jql: str,
+    format_type: str,
+    fields: list[str] | None,
+    max_results: int,
+    convert: bool = True,
+) -> None:
     try:
-        result = client.search_jql(
-            jql, fields=fields, max_results=max_results
-        )
+        result = client.search_jql(jql, fields=fields, max_results=max_results)
         issues = result.get("issues", [])
         total = result.get("total", 0)
 
@@ -149,7 +171,14 @@ def _handle_jql(client, config, jql, format_type, fields, max_results, convert=T
         sys.exit(1)
 
 
-def _handle_children(client, config, parent_key, format_type, fields, convert=True):
+def _handle_children(
+    client: JiraClient,
+    config: JiraConfig,
+    parent_key: str,
+    format_type: str,
+    fields: list[str] | None,
+    convert: bool = True,
+) -> None:
     try:
         issues = client.get_children(parent_key, fields=fields)
 
@@ -168,19 +197,24 @@ def _handle_children(client, config, parent_key, format_type, fields, convert=Tr
         sys.exit(1)
 
 
-def _handle_board_issues(client, config, board_id, filter_args, format_type, fields, max_results, convert=True, fetch_all=False):
+def _handle_board_issues(
+    client: JiraClient,
+    config: JiraConfig,
+    board_id: int,
+    filter_args: list[str] | None,
+    format_type: str,
+    fields: list[str] | None,
+    max_results: int,
+    convert: bool = True,
+    fetch_all: bool = False,
+) -> None:
     try:
         jql = build_board_jql(client, board_id, filter_pairs=filter_args, fetch_all=fetch_all)
-            
-        issues = client.get_board_issues(
-            board_id, 
-            jql=jql, 
-            fields=fields, 
-            max_results=max_results
-        )
-        
+
+        issues = client.get_board_issues(board_id, jql=jql, fields=fields, max_results=max_results)
+
         truncated = max_results > 0 and len(issues) >= max_results
-        
+
         if format_type == "json":
             print(json.dumps(issues, indent=2))
         elif format_type == "detail":
@@ -189,21 +223,23 @@ def _handle_board_issues(client, config, board_id, filter_args, format_type, fie
                 print("-" * 40)
         else:
             print(format_issue_table(issues, config))
-        
+
         print(f"\nTotal: {len(issues)}")
         if truncated:
-            print(f"NOTE: Results capped at --max-results {max_results}. The board may contain more issues. Use --max-results to increase the limit.")
+            print(
+                f"NOTE: Results capped at --max-results {max_results}. The board may contain more issues. Use --max-results to increase the limit."
+            )
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
-def _build_filter_jql(args, config):
+def _build_filter_jql(args: argparse.Namespace, config: JiraConfig) -> str:
     """Legacy wrapper for build_jql_from_filters."""
     return build_jql_from_filters(args.filter, config, include_project_scope=True)
 
 
-def _handle_boards(client, fmt):
+def _handle_boards(client: JiraClient, fmt: str) -> None:
     """List Agile boards for the project."""
     boards = client.get_boards()
     if fmt == "json":
@@ -219,7 +255,7 @@ def _handle_boards(client, fmt):
     print(f"\nTotal: {len(boards)}")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Fetch Jira issues")
     add_config_arg(parser)
 
@@ -283,13 +319,21 @@ def main():
         args.filter = [item for sublist in args.filter for item in sublist]
 
     # Validate exclusive options
-    mode_count = sum(1 for x in [args.key, args.keys, args.jql, args.children_of, args.boards, args.board_id] if x)
+    mode_count = sum(
+        1
+        for x in [args.key, args.keys, args.jql, args.children_of, args.boards, args.board_id]
+        if x
+    )
     if mode_count > 1:
-        parser.error("Conflicting options: provide only one of --key, --keys, --jql, --children-of, --boards, or --board-id")
+        parser.error(
+            "Conflicting options: provide only one of --key, --keys, --jql, --children-of, --boards, or --board-id"
+        )
 
     # If filter is provided without a primary mode, it counts as a mode (Project Search)
     if mode_count == 0 and not args.filter:
-        parser.error("Must provide one of --key, --keys, --jql, --children-of, --filter, --boards, or --board-id")
+        parser.error(
+            "Must provide one of --key, --keys, --jql, --children-of, --filter, --boards, or --board-id"
+        )
 
     config = load_config(args.config)
     client = JiraClient(config)
@@ -303,7 +347,17 @@ def main():
     if args.boards:
         _handle_boards(client, args.format)
     elif args.board_id:
-        _handle_board_issues(client, config, args.board_id, args.filter, args.format, field_list, args.max_results, convert, fetch_all=args.fetch_all)
+        _handle_board_issues(
+            client,
+            config,
+            args.board_id,
+            args.filter,
+            args.format,
+            field_list,
+            args.max_results,
+            convert,
+            fetch_all=args.fetch_all,
+        )
     elif args.key:
         _handle_key(client, config, args.key, args.format, field_list, convert)
     elif args.keys:

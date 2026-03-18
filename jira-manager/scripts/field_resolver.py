@@ -13,17 +13,20 @@ JQL building has been moved to jql_builder.py.
 Workflow operations (transitions, attachments) have been moved to workflow_ops.py.
 """
 
+import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
+from jira_config_loader import JiraConfig
 from link_rewriter import rewrite_links_to_git
 from markup_converter import md_to_jira_markup
-
 
 # ------------------------------------------------------------------
 # Normalization
 # ------------------------------------------------------------------
+
 
 def normalize_key(name: str) -> str:
     """Normalize a display name to a lowercase snake_case key."""
@@ -34,7 +37,10 @@ def normalize_key(name: str) -> str:
 # Catalog resolution
 # ------------------------------------------------------------------
 
-def resolve_catalog_value(config, catalog_key, user_value):
+
+def resolve_catalog_value(
+    config: JiraConfig, catalog_key: str, user_value: str
+) -> dict[str, Any] | None:
     """Look up a user-provided value in the field_catalog.
 
     Tries exact key match, then normalized match, then name match.
@@ -49,13 +55,13 @@ def resolve_catalog_value(config, catalog_key, user_value):
 
     # Exact key match
     if normalized in values:
-        return values[normalized]
+        return values[normalized]  # type: ignore[no-any-return]
 
     # Match by 'name' field (case-insensitive)
     lower_val = user_value.strip().lower()
     for entry in values.values():
         if entry.get("name", "").lower() == lower_val:
-            return entry
+            return entry  # type: ignore[no-any-return]
 
     return None
 
@@ -72,7 +78,9 @@ _ARRAY_OBJECT_TYPES = {"component", "version"}
 _ARRAY_CATALOG_KEYS = {"components", "fix_versions"}
 
 
-def _resolve_from_catalog(config, normalized, field_value, entry):
+def _resolve_from_catalog(
+    config: JiraConfig, normalized: str, field_value: str, entry: dict[str, Any]
+) -> tuple[str | None, object, str | None]:
     """Resolve a field value using a top-level catalog entry.
 
     Returns (jira_field_id, jira_value, status_value) or None if not applicable.
@@ -99,7 +107,9 @@ def _resolve_from_catalog(config, normalized, field_value, entry):
     return jira_field_id, field_value, None
 
 
-def _resolve_from_fallbacks(config, normalized, field_name, field_value):
+def _resolve_from_fallbacks(
+    config: JiraConfig, normalized: str, field_name: str, field_value: str
+) -> tuple[str, object, None]:
     """Try field_mappings, _fields_index, then use field_name as-is."""
     mapped_id = config.get_field_id(normalized)
     if mapped_id:
@@ -115,7 +125,9 @@ def _resolve_from_fallbacks(config, normalized, field_name, field_value):
     return field_name, field_value, None
 
 
-def resolve_set_field(config, field_name, field_value):
+def resolve_set_field(
+    config: JiraConfig, field_name: str, field_value: str
+) -> tuple[str | None, object, str | None]:
     """Resolve a --set field_name=value pair into a (jira_field_id, jira_value, status_value) tuple.
 
     Resolution order:
@@ -140,7 +152,8 @@ def resolve_set_field(config, field_name, field_value):
 # Named field helpers
 # ------------------------------------------------------------------
 
-def resolve_description(args, config):
+
+def resolve_description(args: argparse.Namespace, config: JiraConfig) -> str | None:
     """Resolve and transform the description from CLI args.
 
     For create: defaults to empty string (returns None if empty).
@@ -155,10 +168,12 @@ def resolve_description(args, config):
         description = rewrite_links_to_git(description, config)
     if description and not args.no_convert:
         description = md_to_jira_markup(description)
-    return description
+    return description  # type: ignore[no-any-return]
 
 
-def apply_story_points(fields, args, config):
+def apply_story_points(
+    fields: dict[str, Any], args: argparse.Namespace, config: JiraConfig
+) -> None:
     """Add story_points to fields dict if provided."""
     if args.story_points is None:
         return
@@ -173,13 +188,13 @@ def apply_story_points(fields, args, config):
         )
 
 
-def apply_labels(fields, args):
+def apply_labels(fields: dict[str, Any], args: argparse.Namespace) -> None:
     """Add labels to fields dict if provided."""
     if args.labels:
-        fields["labels"] = [l.strip() for l in args.labels.split(",")]
+        fields["labels"] = [label.strip() for label in args.labels.split(",")]
 
 
-def apply_priority(fields, args, config):
+def apply_priority(fields: dict[str, Any], args: argparse.Namespace, config: JiraConfig) -> None:
     """Add priority to fields dict if provided."""
     if not args.priority:
         return
@@ -190,7 +205,7 @@ def apply_priority(fields, args, config):
         fields["priority"] = {"name": args.priority}
 
 
-def apply_assignee(fields, args):
+def apply_assignee(fields: dict[str, Any], args: argparse.Namespace) -> None:
     """Add assignee to fields dict if provided. Empty string unassigns."""
     if args.assignee is None:
         return
@@ -200,7 +215,7 @@ def apply_assignee(fields, args):
         fields["assignee"] = {"name": args.assignee}
 
 
-def apply_components(fields, args, config):
+def apply_components(fields: dict[str, Any], args: argparse.Namespace, config: JiraConfig) -> None:
     """Add components to fields dict if provided."""
     if not args.component:
         return
@@ -214,7 +229,9 @@ def apply_components(fields, args, config):
     fields["components"] = components
 
 
-def apply_fix_versions(fields, args, config):
+def apply_fix_versions(
+    fields: dict[str, Any], args: argparse.Namespace, config: JiraConfig
+) -> None:
     """Add fix versions to fields dict if provided."""
     if not args.fix_version:
         return
@@ -228,7 +245,7 @@ def apply_fix_versions(fields, args, config):
     fields["fixVersions"] = versions
 
 
-def resolve_sprint_id(config, sprint_value):
+def resolve_sprint_id(config: JiraConfig, sprint_value: str) -> tuple[int | None, str | None]:
     """Resolve a sprint name or ID to a numeric sprint ID.
 
     Checks the field_catalog sprint values first, then tries int parse.
@@ -243,7 +260,9 @@ def resolve_sprint_id(config, sprint_value):
         return None, None
 
 
-def apply_named_fields(fields, args, config):
+def apply_named_fields(
+    fields: dict[str, Any], args: argparse.Namespace, config: JiraConfig
+) -> None:
     """Apply all named field flags (priority, assignee, component, fix-version,
     story-points, labels) to the fields dict.
 
@@ -258,7 +277,9 @@ def apply_named_fields(fields, args, config):
     apply_fix_versions(fields, args, config)
 
 
-def apply_set_pairs(fields, args, config):
+def apply_set_pairs(
+    fields: dict[str, Any], args: argparse.Namespace, config: JiraConfig
+) -> str | None:
     """Process --set pairs and apply to fields dict.
 
     Returns the status value if --set "status=..." was used, else None.
@@ -275,9 +296,7 @@ def apply_set_pairs(fields, args, config):
             )
             sys.exit(1)
         fname, _, fval = pair.partition("=")
-        jira_id, jira_val, status_val = resolve_set_field(
-            config, fname.strip(), fval.strip()
-        )
+        jira_id, jira_val, status_val = resolve_set_field(config, fname.strip(), fval.strip())
         if status_val is not None:
             status_from_set = status_val
         elif jira_id is not None:
@@ -286,16 +305,18 @@ def apply_set_pairs(fields, args, config):
     return status_from_set
 
 
-def apply_extra_fields(fields, args):
+def apply_extra_fields(fields: dict[str, Any], args: argparse.Namespace) -> None:
     """Merge --fields JSON into fields dict if provided."""
     if args.fields:
         extra = json.loads(args.fields)
         fields.update(extra)
 
 
-def build_update_fields(args, config):
+def build_update_fields(
+    args: argparse.Namespace, config: JiraConfig
+) -> tuple[dict[str, Any], str | None]:
     """Build the fields dict from CLI arguments.
-    
+
     Shared by update_ticket.py and bulk_update.py.
     """
     fields = {}
@@ -318,7 +339,8 @@ def build_update_fields(args, config):
 # Issue type resolution
 # ------------------------------------------------------------------
 
-def resolve_issue_type(config, type_name):
+
+def resolve_issue_type(config: JiraConfig, type_name: str) -> dict[str, str]:
     """Resolve an issue type name to a Jira field dict ({id: ...} or {name: ...})."""
     type_id = config.get_issue_type_id(type_name)
     if type_id:
@@ -334,7 +356,9 @@ def resolve_issue_type(config, type_name):
 _IMPLICIT_FIELDS = {"project", "summary", "issuetype", "parent"}
 
 
-def validate_required_fields(config, issue_type_name, fields):
+def validate_required_fields(
+    config: JiraConfig, issue_type_name: str, fields: dict[str, Any]
+) -> list[dict[str, str]]:
     """Check create_meta for required fields missing from the fields dict.
 
     Returns a list of dicts: [{"id": ..., "name": ...}, ...] for each
@@ -351,18 +375,15 @@ def validate_required_fields(config, issue_type_name, fields):
         return []
 
     provided = set(fields.keys()) | _IMPLICIT_FIELDS
-    missing = []
-    for req in type_info.get("required_fields", []):
-        if req["id"] not in provided:
-            missing.append(req)
-    return missing
+    return [req for req in type_info.get("required_fields", []) if req["id"] not in provided]  # type: ignore[no-any-return]
 
 
 # ------------------------------------------------------------------
 # Argparse helpers
 # ------------------------------------------------------------------
 
-def add_common_field_args(parser):
+
+def add_common_field_args(parser: argparse.ArgumentParser) -> None:
     """Add the shared field-related arguments to an argparse parser."""
     parser.add_argument("--description", help="Description text")
     parser.add_argument("--description-file", help="Read description from file")
@@ -370,8 +391,7 @@ def add_common_field_args(parser):
     parser.add_argument("--labels", help="Comma-separated labels")
     parser.add_argument(
         "--status",
-        help="Target status name (e.g. 'In Progress', 'Done'). "
-             "Uses workflow transitions.",
+        help="Target status name (e.g. 'In Progress', 'Done'). Uses workflow transitions.",
     )
     parser.add_argument(
         "--priority",
@@ -394,18 +414,16 @@ def add_common_field_args(parser):
     parser.add_argument(
         "--sprint",
         help="Sprint name or ID. Resolved from field_catalog if discovered. "
-             "Uses Agile API to move the issue into the sprint.",
+        "Uses Agile API to move the issue into the sprint.",
     )
     parser.add_argument(
         "--set",
         action="append",
         metavar="FIELD=VALUE",
         help="Set any field by friendly name: --set 'priority=High'. "
-             "Resolves via field_catalog. Can be repeated.",
+        "Resolves via field_catalog. Can be repeated.",
     )
-    parser.add_argument(
-        "--fields", help='Extra fields as JSON: \'{"customfield_123": "val"}\''
-    )
+    parser.add_argument("--fields", help='Extra fields as JSON: \'{"customfield_123": "val"}\'')
     parser.add_argument(
         "--rewrite-links",
         action="store_true",

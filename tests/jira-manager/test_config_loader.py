@@ -9,8 +9,15 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-_MODULE_PATH = Path(__file__).resolve().parent.parent.parent / "jira-manager" / "scripts" / "config_loader.py"
+_MODULE_PATH = (
+    Path(__file__).resolve().parent.parent.parent
+    / "jira-manager"
+    / "scripts"
+    / "jira_config_loader.py"
+)
 _spec = importlib.util.spec_from_file_location("jira_config_loader", _MODULE_PATH)
+assert _spec is not None
+assert _spec.loader is not None
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 sys.modules["jira_config_loader"] = _mod
@@ -28,42 +35,53 @@ load_config = _mod.load_config
 # detect_shell
 # ---------------------------------------------------------------------------
 
+
 class TestDetectShell:
     def test_zsh_on_macos(self):
-        with mock.patch.dict(os.environ, {"SHELL": "/bin/zsh"}, clear=False), \
-             mock.patch("jira_config_loader.sys") as mock_sys:
+        with (
+            mock.patch.dict(os.environ, {"SHELL": "/bin/zsh"}, clear=False),
+            mock.patch("jira_config_loader.sys") as mock_sys,
+        ):
             mock_sys.platform = "darwin"
             name, rc = detect_shell()
             assert name == "zsh"
             assert rc == "~/.zshrc"
 
     def test_bash_on_linux(self):
-        with mock.patch.dict(os.environ, {"SHELL": "/bin/bash"}, clear=False), \
-             mock.patch("jira_config_loader.sys") as mock_sys:
+        with (
+            mock.patch.dict(os.environ, {"SHELL": "/bin/bash"}, clear=False),
+            mock.patch("jira_config_loader.sys") as mock_sys,
+        ):
             mock_sys.platform = "linux"
             name, rc = detect_shell()
             assert name == "bash"
             assert rc == "~/.bashrc"
 
     def test_bash_on_macos(self):
-        with mock.patch.dict(os.environ, {"SHELL": "/bin/bash"}, clear=False), \
-             mock.patch("jira_config_loader.sys") as mock_sys:
+        with (
+            mock.patch.dict(os.environ, {"SHELL": "/bin/bash"}, clear=False),
+            mock.patch("jira_config_loader.sys") as mock_sys,
+        ):
             mock_sys.platform = "darwin"
             name, rc = detect_shell()
             assert name == "bash"
             assert rc == "~/.bash_profile"
 
     def test_fish(self):
-        with mock.patch.dict(os.environ, {"SHELL": "/usr/bin/fish"}, clear=False), \
-             mock.patch("jira_config_loader.sys") as mock_sys:
+        with (
+            mock.patch.dict(os.environ, {"SHELL": "/usr/bin/fish"}, clear=False),
+            mock.patch("jira_config_loader.sys") as mock_sys,
+        ):
             mock_sys.platform = "linux"
             name, rc = detect_shell()
             assert name == "fish"
             assert rc == "~/.config/fish/config.fish"
 
     def test_unknown_shell_falls_back_to_profile(self):
-        with mock.patch.dict(os.environ, {"SHELL": "/usr/bin/ksh"}, clear=False), \
-             mock.patch("jira_config_loader.sys") as mock_sys:
+        with (
+            mock.patch.dict(os.environ, {"SHELL": "/usr/bin/ksh"}, clear=False),
+            mock.patch("jira_config_loader.sys") as mock_sys,
+        ):
             mock_sys.platform = "linux"
             name, rc = detect_shell()
             assert name == "ksh"
@@ -72,8 +90,10 @@ class TestDetectShell:
     def test_no_shell_env_falls_back_to_sh(self):
         env = os.environ.copy()
         env.pop("SHELL", None)
-        with mock.patch.dict(os.environ, env, clear=True), \
-             mock.patch("jira_config_loader.sys") as mock_sys:
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch("jira_config_loader.sys") as mock_sys,
+        ):
             mock_sys.platform = "linux"
             name, rc = detect_shell()
             assert name == "sh"
@@ -83,15 +103,21 @@ class TestDetectShell:
         env = os.environ.copy()
         env.pop("PSModulePath", None)
         env["COMSPEC"] = r"C:\Windows\system32\cmd.exe"
-        with mock.patch.dict(os.environ, env, clear=True), \
-             mock.patch("jira_config_loader.sys") as mock_sys:
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch("jira_config_loader.sys") as mock_sys,
+        ):
             mock_sys.platform = "win32"
             name, _rc = detect_shell()
             assert name == "cmd"
 
     def test_windows_powershell_via_comspec(self):
-        with mock.patch.dict(os.environ, {"COMSPEC": r"C:\Program Files\PowerShell\7\pwsh.exe"}, clear=False), \
-             mock.patch("jira_config_loader.sys") as mock_sys:
+        with (
+            mock.patch.dict(
+                os.environ, {"COMSPEC": r"C:\Program Files\PowerShell\7\pwsh.exe"}, clear=False
+            ),
+            mock.patch("jira_config_loader.sys") as mock_sys,
+        ):
             mock_sys.platform = "win32"
             name, rc = detect_shell()
             assert name == "pwsh"
@@ -101,8 +127,10 @@ class TestDetectShell:
         env = os.environ.copy()
         env["COMSPEC"] = r"C:\Windows\system32\cmd.exe"
         env["PSModulePath"] = r"C:\Users\test\Documents\PowerShell\Modules"
-        with mock.patch.dict(os.environ, env, clear=True), \
-             mock.patch("jira_config_loader.sys") as mock_sys:
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch("jira_config_loader.sys") as mock_sys,
+        ):
             mock_sys.platform = "win32"
             name, rc = detect_shell()
             assert name == "pwsh"
@@ -113,6 +141,7 @@ class TestDetectShell:
 # _credential_hint
 # ---------------------------------------------------------------------------
 
+
 class TestCredentialHint:
     def test_zsh_hint(self):
         with mock.patch("jira_config_loader.detect_shell", return_value=("zsh", "~/.zshrc")):
@@ -121,7 +150,9 @@ class TestCredentialHint:
             assert "~/.zshrc" in hint
 
     def test_fish_hint(self):
-        with mock.patch("jira_config_loader.detect_shell", return_value=("fish", "~/.config/fish/config.fish")):
+        with mock.patch(
+            "jira_config_loader.detect_shell", return_value=("fish", "~/.config/fish/config.fish")
+        ):
             hint = _credential_hint("JIRA_TOKEN")
             assert "set -Ux JIRA_TOKEN" in hint
 
@@ -132,7 +163,9 @@ class TestCredentialHint:
             assert "JIRA_TOKEN" in hint
 
     def test_cmd_hint(self):
-        with mock.patch("jira_config_loader.detect_shell", return_value=("cmd", "%USERPROFILE%\\.env")):
+        with mock.patch(
+            "jira_config_loader.detect_shell", return_value=("cmd", "%USERPROFILE%\\.env")
+        ):
             hint = _credential_hint("JIRA_TOKEN")
             assert "setx JIRA_TOKEN" in hint
 
@@ -140,6 +173,7 @@ class TestCredentialHint:
 # ---------------------------------------------------------------------------
 # _deep_merge
 # ---------------------------------------------------------------------------
+
 
 class TestDeepMerge:
     def test_flat_merge(self):
@@ -181,6 +215,7 @@ class TestDeepMerge:
 # Config discovery (_find_project_config, _find_global_config)
 # ---------------------------------------------------------------------------
 
+
 class TestConfigDiscovery:
     def test_find_project_config_in_cwd(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -193,7 +228,7 @@ class TestConfigDiscovery:
     def test_find_project_config_walks_up(self):
         with tempfile.TemporaryDirectory() as tmp:
             config_file = Path(tmp) / ".jira.json"
-            config_file.write_text('{}')
+            config_file.write_text("{}")
             subdir = Path(tmp) / "sub" / "deep"
             subdir.mkdir(parents=True)
             result = _find_project_config(start_dir=str(subdir))
@@ -209,31 +244,38 @@ class TestConfigDiscovery:
         with tempfile.TemporaryDirectory() as tmp:
             fake_home = Path(tmp)
             config_file = fake_home / ".jira.json"
-            config_file.write_text('{}')
+            config_file.write_text("{}")
             with mock.patch("jira_config_loader.Path.home", return_value=fake_home):
                 result = _find_global_config()
                 assert result is not None
                 assert result == config_file
 
     def test_find_global_config_missing(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch("jira_config_loader.Path.home", return_value=Path(tmp)):
-                result = _find_global_config()
-                assert result is None
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch("jira_config_loader.Path.home", return_value=Path(tmp)),
+        ):
+            result = _find_global_config()
+            assert result is None
 
 
 # ---------------------------------------------------------------------------
 # load_config (with merge)
 # ---------------------------------------------------------------------------
 
+
 class TestLoadConfig:
     def test_explicit_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             config_file = Path(tmp) / ".jira.json"
-            config_file.write_text(json.dumps({
-                "jira_url": "https://test.atlassian.net",
-                "project_key": "TEST",
-            }))
+            config_file.write_text(
+                json.dumps(
+                    {
+                        "jira_url": "https://test.atlassian.net",
+                        "project_key": "TEST",
+                    }
+                )
+            )
             config = load_config(str(config_file))
             assert config.jira_url == "https://test.atlassian.net"
             assert config.project_key == "TEST"
@@ -246,19 +288,32 @@ class TestLoadConfig:
             project_dir.mkdir()
 
             global_cfg = fake_home / ".jira.json"
-            global_cfg.write_text(json.dumps({
-                "jira_url": "https://global.atlassian.net",
-                "credentials": {"username_env": "GLOBAL_EMAIL", "token_env": "GLOBAL_TOKEN"},
-            }))
+            global_cfg.write_text(
+                json.dumps(
+                    {
+                        "jira_url": "https://global.atlassian.net",
+                        "credentials": {
+                            "username_env": "GLOBAL_EMAIL",
+                            "token_env": "GLOBAL_TOKEN",
+                        },
+                    }
+                )
+            )
 
             project_cfg = project_dir / ".jira.json"
-            project_cfg.write_text(json.dumps({
-                "project_key": "PROJ",
-                "credentials": {"token_env": "PROJECT_TOKEN"},
-            }))
+            project_cfg.write_text(
+                json.dumps(
+                    {
+                        "project_key": "PROJ",
+                        "credentials": {"token_env": "PROJECT_TOKEN"},
+                    }
+                )
+            )
 
-            with mock.patch("jira_config_loader.Path.home", return_value=fake_home), \
-                 mock.patch("jira_config_loader._find_project_config", return_value=project_cfg):
+            with (
+                mock.patch("jira_config_loader.Path.home", return_value=fake_home),
+                mock.patch("jira_config_loader._find_project_config", return_value=project_cfg),
+            ):
                 config = load_config()
                 assert config.jira_url == "https://global.atlassian.net"
                 assert config.project_key == "PROJ"
@@ -269,33 +324,44 @@ class TestLoadConfig:
         with tempfile.TemporaryDirectory() as tmp:
             fake_home = Path(tmp)
             global_cfg = fake_home / ".jira.json"
-            global_cfg.write_text(json.dumps({
-                "jira_url": "https://global.atlassian.net",
-                "project_key": "GLOB",
-            }))
+            global_cfg.write_text(
+                json.dumps(
+                    {
+                        "jira_url": "https://global.atlassian.net",
+                        "project_key": "GLOB",
+                    }
+                )
+            )
 
-            with mock.patch("jira_config_loader.Path.home", return_value=fake_home), \
-                 mock.patch("jira_config_loader._find_project_config", return_value=None):
+            with (
+                mock.patch("jira_config_loader.Path.home", return_value=fake_home),
+                mock.patch("jira_config_loader._find_project_config", return_value=None),
+            ):
                 config = load_config()
                 assert config.jira_url == "https://global.atlassian.net"
                 assert config.project_key == "GLOB"
 
     def test_missing_config_exits(self):
         import pytest
-        with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch("jira_config_loader.Path.home", return_value=Path(tmp)), \
-                 mock.patch("jira_config_loader._find_project_config", return_value=None), \
-                 pytest.raises(SystemExit, match="1"):
-                load_config()
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch("jira_config_loader.Path.home", return_value=Path(tmp)),
+            mock.patch("jira_config_loader._find_project_config", return_value=None),
+            pytest.raises(SystemExit, match="1"),
+        ):
+            load_config()
 
 
 # ---------------------------------------------------------------------------
 # add_config_arg
 # ---------------------------------------------------------------------------
 
+
 class TestAddConfigArg:
     def test_adds_optional_config_arg(self):
         import argparse
+
         parser = argparse.ArgumentParser()
         add_config_arg(parser)
         args = parser.parse_args([])
@@ -303,6 +369,7 @@ class TestAddConfigArg:
 
     def test_accepts_config_value(self):
         import argparse
+
         parser = argparse.ArgumentParser()
         add_config_arg(parser)
         args = parser.parse_args(["--config", "/path/to/.jira.json"])
@@ -353,7 +420,7 @@ class TestGitRootBoundary:
             repo.mkdir()
             (repo / ".git").mkdir()
             cfg = repo / CONFIG_FILENAME
-            cfg.write_text('{}')
+            cfg.write_text("{}")
             subdir = repo / "src"
             subdir.mkdir()
             result = _find_project_config(start_dir=str(subdir))
@@ -364,38 +431,54 @@ class TestGitRootBoundary:
 # Type validation (M5)
 # ---------------------------------------------------------------------------
 
+
 class TestTypeValidation:
     def test_non_string_jira_url_exits(self):
         import pytest
+
         with tempfile.TemporaryDirectory() as tmp:
             cfg = Path(tmp) / ".jira.json"
-            cfg.write_text(json.dumps({
-                "jira_url": 12345,
-                "project_key": "TEST",
-            }))
+            cfg.write_text(
+                json.dumps(
+                    {
+                        "jira_url": 12345,
+                        "project_key": "TEST",
+                    }
+                )
+            )
             with pytest.raises(SystemExit):
                 load_config(str(cfg))
 
     def test_empty_project_key_exits(self):
         import pytest
+
         with tempfile.TemporaryDirectory() as tmp:
             cfg = Path(tmp) / ".jira.json"
-            cfg.write_text(json.dumps({
-                "jira_url": "https://test.atlassian.net",
-                "project_key": "   ",
-            }))
+            cfg.write_text(
+                json.dumps(
+                    {
+                        "jira_url": "https://test.atlassian.net",
+                        "project_key": "   ",
+                    }
+                )
+            )
             with pytest.raises(SystemExit):
                 load_config(str(cfg))
 
     def test_credentials_not_dict_exits(self):
         import pytest
+
         with tempfile.TemporaryDirectory() as tmp:
             cfg = Path(tmp) / ".jira.json"
-            cfg.write_text(json.dumps({
-                "jira_url": "https://test.atlassian.net",
-                "project_key": "TEST",
-                "credentials": "bad",
-            }))
+            cfg.write_text(
+                json.dumps(
+                    {
+                        "jira_url": "https://test.atlassian.net",
+                        "project_key": "TEST",
+                        "credentials": "bad",
+                    }
+                )
+            )
             with pytest.raises(SystemExit):
                 load_config(str(cfg))
 
@@ -411,6 +494,7 @@ JiraConfig = _mod.JiraConfig
 class TestPathTraversal:
     def test_env_file_escape_exits(self):
         import pytest
+
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp) / "project"
             project_root.mkdir()
@@ -445,4 +529,5 @@ class TestPathTraversal:
 
 if __name__ == "__main__":
     import subprocess
+
     sys.exit(subprocess.call([sys.executable, "-m", "pytest", __file__, "-v"]))

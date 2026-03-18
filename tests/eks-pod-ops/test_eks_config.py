@@ -1,6 +1,5 @@
 """Tests for eks-pod-ops config loading and environment resolution."""
 
-import json
 import sys
 from pathlib import Path
 
@@ -9,12 +8,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "eks-pod-
 import pytest
 from lib.config import get_env_config, get_kubeconfig_path
 
-
 SAMPLE_CONFIG = {
     "environments": {
-        "dev": {"profile": "dev", "cluster": "eks01-dev", "sso_session": "lab", "namespace": "default"},
-        "stg": {"profile": "stg", "cluster": "eks01-stg", "sso_session": "lab", "namespace": "staging"},
-        "us1": {"profile": "us1", "cluster": "eks01-us1", "sso_session": "prod", "namespace": "default", "alias": "production"},
+        "dev": {
+            "profile": "dev",
+            "cluster": "eks01-dev",
+            "sso_session": "lab",
+            "namespace": "default",
+        },
+        "stg": {
+            "profile": "stg",
+            "cluster": "eks01-stg",
+            "sso_session": "lab",
+            "namespace": "staging",
+        },
+        "us1": {
+            "profile": "us1",
+            "cluster": "eks01-us1",
+            "sso_session": "prod",
+            "namespace": "default",
+            "alias": "production",
+        },
     },
     "kubeconfig_dir": "~/.kube",
     "kubeconfig_pattern": "config_{env}",

@@ -1,92 +1,67 @@
 """
-Shared configuration loader for jira-manager skill scripts.
+Shared configuration loader for confluence-publisher skill scripts.
 
-Loads .jira.json and resolves credentials from env vars or shell environment.
-Supports global config (~/.jira.json) merged with per-project config.
-Mirrors the confluence-publisher config_loader.py pattern.
+Loads .confluence.json and resolves credentials from env vars or shell environment.
+Supports global config (~/.confluence.json) merged with per-project config.
 """
 
 import argparse
 import json
 import os
 import re
-import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from atlassian import Confluence
 
 _ENV_VAR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
+def ensure_deps(required_packages: dict[str, str]) -> None:
+    """Check that required Python packages are installed. Exits with instructions if not."""
+    missing = []
+    for pkg, imp in required_packages.items():
+        try:
+            __import__(imp)
+        except ImportError:
+            missing.append(pkg)
+    if missing:
+        skill_dir = Path(__file__).resolve().parent.parent
+        req_file = skill_dir / "scripts" / "requirements.txt"
+        print(f"ERROR: Missing dependencies: {', '.join(missing)}")
+        print(f"Install with: pip install -r {req_file}")
+        sys.exit(1)
+
+
 @dataclass
-class JiraConfig:
-    jira_url: str
-    project_key: str
-    username_env: str = "JIRA_EMAIL"
-    token_env: str = "JIRA_TOKEN"
-    env_file: Optional[str] = None
-    manifest_path: str = ".jira-manifest.json"
-    source_dir: str = "."
-    git_remote: str = "auto"
-    git_branch: str = "main"
-    estimation_pattern: str = r"Estimation:\s*([\d.]+)\s*days?"
-    field_mappings: Dict[str, str] = field(default_factory=dict)
-    issue_types: Dict[str, str] = field(default_factory=dict)
-    field_catalog: Dict[str, dict] = field(default_factory=dict)
-    create_meta: Dict[str, dict] = field(default_factory=dict)
+class ConfluenceConfig:
+    confluence_url: str
+    space_key: str
+    root_page_id: str
+    docs_dir: str = "."
+    manifest_path: str = ".confluence-manifest.json"
+    username_env: str = "CONFLUENCE_EMAIL"
+    token_env: str = "CONFLUENCE_TOKEN"
+    env_file: str | None = None
+    title_map: dict = field(default_factory=dict)
+    exclude_patterns: list = field(default_factory=list)
 
     # Resolved at runtime
     project_root: Path = field(default_factory=lambda: Path.cwd())
 
     @property
+    def docs_root(self) -> Path:
+        return self.project_root / self.docs_dir
+
+    @property
     def manifest_file(self) -> Path:
         return self.project_root / self.manifest_path
 
-    @property
-    def source_root(self) -> Path:
-        return self.project_root / self.source_dir
 
-    def get_field_id(self, name: str) -> Optional[str]:
-        """Resolve a friendly field name to its Jira field ID."""
-        return self.field_mappings.get(name)
-
-    def get_issue_type_id(self, name: str) -> Optional[str]:
-        """Resolve an issue type name to its Jira ID."""
-        return self.issue_types.get(name.lower())
-
-    def resolve_git_remote_url(self) -> Optional[str]:
-        """Resolve the git remote URL for link rewriting."""
-        if self.git_remote != "auto":
-            return self.git_remote
-        try:
-            result = subprocess.run(
-                ["git", "remote", "get-url", "origin"],
-                capture_output=True, text=True, cwd=str(self.project_root),
-            )
-            if result.returncode == 0:
-                return result.stdout.strip()
-        except FileNotFoundError:
-            pass
-        return None
-
-    def resolve_git_branch(self) -> str:
-        """Resolve the current git branch."""
-        if self.git_branch != "auto":
-            return self.git_branch
-        try:
-            result = subprocess.run(
-                ["git", "branch", "--show-current"],
-                capture_output=True, text=True, cwd=str(self.project_root),
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                return result.stdout.strip()
-        except FileNotFoundError:
-            pass
-        return "main"
-
-
-CONFIG_FILENAME = ".jira.json"
+CONFIG_FILENAME = ".confluence.json"
 
 
 def add_config_arg(parser: argparse.ArgumentParser) -> None:
@@ -94,32 +69,8 @@ def add_config_arg(parser: argparse.ArgumentParser) -> None:
     Centralised here so every script shares the same definition."""
     parser.add_argument(
         "--config",
-        help="Path to .jira.json (omit to auto-discover from project root or ~/.jira.json)",
+        help="Path to .confluence.json (omit to auto-discover from project root or ~/.confluence.json)",
     )
-
-
-def _normalize_argv() -> None:
-    """Normalize sys.argv in-place: convert single-dash long flags to double-dash.
-
-    LLM agents frequently write ``-format`` instead of ``--format``.
-    This converts any ``-<word>`` (3+ chars, not a number) to ``--<word>``
-    so argparse matches it correctly.  Short flags like ``-v`` and ``-h``
-    are left untouched.
-
-    Called automatically when this module is imported, so every script that
-    uses ``from config_loader import ...`` gets normalization for free.
-    """
-    for i, arg in enumerate(sys.argv[1:], start=1):
-        if (
-            arg.startswith("-")
-            and not arg.startswith("--")
-            and len(arg) > 2
-            and not arg.lstrip("-").isdigit()
-        ):
-            sys.argv[i] = "-" + arg
-
-
-_normalize_argv()
 
 
 def detect_shell() -> tuple[str, str]:
@@ -132,7 +83,7 @@ def detect_shell() -> tuple[str, str]:
         comspec = os.environ.get("COMSPEC", "")
         if "pwsh" in comspec.lower() or "powershell" in comspec.lower():
             return "pwsh", "$PROFILE"
-        if os.environ.get("PSModulePath"):
+        if os.environ.get("PSModulePath"):  # noqa: SIM112
             return "pwsh", "$PROFILE"
         return "cmd", "%USERPROFILE%\\.env"
 
@@ -171,7 +122,7 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
     return merged
 
 
-def _find_git_root(start_dir: Path) -> Optional[Path]:
+def _find_git_root(start_dir: Path) -> Path | None:
     """Find the nearest .git directory walking up from start_dir."""
     current = start_dir
     while current != current.parent:
@@ -181,8 +132,8 @@ def _find_git_root(start_dir: Path) -> Optional[Path]:
     return None
 
 
-def _find_project_config(start_dir: Optional[str] = None) -> Optional[Path]:
-    """Walk up from start_dir looking for .jira.json.
+def _find_project_config(start_dir: str | None = None) -> Path | None:
+    """Walk up from start_dir looking for .confluence.json.
     Stops at the git repo root (if any) to avoid picking up configs from
     unrelated parent directories. Returns None if not found."""
     current = Path(start_dir) if start_dir else Path.cwd()
@@ -198,14 +149,14 @@ def _find_project_config(start_dir: Optional[str] = None) -> Optional[Path]:
     return None
 
 
-def _find_global_config() -> Optional[Path]:
-    """Check for ~/.jira.json."""
+def _find_global_config() -> Path | None:
+    """Check for ~/.confluence.json."""
     candidate = Path.home() / CONFIG_FILENAME
     return candidate if candidate.exists() else None
 
 
-def find_config(start_dir: Optional[str] = None) -> Path:
-    """Find .jira.json — project-level first, then global.
+def find_config(start_dir: str | None = None) -> Path:
+    """Find .confluence.json \u2014 project-level first, then global.
     Returns the path to the primary config (project if it exists, else global)."""
     project = _find_project_config(start_dir)
     global_cfg = _find_global_config()
@@ -214,52 +165,29 @@ def find_config(start_dir: Optional[str] = None) -> Path:
     if global_cfg:
         return global_cfg
     print(f"ERROR: {CONFIG_FILENAME} not found in any parent directory or ~/.")
-    print("Create one in your project root or at ~/.jira.json for global defaults.")
+    print("Create one in your project root or at ~/.confluence.json for global defaults.")
     print("See references/CONFIG.md for format.")
     sys.exit(1)
 
 
-def _parse_env_line(line: str) -> Optional[tuple[str, str]]:
-    """Parse a single line from a .env file."""
-    line = line.strip()
-    if not line or line.startswith("#"):
-        return None
-
-    # Remove inline comments
-    if " #" in line:
-        line = line.split(" #", 1)[0]
-
-    if "=" not in line:
-        return None
-
-    key, _, val = line.partition("=")
-    key = key.strip()
-    if key.startswith("export "):
-        key = key[len("export "):].strip()
-
-    val = val.strip()
-    # Handle quoted values
-    if (val.startswith('"') and val.endswith('"')) or \
-       (val.startswith("'") and val.endswith("'")):
-        val = val[1:-1]
-
-    return key, val
-
-
-def load_env_file(env_path: Path) -> dict:
+def load_env_file(env_path: Path) -> dict[str, str]:
     """Parse a .env file into a dict."""
-    env = {}
+    env: dict[str, str] = {}
     if not env_path.exists():
         return env
     for line in env_path.read_text().splitlines():
-        result = _parse_env_line(line)
-        if result:
-            key, val = result
-            env[key] = val
+        line = line.strip()
+        if "=" in line and not line.startswith("#"):
+            key, _, val = line.partition("=")
+            key = key.strip()
+            # Handle 'export KEY=VALUE' syntax
+            if key.startswith("export "):
+                key = key[len("export ") :].strip()
+            env[key] = val.strip().strip('"').strip("'")
     return env
 
 
-def _resolve_raw_config(config_path: Optional[str] = None) -> tuple[dict[str, Any], Path]:
+def _resolve_raw_config(config_path: str | None = None) -> tuple[dict[str, Any], Path]:
     """Resolve raw config dict and project root.
 
     If config_path is explicit, load it directly.
@@ -271,14 +199,15 @@ def _resolve_raw_config(config_path: Optional[str] = None) -> tuple[dict[str, An
         if not path.exists():
             print(f"ERROR: Config file not found: {path}")
             sys.exit(1)
-        return json.loads(path.read_text(encoding="utf-8")), path.parent
+        raw: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+        return raw, path.parent
 
     project_cfg = _find_project_config()
     global_cfg = _find_global_config()
 
     if not project_cfg and not global_cfg:
         print(f"ERROR: {CONFIG_FILENAME} not found in any parent directory or ~/.")
-        print("Create one in your project root or at ~/.jira.json for global defaults.")
+        print("Create one in your project root or at ~/.confluence.json for global defaults.")
         print("See references/CONFIG.md for format.")
         sys.exit(1)
 
@@ -290,24 +219,28 @@ def _resolve_raw_config(config_path: Optional[str] = None) -> tuple[dict[str, An
     return raw, project_root
 
 
-def load_config(config_path: Optional[str] = None) -> JiraConfig:
-    """Load and validate .jira.json.
+def load_config(config_path: str | None = None) -> ConfluenceConfig:
+    """Load and validate .confluence.json.
 
     Resolution order:
     1. If config_path is given explicitly, use it.
-    2. Otherwise, search for project-level config (CWD walk-up) and global (~/.jira.json).
+    2. Otherwise, search for project-level config (CWD walk-up) and global (~/.confluence.json).
     3. If both exist, deep-merge them (project-level wins).
     """
     raw, project_root = _resolve_raw_config(config_path)
 
-    for field_name in ("jira_url", "project_key"):
+    for field_name in ("confluence_url", "space_key", "root_page_id"):
         if field_name not in raw:
             print(f"ERROR: Missing required field '{field_name}' in merged config")
             if not _find_project_config():
-                print("Hint: create a project-level .jira.json with at least project_key.")
+                print(
+                    "Hint: create a project-level .confluence.json with at least space_key and root_page_id."
+                )
             sys.exit(1)
-        if not isinstance(raw[field_name], str) or not raw[field_name].strip():
-            print(f"ERROR: '{field_name}' must be a non-empty string (got {type(raw[field_name]).__name__})")
+        if not isinstance(raw[field_name], str | int) or not str(raw[field_name]).strip():
+            print(
+                f"ERROR: '{field_name}' must be a non-empty string or number (got {type(raw[field_name]).__name__})"
+            )
             sys.exit(1)
 
     creds = raw.get("credentials", {})
@@ -315,34 +248,33 @@ def load_config(config_path: Optional[str] = None) -> JiraConfig:
         print(f"ERROR: 'credentials' must be an object (got {type(creds).__name__})")
         sys.exit(1)
 
-    config = JiraConfig(
-        jira_url=raw["jira_url"].rstrip("/"),
-        project_key=raw["project_key"],
-        username_env=creds.get("username_env", "JIRA_EMAIL"),
-        token_env=creds.get("token_env", "JIRA_TOKEN"),
+    url = raw["confluence_url"].rstrip("/")
+    if not url.startswith("https://"):
+        print(f"ERROR: confluence_url must use HTTPS (got: {url})")
+        print("Confluence Cloud requires HTTPS. Sending credentials over HTTP is unsafe.")
+        sys.exit(1)
+
+    return ConfluenceConfig(
+        confluence_url=url,
+        space_key=raw["space_key"],
+        root_page_id=str(raw["root_page_id"]),
+        docs_dir=raw.get("docs_dir", "."),
+        manifest_path=raw.get("manifest_path", ".confluence-manifest.json"),
+        username_env=creds.get("username_env", "CONFLUENCE_EMAIL"),
+        token_env=creds.get("token_env", "CONFLUENCE_TOKEN"),
         env_file=raw.get("env_file"),
-        manifest_path=raw.get("manifest_path", ".jira-manifest.json"),
-        source_dir=raw.get("source_dir", "."),
-        git_remote=raw.get("git_remote", "auto"),
-        git_branch=raw.get("git_branch", "main"),
-        estimation_pattern=raw.get(
-            "estimation_pattern", r"Estimation:\s*([\d.]+)\s*days?"
-        ),
-        field_mappings=raw.get("field_mappings", {}),
-        issue_types=raw.get("issue_types", {}),
-        field_catalog=raw.get("field_catalog", {}),
-        create_meta=raw.get("create_meta", {}),
+        title_map=raw.get("title_map", {}),
+        exclude_patterns=raw.get("exclude_patterns", []),
         project_root=project_root,
     )
 
-    return config
 
-
-def resolve_credentials(config: JiraConfig) -> tuple[str, str]:
+def resolve_credentials(config: ConfluenceConfig) -> tuple[str, str]:
     """Resolve username and API token from env file or environment variables.
     Returns (username, token). Exits on failure with shell-specific advice."""
-    env_vars = {}
+    env_vars: dict[str, str] = {}
 
+    # Load .env file if configured
     if config.env_file:
         env_path = (config.project_root / config.env_file).resolve()
         root_resolved = config.project_root.resolve()
@@ -368,16 +300,44 @@ def resolve_credentials(config: JiraConfig) -> tuple[str, str]:
     return username, token
 
 
-def load_manifest(config: JiraConfig) -> dict:
+def load_manifest(config: ConfluenceConfig) -> dict[str, Any]:
     """Load the manifest file. Returns empty dict if not found."""
     if config.manifest_file.exists():
-        return json.loads(config.manifest_file.read_text(encoding="utf-8"))
+        result: dict[str, Any] = json.loads(config.manifest_file.read_text(encoding="utf-8"))
+        return result
     return {}
 
 
-def save_manifest(config: JiraConfig, manifest: dict) -> None:
+def save_manifest(config: ConfluenceConfig, manifest: dict[str, Any]) -> None:
     """Save the manifest file."""
     config.manifest_file.write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+
+
+def connect(config: ConfluenceConfig) -> "Confluence":
+    """Create a Confluence client from config credentials."""
+    ensure_deps({"atlassian-python-api": "atlassian"})
+    from atlassian import Confluence
+
+    username, token = resolve_credentials(config)
+    return Confluence(  # type: ignore[no-any-return]
+        url=config.confluence_url,
+        username=username,
+        password=token,
+        cloud=True,
+        timeout=120,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Re-exports from page_utils for backward compatibility
+# ---------------------------------------------------------------------------
+from page_utils import (  # noqa: F401, E402
+    decode_tiny_link,
+    encode_tiny_id,
+    extract_page_id,
+    get_all_children,
+    resolve_title,
+)

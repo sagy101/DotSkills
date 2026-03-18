@@ -23,9 +23,7 @@ DEFAULT_VENV_DIR = SKILL_DIR / ".venv"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Set up Python environment for jira-manager"
-    )
+    parser = argparse.ArgumentParser(description="Set up Python environment for jira-manager")
     parser.add_argument(
         "--venv-dir",
         default=str(DEFAULT_VENV_DIR),
@@ -34,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def check_python_version():
+def check_python_version() -> None:
     """Verify Python 3.10+ is available."""
     major, minor = sys.version_info[:2]
     if major < 3 or (major == 3 and minor < 10):
@@ -59,7 +57,7 @@ def get_venv_python(venv_dir: Path) -> Path:
     sys.exit(1)
 
 
-def main():
+def main() -> None:
     args = parse_args()
     venv_dir = Path(args.venv_dir).resolve()
 

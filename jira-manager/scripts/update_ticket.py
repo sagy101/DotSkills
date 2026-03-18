@@ -29,19 +29,22 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import add_config_arg, load_config
 from field_resolver import (
     add_common_field_args,
     build_update_fields,
     resolve_sprint_id,
 )
-from workflow_ops import handle_status_transition, upload_attachments
 from jira_client import JiraClient
+from jira_config_loader import JiraConfig, add_config_arg, load_config
+from workflow_ops import handle_status_transition, upload_attachments
 
 
-def _handle_sprint(client, issue_key, sprint_value, config):
+def _handle_sprint(
+    client: JiraClient, issue_key: str, sprint_value: str, config: JiraConfig
+) -> None:
     """Resolve and move an issue into a sprint via the Agile API."""
     sprint_id, sprint_name = resolve_sprint_id(config, sprint_value)
     if sprint_id is None:
@@ -59,7 +62,14 @@ def _handle_sprint(client, issue_key, sprint_value, config):
         sys.exit(1)
 
 
-def _print_dry_run(key, fields, status, sprint, config, attachments):
+def _print_dry_run(
+    key: str,
+    fields: dict[str, Any],
+    status: str | None,
+    sprint: str | None,
+    config: JiraConfig,
+    attachments: list[str],
+) -> None:
     """Print dry-run summary without making API calls."""
     if fields:
         print(f"DRY RUN \u2014 would update {key} with fields:")
@@ -73,7 +83,7 @@ def _print_dry_run(key, fields, status, sprint, config, attachments):
         print(f"Attachments: {', '.join(attachments)}")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Update a Jira issue")
     add_config_arg(parser)
     parser.add_argument("--key", required=True, help="Issue key (e.g. API-123)")
@@ -87,7 +97,7 @@ def main():
         action="append",
         metavar="TYPE:TARGET_KEY",
         help="Link this issue to another. Format: 'Blocks:API-456' or "
-             "'is blocked by:API-456'. Can be repeated.",
+        "'is blocked by:API-456'. Can be repeated.",
     )
     add_common_field_args(parser)
     args = parser.parse_args()
@@ -101,15 +111,16 @@ def main():
     links = args.link or []
 
     has_work = (
-        fields or effective_status or effective_sprint
-        or args.attachment or args.comment or links
+        fields or effective_status or effective_sprint or args.attachment or args.comment or links
     )
     if not has_work:
         print("ERROR: No fields, status, sprint, attachments, comment, or links specified.")
         sys.exit(1)
 
     if args.dry_run:
-        _print_dry_run(args.key, fields, effective_status, effective_sprint, config, args.attachment)
+        _print_dry_run(
+            args.key, fields, effective_status, effective_sprint, config, args.attachment
+        )
         if args.comment:
             print(f"DRY RUN \u2014 would add comment to {args.key}: {args.comment[:80]}...")
         for link_spec in links:
@@ -138,7 +149,7 @@ def main():
         _handle_issue_link(client, args.key, link_spec)
 
 
-def _handle_comment(client, issue_key, comment_text):
+def _handle_comment(client: JiraClient, issue_key: str, comment_text: str | None) -> None:
     """Add a comment to an issue if comment_text is provided."""
     if not comment_text:
         return
@@ -151,7 +162,7 @@ def _handle_comment(client, issue_key, comment_text):
         print(f"  WARNING: Failed to add comment to {issue_key}", file=sys.stderr)
 
 
-def _handle_issue_link(client, issue_key, link_spec):
+def _handle_issue_link(client: JiraClient, issue_key: str, link_spec: str) -> None:
     """Parse and create an issue link from a spec string.
 
     Format: "LinkType:TARGET_KEY" where the current issue is the inward side.
@@ -193,10 +204,11 @@ def _handle_issue_link(client, issue_key, link_spec):
             break
 
     if not resolved_type:
-        available = [f"{lt['name']} ({lt.get('inward', '')}/{lt.get('outward', '')})" for lt in link_types]
+        available = [
+            f"{lt['name']} ({lt.get('inward', '')}/{lt.get('outward', '')})" for lt in link_types
+        ]
         print(
-            f"ERROR: Unknown link type '{link_type_input}'. "
-            f"Available: {', '.join(available)}",
+            f"ERROR: Unknown link type '{link_type_input}'. Available: {', '.join(available)}",
             file=sys.stderr,
         )
         return

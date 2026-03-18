@@ -19,7 +19,7 @@ compatibility: >
 
 ## Pre-flight (run once per session)
 
-1. **Venv** — `$PY -c "import markdown; print('OK')"`. If missing: `python3 $S/setup_env.py`
+1. **Venv** — `$PY -c "import markdown; print('OK')"`. If missing: `python3 $S/jira_setup_env.py`
 2. **Config** — `.jira.json` in project root or `~/.jira.json` (auto-discovered, deep-merged). If missing, create:
    ```json
    { "jira_url": "https://company.atlassian.net", "project_key": "PROJ",
@@ -163,5 +163,5 @@ $PY $S/validate_estimates.py --epic PROJ-100   # check sub-ticket estimate sums
 | `404` | Check issue key and `project_key` |
 | `Missing required fields` | Run `discover_fields.py --fields-for-type <type>`, supply via `--fields` |
 | `No transition found` | Some statuses need intermediate steps |
-| `ModuleNotFoundError` | Run `setup_env.py` |
+| `ModuleNotFoundError` | Run `jira_setup_env.py` |
 | Sprint not setting | Run `discover_fields.py --all --apply` |

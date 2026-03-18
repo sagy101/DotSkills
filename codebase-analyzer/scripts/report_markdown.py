@@ -148,10 +148,12 @@ def _render_churn(result: AnalysisResult) -> None:
         # Only show if requested; if list is empty but section requested, say so?
         # Actually, result.most_changed is only populated if "churn" was requested.
         # If it's empty, it might mean no git repo or no changes.
-        # We can't easily distinguish "not requested" from "no results" here easily 
+        # We can't easily distinguish "not requested" from "no results" here easily
         # without passing sections, but render_markdown iterates sections.
         # So if we are here, it was requested.
-        _write("## Most Changed Files\n\nNo churn data available (git not found or no history).\n\n")
+        _write(
+            "## Most Changed Files\n\nNo churn data available (git not found or no history).\n\n"
+        )
         return
 
     _write("## Most Changed Files\n\n")

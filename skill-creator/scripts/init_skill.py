@@ -196,21 +196,20 @@ Note: This is a text placeholder. Actual assets can be any file type.
 """
 
 
-def normalize_skill_name(skill_name):
+def normalize_skill_name(skill_name: str) -> str:
     """Normalize a skill name to lowercase hyphen-case."""
     normalized = skill_name.strip().lower()
     normalized = re.sub(r"[^a-z0-9]+", "-", normalized)
     normalized = normalized.strip("-")
-    normalized = re.sub(r"-{2,}", "-", normalized)
-    return normalized
+    return re.sub(r"-{2,}", "-", normalized)
 
 
-def title_case_skill_name(skill_name):
+def title_case_skill_name(skill_name: str) -> str:
     """Convert hyphenated skill name to Title Case for display."""
     return " ".join(word.capitalize() for word in skill_name.split("-"))
 
 
-def parse_resources(raw_resources):
+def parse_resources(raw_resources: str) -> list[str]:
     if not raw_resources:
         return []
     resources = [item.strip() for item in raw_resources.split(",") if item.strip()]
@@ -229,10 +228,12 @@ def parse_resources(raw_resources):
     return deduped
 
 
-def create_single_resource(resource_dir, resource, skill_name, skill_title, include_examples):
+def create_single_resource(
+    resource_dir: Path, resource: str, skill_name: str, skill_title: str, include_examples: bool
+) -> None:
     """Create a single resource directory and optional examples."""
     resource_dir.mkdir(exist_ok=True)
-    
+
     if not include_examples:
         print(f"[OK] Created {resource}/")
         return
@@ -252,13 +253,21 @@ def create_single_resource(resource_dir, resource, skill_name, skill_title, incl
         print("[OK] Created assets/example_asset.txt")
 
 
-def create_resource_dirs(skill_dir, skill_name, skill_title, resources, include_examples):
+def create_resource_dirs(
+    skill_dir: Path, skill_name: str, skill_title: str, resources: list[str], include_examples: bool
+) -> None:
     for resource in resources:
         resource_dir = skill_dir / resource
         create_single_resource(resource_dir, resource, skill_name, skill_title, include_examples)
 
 
-def print_next_steps(skill_name, skill_dir, resources, include_examples, generate_openai):
+def print_next_steps(
+    skill_name: str,
+    skill_dir: Path,
+    resources: list[str],
+    include_examples: bool,
+    generate_openai: bool,
+) -> None:
     """Print post-initialization guidance."""
     print(f"\n[OK] Skill '{skill_name}' initialized successfully at {skill_dir}")
     print("\nNext steps:")
@@ -278,7 +287,14 @@ def print_next_steps(skill_name, skill_dir, resources, include_examples, generat
     print("4. Run the validator when ready to check the skill structure")
 
 
-def init_skill(skill_name, path, resources, include_examples, generate_openai=False, interface_overrides=None):
+def init_skill(
+    skill_name: str,
+    path: str,
+    resources: list[str],
+    include_examples: bool,
+    generate_openai: bool = False,
+    interface_overrides: list[str] | None = None,
+) -> Path | None:
     """
     Initialize a new skill directory with template SKILL.md.
 
@@ -324,8 +340,7 @@ def init_skill(skill_name, path, resources, include_examples, generate_openai=Fa
                 from generate_openai_yaml import write_openai_yaml
             except ImportError as exc:
                 raise RuntimeError(
-                    "PyYAML is required for --openai-yaml. "
-                    "Install it with: pip install PyYAML"
+                    "PyYAML is required for --openai-yaml. Install it with: pip install PyYAML"
                 ) from exc
             result = write_openai_yaml(skill_dir, skill_name, interface_overrides)
             if not result:
@@ -347,7 +362,7 @@ def init_skill(skill_name, path, resources, include_examples, generate_openai=Fa
     return skill_dir
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Create a new skill directory with a SKILL.md template.",
     )
@@ -413,8 +428,12 @@ def main():
     print()
 
     result = init_skill(
-        skill_name, path, resources, args.examples,
-        generate_openai=args.openai_yaml, interface_overrides=args.interface,
+        skill_name,
+        path,
+        resources,
+        args.examples,
+        generate_openai=args.openai_yaml,
+        interface_overrides=args.interface,
     )
 
     if result:

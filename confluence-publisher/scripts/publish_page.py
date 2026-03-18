@@ -30,8 +30,9 @@ import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 # ---------------------------------------------------------------------------
 # Ensure script dir is on path for shared module imports
@@ -39,29 +40,28 @@ import requests
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config_loader import (
-    add_config_arg,
-    load_config,
-    connect,
-    load_manifest,
-    save_manifest,
-    resolve_credentials,
-    ensure_deps,
+from confluence_config import (  # noqa: E402
     ConfluenceConfig,
+    add_config_arg,
+    connect,
+    ensure_deps,
+    load_config,
+    load_manifest,
+    resolve_credentials,
+    save_manifest,
 )
-from page_utils import resolve_title
+from page_utils import resolve_title  # noqa: E402
 
 ensure_deps({"atlassian-python-api": "atlassian", "markdown": "markdown"})
 
 from atlassian import Confluence  # noqa: E402
 from transforms import (  # noqa: E402
     MERMAID_BLOCK_RE,
-    markdown_to_confluence_storage,
-    rewrite_md_links,
-    render_mermaid_blocks,
     inject_image_macros,
+    markdown_to_confluence_storage,
+    render_mermaid_blocks,
+    rewrite_md_links,
 )
-
 
 # ---------------------------------------------------------------------------
 # Confluence operations
@@ -89,7 +89,9 @@ def _attach_with_retry(
         except Exception as e:
             if attempt < max_attempts - 1:
                 wait = backoff * (attempt + 1)
-                print(f"  Upload failed (attempt {attempt + 1}/{max_attempts}), retrying in {wait}s: {e}")
+                print(
+                    f"  Upload failed (attempt {attempt + 1}/{max_attempts}), retrying in {wait}s: {e}"
+                )
                 time.sleep(wait)
             else:
                 print(f"  ERROR: Upload failed after {max_attempts} attempts: {e}")
@@ -100,7 +102,7 @@ def _render_and_prepare_body(
     md_content: str,
     tmp_path: Path,
     current_file: str | None,
-    manifest: dict | None,
+    manifest: dict[str, Any] | None,
     space_key: str,
 ) -> tuple[str, list[Path]]:
     """Convert markdown to Confluence storage format, rendering mermaid and rewriting links.
@@ -125,7 +127,9 @@ def _render_and_prepare_body(
             body = rewrite_md_links(body, current_file, manifest, space_key)
             link_count_after = len(re.findall(r'<a href="[^"]+\.md">', body))
             rewritten = link_count_before - link_count_after
-            print(f"  Rewriting links: {rewritten}/{link_count_before} resolved to Confluence pages")
+            print(
+                f"  Rewriting links: {rewritten}/{link_count_before} resolved to Confluence pages"
+            )
 
     return body, png_files
 
@@ -146,14 +150,21 @@ def _create_or_update(
             print(f"  ERROR: Page {page_id} not found")
             sys.exit(1)
         result = confluence.update_page(
-            page_id=page_id, title=title, body=body,
-            type="page", representation="storage",
+            page_id=page_id,
+            title=title,
+            body=body,
+            type="page",
+            representation="storage",
         )
         result_id = page_id
     else:
         result = confluence.create_page(
-            space=config.space_key, title=title, body=body,
-            parent_id=parent_id, type="page", representation="storage",
+            space=config.space_key,
+            title=title,
+            body=body,
+            parent_id=parent_id,
+            type="page",
+            representation="storage",
         )
         result_id = result.get("id", "")
 
@@ -174,41 +185,59 @@ def publish_page(
     page_id: str | None = None,
     parent_id: str | None = None,
     current_file: str | None = None,
-    manifest: dict | None = None,
-) -> tuple:
+    manifest: dict[str, Any] | None = None,
+) -> tuple[str, str]:
     """Publish a single page. Returns (page_id, page_url)."""
     md_content = file_path.read_text(encoding="utf-8")
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         body, png_files = _render_and_prepare_body(
-            md_content, Path(tmp_dir), current_file, manifest, config.space_key,
+            md_content,
+            Path(tmp_dir),
+            current_file,
+            manifest,
+            config.space_key,
         )
         result_id, page_url = _create_or_update(
-            confluence, config, mode, title, body, page_id, parent_id,
+            confluence,
+            config,
+            mode,
+            title,
+            body,
+            page_id,
+            parent_id,
         )
         if png_files:
             print(f"  Uploading {len(png_files)} diagram attachment(s)...")
             time.sleep(2)
             for png in png_files:
-                _attach_with_retry(confluence, result_id, png, "Mermaid diagram (auto-generated)", backoff=3)
+                _attach_with_retry(
+                    confluence, result_id, png, "Mermaid diagram (auto-generated)", backoff=3
+                )
 
     return result_id, page_url
 
 
 def _set_content_property(
-    base_url: str, auth: tuple, page_id: str, key: str, value: str,
+    base_url: str,
+    auth: tuple[str, str],
+    page_id: str,
+    key: str,
+    value: str,
 ) -> bool:
     """Set a single Confluence content property. Returns True on success."""
     url = f"{base_url}/wiki/rest/api/content/{page_id}/property/{key}"
     resp = requests.put(
-        url, auth=auth,
+        url,
+        auth=auth,
         json={"key": key, "value": value, "version": {"number": 1}},
         timeout=30,
     )
     if resp.status_code == 404:
         url_create = f"{base_url}/wiki/rest/api/content/{page_id}/property"
         resp = requests.post(
-            url_create, auth=auth,
+            url_create,
+            auth=auth,
             json={"key": key, "value": value},
             timeout=30,
         )
@@ -231,18 +260,18 @@ def set_page_emoji(
         page_id: The page to set the emoji on.
         emoji: Unicode codepoint (e.g. '1f399') or the emoji character itself.
     """
-    if len(emoji) <= 2 and not all(c in '0123456789abcdefABCDEF' for c in emoji):
+    if len(emoji) <= 2 and not all(c in "0123456789abcdefABCDEF" for c in emoji):
         emoji = f"{ord(emoji):x}"
 
     auth = resolve_credentials(config)
-    for prop in ['emoji-title-published', 'emoji-title-draft']:
+    for prop in ["emoji-title-published", "emoji-title-draft"]:
         _set_content_property(config.confluence_url, auth, page_id, prop, emoji)
 
 
 def upload_attachments(
     confluence: Confluence,
     page_id: str,
-    attachment_paths: list,
+    attachment_paths: list[Path],
 ) -> None:
     """Upload files as attachments to a page."""
     for path in attachment_paths:
@@ -260,9 +289,7 @@ def upload_attachments(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Publish one markdown file to Confluence"
-    )
+    parser = argparse.ArgumentParser(description="Publish one markdown file to Confluence")
     add_config_arg(parser)
     parser.add_argument("--file", required=True, help="Markdown file (relative to docs_dir)")
     parser.add_argument("--title", help="Confluence page title (default: auto-detect from file)")

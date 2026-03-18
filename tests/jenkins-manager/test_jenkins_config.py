@@ -109,7 +109,7 @@ class TestDeepMerge:
 
 
 class TestResolveJobPath:
-    def _config(self, job_cache: dict | None = None) -> JenkinsConfig:
+    def _config(self, job_cache: dict[str, str] | None = None) -> JenkinsConfig:
         return JenkinsConfig(
             base_url="https://jenkins.example.com",
             job_cache=job_cache or {},

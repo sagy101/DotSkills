@@ -12,6 +12,8 @@ if _SCRIPTS_DIR not in sys.path:
 
 _MODULE_PATH = Path(_SCRIPTS_DIR) / "fetch_tickets.py"
 _spec = importlib.util.spec_from_file_location("fetch_tickets", _MODULE_PATH)
+assert _spec is not None
+assert _spec.loader is not None
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 sys.modules["fetch_tickets"] = _mod
@@ -21,17 +23,28 @@ format_issue_detail = _mod.format_issue_detail
 _extract_sprint_from_value = _mod._extract_sprint_from_value
 
 
-def _make_config(sp_field="customfield_10133", sprint_field="customfield_10631"):
+def _make_config(
+    sp_field: str = "customfield_10133", sprint_field: str = "customfield_10631"
+) -> mock.MagicMock:
     config = mock.MagicMock()
-    def get_field_id(name):
+
+    def get_field_id(name: str) -> str | None:
         mapping = {"story_points": sp_field, "sprint": sprint_field}
         return mapping.get(name)
+
     config.get_field_id = get_field_id
     return config
 
 
-def _make_issue(key="TEST-1", summary="Test issue", itype="Story",
-                status="To Do", priority="High", sp=3.0, sprint_name=None):
+def _make_issue(
+    key: str = "TEST-1",
+    summary: str = "Test issue",
+    itype: str = "Story",
+    status: str = "To Do",
+    priority: str = "High",
+    sp: float = 3.0,
+    sprint_name: str | None = None,
+) -> dict[str, object]:
     fields = {
         "summary": summary,
         "issuetype": {"name": itype},
@@ -47,6 +60,7 @@ def _make_issue(key="TEST-1", summary="Test issue", itype="Story",
 # ---------------------------------------------------------------------------
 # format_issue_table — priority column
 # ---------------------------------------------------------------------------
+
 
 class TestFormatIssueTable:
     def test_header_includes_priority(self):
@@ -95,6 +109,7 @@ class TestFormatIssueTable:
 # format_issue_detail
 # ---------------------------------------------------------------------------
 
+
 class TestFormatIssueDetail:
     def test_includes_all_fields(self):
         config = _make_config()
@@ -131,6 +146,7 @@ class TestFormatIssueDetail:
 # Sprint extraction
 # ---------------------------------------------------------------------------
 
+
 class TestSprintExtraction:
     def test_dict_sprint(self):
         assert _extract_sprint_from_value({"name": "Sprint 1"}) == "Sprint 1"
@@ -140,7 +156,9 @@ class TestSprintExtraction:
         assert _extract_sprint_from_value(sprints) == "Current"
 
     def test_legacy_string_sprint(self):
-        legacy = "com.atlassian.greenhopper.service.sprint.Sprint@abc[id=1,name=Sprint 5,state=ACTIVE]"
+        legacy = (
+            "com.atlassian.greenhopper.service.sprint.Sprint@abc[id=1,name=Sprint 5,state=ACTIVE]"
+        )
         assert _extract_sprint_from_value(legacy) == "Sprint 5"
 
     def test_empty_list(self):
@@ -152,4 +170,5 @@ class TestSprintExtraction:
 
 if __name__ == "__main__":
     import subprocess
+
     sys.exit(subprocess.call([sys.executable, "-m", "pytest", __file__, "-v"]))

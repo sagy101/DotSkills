@@ -15,12 +15,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bb_config import (
     CONFIG_FILENAME,
+    _credential_hint,
+    _deep_merge,
     _find_global_config,
     _find_project_config,
     _parse_workspace_and_repo,
-    _credential_hint,
-    _deep_merge,
-    detect_shell,
     load_env_file,
 )
 
@@ -48,14 +47,19 @@ def _check_config() -> tuple[bool, dict, Path | None]:
     if not project_cfg and not global_cfg:
         print(f"{_FAIL} Config — {CONFIG_FILENAME} not found in any parent directory or ~/")
         print()
-        print(f"  Create ~/.bitbucket.json with:")
-        print(json.dumps({
-            "workspace": "<your-workspace>",
-            "credentials": {
-                "email_env": "BITBUCKET_EMAIL",
-                "token_env": "BITBUCKET_TOKEN",
-            },
-        }, indent=2))
+        print("  Create ~/.bitbucket.json with:")
+        print(
+            json.dumps(
+                {
+                    "workspace": "<your-workspace>",
+                    "credentials": {
+                        "email_env": "BITBUCKET_EMAIL",
+                        "token_env": "BITBUCKET_TOKEN",
+                    },
+                },
+                indent=2,
+            )
+        )
         return False, {}, None
 
     sources = []
@@ -79,7 +83,9 @@ def _check_config() -> tuple[bool, dict, Path | None]:
     if "workspace" not in raw or not raw["workspace"].strip():
         print(f"{_FAIL} Config — missing required field 'workspace'")
         if not project_cfg:
-            print(f"  Hint: create a project-level {CONFIG_FILENAME} or add workspace to ~/.bitbucket.json")
+            print(
+                f"  Hint: create a project-level {CONFIG_FILENAME} or add workspace to ~/.bitbucket.json"
+            )
         return False, raw, project_root
 
     print(f"{_PASS} Config — workspace: {raw['workspace']} ({', '.join(sources)})")
@@ -102,7 +108,10 @@ def _check_credentials(raw: dict, project_root: Path | None) -> bool:
         elif project_root:
             env_path = (project_root / env_file).resolve()
             root_resolved = project_root.resolve()
-            if not str(env_path).startswith(str(root_resolved) + os.sep) and env_path != root_resolved:
+            if (
+                not str(env_path).startswith(str(root_resolved) + os.sep)
+                and env_path != root_resolved
+            ):
                 env_path = None  # skip — relative path escapes project root
         else:
             env_path = None
@@ -137,7 +146,8 @@ def _check_repo_detection(raw: dict) -> bool:
     try:
         result = subprocess.run(
             ["git", "remote", "get-url", "origin"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         if result.returncode != 0:
             print(f"{_WARN} Repo detection — no git remote 'origin' found (use --repo flag)")
@@ -147,13 +157,16 @@ def _check_repo_detection(raw: dict) -> bool:
         workspace, repo = _parse_workspace_and_repo(url)
         if repo:
             cfg_workspace = raw.get("workspace", "")
-            workspace_match = "" if not cfg_workspace or cfg_workspace == workspace else f" (remote workspace '{workspace}' differs from config '{cfg_workspace}')"
+            workspace_match = (
+                ""
+                if not cfg_workspace or cfg_workspace == workspace
+                else f" (remote workspace '{workspace}' differs from config '{cfg_workspace}')"
+            )
             print(f"{_PASS} Repo detection — {workspace}/{repo} (from origin){workspace_match}")
             return True
-        else:
-            print(f"{_WARN} Repo detection — could not parse Bitbucket repo from: {url}")
-            print(f"  Use --repo <slug> when running scripts")
-            return True  # warn, not fail
+        print(f"{_WARN} Repo detection — could not parse Bitbucket repo from: {url}")
+        print("  Use --repo <slug> when running scripts")
+        return True  # warn, not fail
 
     except FileNotFoundError:
         print(f"{_WARN} Repo detection — git not found (use --repo flag)")
@@ -168,8 +181,8 @@ def _check_connectivity(raw: dict, env_vars_ok: bool) -> bool:
 
     # Import here to avoid failing on credential resolution during other checks
     try:
-        from bb_config import load_config
         from bb_client import BitbucketClient
+        from bb_config import load_config
 
         config = load_config()
         client = BitbucketClient(config)
@@ -177,9 +190,8 @@ def _check_connectivity(raw: dict, env_vars_ok: bool) -> bool:
         if client.test_connection(workspace):
             print(f"{_PASS} Connectivity — API reachable, credentials valid")
             return True
-        else:
-            print(f"{_FAIL} Connectivity — API returned error (check credentials and workspace)")
-            return False
+        print(f"{_FAIL} Connectivity — API returned error (check credentials and workspace)")
+        return False
     except SystemExit:
         print(f"{_FAIL} Connectivity — config/credential resolution failed")
         return False
@@ -190,9 +202,11 @@ def _check_connectivity(raw: dict, env_vars_ok: bool) -> bool:
 
 def main() -> None:
     import argparse
+
     parser = argparse.ArgumentParser(description="Pre-flight checks for bitbucket-manager")
-    parser.add_argument("--skip-connectivity", action="store_true",
-                        help="Skip the API connectivity check")
+    parser.add_argument(
+        "--skip-connectivity", action="store_true", help="Skip the API connectivity check"
+    )
     args = parser.parse_args()
 
     print("Bitbucket Manager — Pre-flight Checks")

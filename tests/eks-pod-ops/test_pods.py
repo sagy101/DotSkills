@@ -5,8 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "eks-pod-ops" / "scripts"))
 
-import pytest
-from lib.pods import pick_app_container, _parse_pod, KNOWN_SIDECARS
+from lib.pods import KNOWN_SIDECARS, _parse_pod, pick_app_container
 
 
 class TestPickAppContainer:

@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 
-def extract_section(lines, heading):
+def extract_section(lines: list[str], heading: str) -> list[str]:
     """Extract a ## section from lines: from the heading to the next ## or EOF."""
     result = []
     capturing = False
@@ -38,7 +38,7 @@ def extract_section(lines, heading):
     return result
 
 
-def extract_up_to(lines, heading):
+def extract_up_to(lines: list[str], heading: str) -> list[str]:
     """Extract everything from start up to (but not including) a ## heading."""
     result = []
     for line in lines:
@@ -48,7 +48,7 @@ def extract_up_to(lines, heading):
     return result
 
 
-def extract_from(lines, heading):
+def extract_from(lines: list[str], heading: str) -> list[str]:
     """Extract from a ## heading to end of file."""
     result = []
     capturing = False
@@ -60,7 +60,7 @@ def extract_from(lines, heading):
     return result
 
 
-def list_types(prompts_dir):
+def list_types(prompts_dir: Path) -> list[str]:
     """List available review types."""
     types = []
     for f in sorted(prompts_dir.glob("*.md")):
@@ -70,7 +70,7 @@ def list_types(prompts_dir):
     return types
 
 
-def build_prompt(prompts_dir, review_type):
+def build_prompt(prompts_dir: Path, review_type: str) -> str:
     """Assemble the complete prompt."""
     available = list_types(prompts_dir)
     if review_type not in available:
@@ -124,7 +124,7 @@ def build_prompt(prompts_dir, review_type):
     return "".join(parts)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Assemble a complete review prompt from shared + specific parts."
     )
@@ -134,7 +134,8 @@ def main():
         help="Review type (e.g. security, code-review, performance)",
     )
     parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         help="Write assembled prompt to a file instead of stdout",
     )
     parser.add_argument(

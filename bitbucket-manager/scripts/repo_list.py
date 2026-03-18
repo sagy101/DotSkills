@@ -8,18 +8,23 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from bb_config import add_common_args, load_config, resolve_workspace
 from bb_client import BitbucketClient
+from bb_config import add_common_args, load_config, resolve_workspace
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="List repos in a Bitbucket workspace")
     add_common_args(parser)
     parser.add_argument("--name", help="Filter by repo name (substring match)")
-    parser.add_argument("--max-results", type=int, default=50,
-                        help="Maximum results to return (default: 50)")
-    parser.add_argument("--format", choices=["table", "json"], default="table",
-                        help="Output format (default: table)")
+    parser.add_argument(
+        "--max-results", type=int, default=50, help="Maximum results to return (default: 50)"
+    )
+    parser.add_argument(
+        "--format",
+        choices=["table", "json"],
+        default="table",
+        help="Output format (default: table)",
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -41,7 +46,7 @@ def main() -> None:
         return
 
     print(f"{'Slug':<30}  {'Name':<40}  {'Updated'}")
-    print(f"{'─'*30}  {'─'*40}  {'─'*20}")
+    print(f"{'─' * 30}  {'─' * 40}  {'─' * 20}")
 
     for r in repos:
         slug = r.get("slug", "?")[:30]

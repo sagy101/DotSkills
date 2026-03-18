@@ -6,12 +6,16 @@ import sys
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 _SCRIPTS_DIR = str(Path(__file__).resolve().parent.parent.parent / "jira-manager" / "scripts")
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
 _MODULE_PATH = Path(_SCRIPTS_DIR) / "update_ticket.py"
 _spec = importlib.util.spec_from_file_location("update_ticket", _MODULE_PATH)
+assert _spec is not None
+assert _spec.loader is not None
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 sys.modules["update_ticket"] = _mod
@@ -26,7 +30,7 @@ LINK_TYPES = [
 ]
 
 
-def _make_client(link_types=None):
+def _make_client(link_types: list[dict[str, str]] | None = None) -> mock.MagicMock:
     client = mock.MagicMock()
     client.get_link_types.return_value = link_types or LINK_TYPES
     return client
@@ -36,14 +40,15 @@ def _make_client(link_types=None):
 # Format validation
 # ---------------------------------------------------------------------------
 
+
 class TestLinkFormatValidation:
-    def test_missing_colon(self, capsys):
+    def test_missing_colon(self, capsys: pytest.CaptureFixture[str]) -> None:
         client = _make_client()
         _handle_issue_link(client, "T-1", "BlocksT-2")
         client.add_issue_link.assert_not_called()
         assert "Invalid link format" in capsys.readouterr().err
 
-    def test_empty_target_key(self, capsys):
+    def test_empty_target_key(self, capsys: pytest.CaptureFixture[str]) -> None:
         client = _make_client()
         _handle_issue_link(client, "T-1", "Blocks:")
         client.add_issue_link.assert_not_called()
@@ -53,6 +58,7 @@ class TestLinkFormatValidation:
 # ---------------------------------------------------------------------------
 # Link type matching
 # ---------------------------------------------------------------------------
+
 
 class TestLinkTypeMatching:
     def test_match_by_name(self):
@@ -87,8 +93,9 @@ class TestLinkTypeMatching:
 # Unknown link type
 # ---------------------------------------------------------------------------
 
+
 class TestUnknownLinkType:
-    def test_unknown_type_shows_available(self, capsys):
+    def test_unknown_type_shows_available(self, capsys: pytest.CaptureFixture[str]) -> None:
         client = _make_client()
         _handle_issue_link(client, "T-1", "FakeType:T-2")
         client.add_issue_link.assert_not_called()
@@ -96,7 +103,7 @@ class TestUnknownLinkType:
         assert "Unknown link type" in err
         assert "Blocks" in err
 
-    def test_empty_link_types(self, capsys):
+    def test_empty_link_types(self, capsys: pytest.CaptureFixture[str]) -> None:
         client = _make_client(link_types=[])
         _handle_issue_link(client, "T-1", "Nonexistent:T-2")
         client.add_issue_link.assert_not_called()
@@ -107,8 +114,9 @@ class TestUnknownLinkType:
 # API failure — graceful handling
 # ---------------------------------------------------------------------------
 
+
 class TestLinkApiFailure:
-    def test_api_error_warns_not_exits(self, capsys):
+    def test_api_error_warns_not_exits(self, capsys: pytest.CaptureFixture[str]) -> None:
         client = _make_client()
         client.add_issue_link.side_effect = Exception("API error")
         # Should NOT raise — it warns
@@ -123,4 +131,5 @@ class TestLinkApiFailure:
 
 if __name__ == "__main__":
     import subprocess
+
     sys.exit(subprocess.call([sys.executable, "-m", "pytest", __file__, "-v"]))

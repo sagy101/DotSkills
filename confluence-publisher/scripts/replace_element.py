@@ -25,15 +25,15 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from config_loader import add_config_arg, load_config
-from page_utils import extract_page_id
-from confluence_api import fetch_page, update_page_body
-from html_diff import (
-    normalize_html,
-    semantic_diff,
-    section_integrity_check,
+from confluence_api import fetch_page, update_page_body  # noqa: E402
+from confluence_config import add_config_arg, load_config  # noqa: E402
+from html_diff import (  # noqa: E402
     format_diff_report,
+    normalize_html,
+    section_integrity_check,
+    semantic_diff,
 )
+from page_utils import extract_page_id  # noqa: E402
 
 SUPPORTED_ELEMENTS = {"table", "ul", "ol", "div"}
 
@@ -70,10 +70,18 @@ def parse_args() -> argparse.Namespace:
     apply_grp.add_argument("--new", help="Path to the modified HTML file")
 
     # Shared
-    parser.add_argument("-o", "--output", help="Output file path (extract: save element, apply: save report)")
-    parser.add_argument("--dry-run", action="store_true", help="Show changes without pushing (apply mode)")
+    parser.add_argument(
+        "-o", "--output", help="Output file path (extract: save element, apply: save report)"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show changes without pushing (apply mode)"
+    )
     parser.add_argument("--message", help="Version message for the Confluence edit")
-    parser.add_argument("--force", action="store_true", help="Allow replacement when multiple occurrences found (apply mode)")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Allow replacement when multiple occurrences found (apply mode)",
+    )
 
     args = parser.parse_args()
 
@@ -86,62 +94,58 @@ def parse_args() -> argparse.Namespace:
         parser.error("Specify --heading for extract mode, or --old + --new for apply mode")
 
     # Validate --nth
-    if hasattr(args, 'nth') and args.nth is not None and args.nth < 1:
+    if hasattr(args, "nth") and args.nth is not None and args.nth < 1:
         parser.error("--nth must be >= 1")
 
     return args
 
 
-def find_element_after_heading(html: str, heading_text: str, element: str, nth: int = 1) -> tuple[int, int]:
-    """Find the nth element of the given type after a heading containing heading_text.
+def _find_heading_match(html: str, heading_text: str) -> re.Match:
+    """Find the first heading whose text content contains *heading_text* (case-insensitive).
 
-    For element='section', returns from the heading tag through to the next
-    heading of the same or higher level.
-
-    Returns (start, end) indices into the HTML string.
-    Exits with error if not found.
+    Returns the regex Match object, or exits with an error if no heading matches.
     """
-    # Find headings individually, then check if heading_text appears in the
-    # text content (with inner tags stripped). This avoids the DOTALL regex
-    # spanning across multiple headings.
     heading_pattern = re.compile(
         r"<(h[1-6])([^>]*)>(.*?)</\1>",
         re.IGNORECASE | re.DOTALL,
     )
-    heading_match = None
     for m in heading_pattern.finditer(html):
         inner_text = re.sub(r"<[^>]+>", "", m.group(3))
         if heading_text.lower() in inner_text.lower():
-            heading_match = m
-            break
-    if not heading_match:
-        print(f"ERROR: Heading containing '{heading_text}' not found in page HTML")
-        sys.exit(1)
+            return m
+    print(f"ERROR: Heading containing '{heading_text}' not found in page HTML")
+    sys.exit(1)
 
-    search_from = heading_match.start()
 
-    if element == "section":
-        # Extract from the heading through to the next heading of same/higher level
-        heading_tag = heading_match.group(1).lower()  # e.g., 'h2'
-        heading_level = int(heading_tag[1])
-        # Find next heading of same or higher level
-        next_heading = re.compile(
-            r"<(h[1-" + str(heading_level) + r"])[^>]*>",
-            re.IGNORECASE,
-        )
-        next_match = next_heading.search(html, heading_match.end())
-        if next_match:
-            return search_from, next_match.start()
-        else:
-            return search_from, len(html)
+def _extract_section_range(html: str, heading_match: re.Match) -> tuple[int, int]:
+    """Return (start, end) for the section starting at *heading_match*.
 
-    # For regular elements, find the nth occurrence after the heading.
-    # Uses depth tracking: start at depth=1 when we find the opening tag,
-    # then scan forward for nested open/close tokens until depth returns to 0.
-    tag = element.lower()
+    The section spans from the heading through to the next heading of the same
+    or higher level, or to the end of the HTML if no such heading exists.
+    """
+    heading_tag = heading_match.group(1).lower()  # e.g., 'h2'
+    heading_level = int(heading_tag[1])
+    next_heading = re.compile(
+        r"<(h[1-" + str(heading_level) + r"])[^>]*>",
+        re.IGNORECASE,
+    )
+    next_match = next_heading.search(html, heading_match.end())
+    if next_match:
+        return heading_match.start(), next_match.start()
+    return heading_match.start(), len(html)
+
+
+def _find_nth_element_after(
+    html: str, start_pos: int, tag: str, nth: int, heading_text: str
+) -> tuple[int, int]:
+    """Find the *nth* occurrence of *tag* in *html* starting from *start_pos*.
+
+    Uses depth tracking to correctly handle nested elements of the same type.
+    Returns (start, end) indices, or exits with an error if not found.
+    """
     open_token = f"<{tag}"
     close_token = f"</{tag}>"
-    pos = heading_match.end()
+    pos = start_pos
     count = 0
 
     while pos < len(html):
@@ -180,6 +184,25 @@ def find_element_after_heading(html: str, heading_text: str, element: str, nth: 
     sys.exit(1)
 
 
+def find_element_after_heading(
+    html: str, heading_text: str, element: str, nth: int = 1
+) -> tuple[int, int]:
+    """Find the nth element of the given type after a heading containing heading_text.
+
+    For element='section', returns from the heading tag through to the next
+    heading of the same or higher level.
+
+    Returns (start, end) indices into the HTML string.
+    Exits with error if not found.
+    """
+    heading_match = _find_heading_match(html, heading_text)
+
+    if element == "section":
+        return _extract_section_range(html, heading_match)
+
+    return _find_nth_element_after(html, heading_match.end(), element.lower(), nth, heading_text)
+
+
 def extract_mode(args: argparse.Namespace) -> None:
     """Extract an HTML element from a Confluence page and save to file."""
     config = load_config(args.config)
@@ -191,16 +214,16 @@ def extract_mode(args: argparse.Namespace) -> None:
     print(f"  Version: {snapshot.version}")
     print(f"  Size:    {len(snapshot.html)} chars")
 
-    start, end = find_element_after_heading(
-        snapshot.html, args.heading, args.element, args.nth
-    )
+    start, end = find_element_after_heading(snapshot.html, args.heading, args.element, args.nth)
     element_html = snapshot.html[start:end]
 
     output_path = args.output or f"/tmp/element-{args.element}.html"
     Path(output_path).write_text(element_html, encoding="utf-8")
-    print(f"\nExtracted <{args.element}> ({len(element_html)} chars) after heading '{args.heading}'")
+    print(
+        f"\nExtracted <{args.element}> ({len(element_html)} chars) after heading '{args.heading}'"
+    )
     print(f"  Saved to: {output_path}")
-    print(f"\nEdit this file, then apply with:")
+    print("\nEdit this file, then apply with:")
     print(f"  python {Path(__file__).name} --config {args.config or '.confluence.json'} \\")
     print(f"      --page {page_id} --old {output_path} --new <modified-file> --dry-run")
 
@@ -229,7 +252,9 @@ def apply_mode(args: argparse.Namespace) -> None:
         print("ERROR: Old file is empty (would match everywhere). Re-extract and try again.")
         sys.exit(1)
     if not new_html:
-        print("ERROR: New file is empty (would delete the element). Use surgical_edit.py for deletions.")
+        print(
+            "ERROR: New file is empty (would delete the element). Use surgical_edit.py for deletions."
+        )
         sys.exit(1)
 
     if old_html == new_html:
@@ -250,7 +275,9 @@ def apply_mode(args: argparse.Namespace) -> None:
     count = snapshot.html.count(old_html)
     if count > 1 and not args.force:
         print(f"\nERROR: Found {count} occurrences of the old element in the page.")
-        print("  Cannot determine which one to replace. Use --force to replace the first occurrence,")
+        print(
+            "  Cannot determine which one to replace. Use --force to replace the first occurrence,"
+        )
         print("  or re-extract with a more specific --heading + --nth to get a unique element.")
         sys.exit(1)
     if count > 1:
@@ -273,7 +300,9 @@ def apply_mode(args: argparse.Namespace) -> None:
     else:
         print(report)
 
-    print(f"HTML size: {len(snapshot.html)} -> {len(modified_html)} ({len(modified_html) - len(snapshot.html):+d} chars)")
+    print(
+        f"HTML size: {len(snapshot.html)} -> {len(modified_html)} ({len(modified_html) - len(snapshot.html):+d} chars)"
+    )
 
     if args.dry_run:
         print("\n[DRY RUN] No changes pushed to Confluence.")
@@ -281,7 +310,11 @@ def apply_mode(args: argparse.Namespace) -> None:
 
     version_msg = args.message or f"Element replacement on page {page_id}"
     new_version = update_page_body(
-        config, page_id, snapshot.title, modified_html, message=version_msg,
+        config,
+        page_id,
+        snapshot.title,
+        modified_html,
+        message=version_msg,
     )
     print(f"\nPage updated to version {new_version}")
     print(f"  {config.confluence_url}/pages/{page_id}")

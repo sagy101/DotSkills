@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Codebase Analyzer — Environment Setup
+confluence-publisher skill — Environment Setup
 
 Creates a virtual environment and installs all required dependencies.
 Safe to run multiple times (idempotent).
 
 Usage:
-    python3 setup_env.py
-    python3 setup_env.py --venv-dir .codebase-analyzer-venv
+    python3 confluence_setup_env.py
+    python3 confluence_setup_env.py --venv-dir /custom/path/.venv
 """
 
 import argparse
@@ -16,14 +16,14 @@ import sys
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+SKILL_DIR = SCRIPT_DIR.parent
 REQUIREMENTS = SCRIPT_DIR / "requirements.txt"
-DEFAULT_VENV_DIR = SCRIPT_DIR.parent / ".codebase-analyzer-venv"
-VERIFY_IMPORTS = "import yaml, rich; print('OK')"
+DEFAULT_VENV_DIR = SKILL_DIR / ".venv"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Set up Python environment for codebase-analyzer"
+        description="Set up Python environment for confluence-publisher"
     )
     parser.add_argument(
         "--venv-dir",
@@ -51,6 +51,7 @@ def create_venv(venv_dir: Path) -> None:
     if venv_dir.exists():
         print(f"Virtual environment already exists at {venv_dir}")
         return
+
     print(f"Creating virtual environment at {venv_dir}...")
     subprocess.check_call([sys.executable, "-m", "venv", str(venv_dir)])
     print("Virtual environment created")
@@ -58,9 +59,14 @@ def create_venv(venv_dir: Path) -> None:
 
 def get_venv_python(venv_dir: Path) -> Path:
     """Get path to Python in the virtual environment."""
-    for candidate in [venv_dir / "bin" / "python", venv_dir / "Scripts" / "python.exe"]:
-        if candidate.exists():
-            return candidate
+    # Unix
+    candidate = venv_dir / "bin" / "python"
+    if candidate.exists():
+        return candidate
+    # Windows
+    candidate = venv_dir / "Scripts" / "python.exe"
+    if candidate.exists():
+        return candidate
     print(f"ERROR: Could not find Python in {venv_dir}")
     sys.exit(1)
 
@@ -84,7 +90,7 @@ def install_dependencies(venv_python: Path) -> None:
 def verify_installation(venv_python: Path) -> None:
     """Verify that all required packages can be imported."""
     result = subprocess.run(
-        [str(venv_python), "-c", VERIFY_IMPORTS],
+        [str(venv_python), "-c", "import atlassian, markdown; print('OK')"],
         capture_output=True,
         text=True,
     )
@@ -95,11 +101,11 @@ def verify_installation(venv_python: Path) -> None:
     print("Verification passed: all packages importable")
 
 
-def main() -> None:
+def main():
     args = parse_args()
     venv_dir = Path(args.venv_dir).resolve()
 
-    print("=== codebase-analyzer environment setup ===\n")
+    print("=== confluence-publisher environment setup ===\n")
 
     check_python_version()
     create_venv(venv_dir)
@@ -111,8 +117,8 @@ def main() -> None:
     print("\n=== Setup complete ===")
     print(f"Virtual environment: {venv_dir}")
     print(f"Python:             {venv_python}")
-    print("\nUse this Python for all codebase-analyzer scripts:")
-    print(f"  {venv_python} <skill_dir>/scripts/analyze.py --path . --output terminal")
+    print("\nUse this Python for all confluence-publisher scripts:")
+    print(f"  {venv_python} {SCRIPT_DIR}/publish_page.py ...")
 
 
 if __name__ == "__main__":

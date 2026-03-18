@@ -41,7 +41,7 @@ Before running any publish operation, ensure:
 
 1. **Config**: `.confluence.json` in project root and/or `~/.confluence.json` for global defaults (see [CONFIG.md](references/CONFIG.md))
 2. **Credentials**: `CONFLUENCE_EMAIL` and `CONFLUENCE_TOKEN` exported in shell profile (recommended) or in a `.env` file
-3. **Python deps**: installed via `setup_env.py` (shared venv in skill dir)
+3. **Python deps**: installed via `confluence_setup_env.py` (shared venv in skill dir)
 
 Config is auto-discovered — scripts search CWD upward, then `~/.confluence.json`. If both exist, they are deep-merged (project-level wins). No `--config` flag needed.
 
@@ -108,7 +108,7 @@ Check if the shared virtual environment already exists and has dependencies inst
 If the venv does not exist or dependencies are missing, run the setup script:
 
 ```bash
-python3 <skill_dir>/scripts/setup_env.py
+python3 <skill_dir>/scripts/confluence_setup_env.py
 ```
 
 This creates a shared virtual environment at `<skill_dir>/.venv/` (one venv for all projects). If it fails, tell the user exactly what is missing and how to install it (e.g. `brew install python3` on macOS, `apt install python3` on Linux).
@@ -528,7 +528,7 @@ These operations can be added to this skill in the future:
 | Problem | Cause | Fix |
 |---|---|---|
 | `python3: command not found` | Python not installed | macOS: `brew install python3` / Linux: `apt install python3` |
-| `ModuleNotFoundError: atlassian` | Dependencies not installed | Run `python3 <skill_dir>/scripts/setup_env.py` |
+| `ModuleNotFoundError: atlassian` | Dependencies not installed | Run `python3 <skill_dir>/scripts/confluence_setup_env.py` |
 | `401 Unauthorized` | Bad credentials | Verify env vars are set and token has page write access |
 | `404 Page not found` | Wrong page ID in manifest | Run `discover_pages.py` to rebuild manifest |
 | `Title conflict` | Page title already exists in space | Use a unique title or update the existing page |

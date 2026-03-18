@@ -72,7 +72,7 @@ def pick_app_container(containers: list[str], service: str) -> str:
     return containers[0] if containers else ""
 
 
-def print_pod_table(pods: list[dict], env_name: str):
+def print_pod_table(pods: list[dict], env_name: str) -> None:
     print(f"Pods in {env_name}:")
     print(f"{'NAME':<60} {'STATUS':<12} {'READY':<8} {'RESTARTS':<10} {'CONTAINERS'}")
     print("\u2500" * 120)

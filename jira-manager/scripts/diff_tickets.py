@@ -15,15 +15,16 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import add_config_arg, load_config, load_manifest
 from jira_client import JiraClient
+from jira_config_loader import JiraConfig, add_config_arg, load_config, load_manifest
 from link_rewriter import rewrite_links_to_git
 from markup_converter import md_to_jira_markup
 
 
-def _normalize_text(text):
+def _normalize_text(text: str | None) -> str:
     """Normalize text for comparison (strip trailing whitespace, normalize newlines)."""
     if not text:
         return ""
@@ -31,7 +32,7 @@ def _normalize_text(text):
     return "\n".join(line.rstrip() for line in lines).strip()
 
 
-def _sp_differs(local_sp, remote_sp):
+def _sp_differs(local_sp: float | None, remote_sp: float | None) -> bool:
     """Check if story points differ, treating None vs a number as a difference."""
     if local_sp is None and remote_sp is None:
         return False
@@ -40,7 +41,9 @@ def _sp_differs(local_sp, remote_sp):
     return abs(float(local_sp) - float(remote_sp)) > 0.01
 
 
-def _collect_manifest_entries(manifest):
+def _collect_manifest_entries(
+    manifest: dict[str, Any],
+) -> list[tuple[str, str, dict[str, Any]]]:
     """Gather all stories and subtasks from the manifest into a flat list."""
     entries = []
     for category in ("stories", "subtasks"):
@@ -49,7 +52,9 @@ def _collect_manifest_entries(manifest):
     return entries
 
 
-def _diff_manifest_entry(client, mdata, mid, sp_field):
+def _diff_manifest_entry(
+    client: JiraClient, mdata: dict[str, Any], mid: str, sp_field: str | None
+) -> dict[str, Any] | None:
     """Diff a single manifest entry against live Jira. Returns a result dict."""
     key = mdata.get("key")
     if not key:
@@ -90,7 +95,9 @@ def _diff_manifest_entry(client, mdata, mid, sp_field):
     return {"id": mid, "key": key, "status": "UNCHANGED"}
 
 
-def diff_from_manifest(config, client):
+def diff_from_manifest(
+    config: JiraConfig, client: JiraClient
+) -> tuple[list[dict[str, Any]], int, int]:
     """Compare manifest entries against live Jira."""
     manifest = load_manifest(config)
     if not manifest:
@@ -115,7 +122,14 @@ def diff_from_manifest(config, client):
     return results, changed, unchanged
 
 
-def _diff_single_ticket(client, ticket_id, ticket_data, manifest_data, sp_field, config):
+def _diff_single_ticket(
+    client: JiraClient,
+    ticket_id: str,
+    ticket_data: dict[str, Any],
+    manifest_data: dict[str, Any] | None,
+    sp_field: str | None,
+    config: JiraConfig,
+) -> dict[str, Any]:
     """Diff a single ticket (story or subtask) against live Jira."""
     if not manifest_data:
         return {"id": ticket_id, "key": None, "status": "NEW"}
@@ -138,7 +152,9 @@ def _diff_single_ticket(client, ticket_id, ticket_data, manifest_data, sp_field,
     return {"id": ticket_id, "key": key, "status": "UNCHANGED"}
 
 
-def diff_from_source(config, client, source_path):
+def diff_from_source(
+    config: JiraConfig, client: JiraClient, source_path: str
+) -> tuple[list[dict[str, Any]], int, int]:
     """Compare source file entries against live Jira tickets."""
     from bulk_create import load_source
 
@@ -152,9 +168,7 @@ def diff_from_source(config, client, source_path):
     for story in data.get("stories", []):
         sid = str(story["id"])
         mdata = manifest.get("stories", {}).get(sid)
-        result = _diff_single_ticket(
-            client, f"S{sid}", story, mdata, sp_field, config
-        )
+        result = _diff_single_ticket(client, f"S{sid}", story, mdata, sp_field, config)
         results.append(result)
         if result["status"] in ("CHANGED", "NOT_FOUND", "NEW"):
             changed += 1
@@ -164,9 +178,7 @@ def diff_from_source(config, client, source_path):
         for subtask in story.get("subtasks", []):
             stid = str(subtask["id"])
             st_mdata = manifest.get("subtasks", {}).get(stid)
-            st_result = _diff_single_ticket(
-                client, stid, subtask, st_mdata, sp_field, config
-            )
+            st_result = _diff_single_ticket(client, stid, subtask, st_mdata, sp_field, config)
             results.append(st_result)
             if st_result["status"] in ("CHANGED", "NOT_FOUND", "NEW"):
                 changed += 1
@@ -176,7 +188,12 @@ def diff_from_source(config, client, source_path):
     return results, changed, unchanged
 
 
-def _compare_fields(local, remote_fields, sp_field, config):
+def _compare_fields(
+    local: dict[str, Any],
+    remote_fields: dict[str, Any],
+    sp_field: str | None,
+    config: JiraConfig,
+) -> list[tuple[str, str, str]]:
     """Compare local ticket data against remote Jira fields."""
     diffs = []
 
@@ -206,7 +223,9 @@ def _compare_fields(local, remote_fields, sp_field, config):
     return diffs
 
 
-def format_report(results, changed, unchanged, summary_only=False):
+def format_report(
+    results: list[dict[str, Any]], changed: int, unchanged: int, summary_only: bool = False
+) -> str:
     """Format diff results."""
     lines = []
     lines.append("")
@@ -232,12 +251,14 @@ def format_report(results, changed, unchanged, summary_only=False):
                 lines.append(f"      remote: {remote_val[:60]}")
 
     lines.append("-" * 70)
-    lines.append(f"  Changed: {changed}  |  Unchanged: {unchanged}  |  Total: {changed + unchanged}")
+    lines.append(
+        f"  Changed: {changed}  |  Unchanged: {unchanged}  |  Total: {changed + unchanged}"
+    )
     lines.append("=" * 70)
     return "\n".join(lines)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Diff local vs Jira tickets")
     add_config_arg(parser)
 
@@ -246,9 +267,7 @@ def main():
     group.add_argument("--source", help="Diff source file against Jira")
 
     parser.add_argument("--epic", help="Epic key (currently unused, reserved for future filtering)")
-    parser.add_argument(
-        "--summary", action="store_true", help="Show counts only, no field details"
-    )
+    parser.add_argument("--summary", action="store_true", help="Show counts only, no field details")
     parser.add_argument("--json", action="store_true", help="Output raw JSON")
     args = parser.parse_args()
 
@@ -261,7 +280,9 @@ def main():
         results, changed, unchanged = diff_from_source(config, client, args.source)
 
     if args.json:
-        print(json.dumps({"results": results, "changed": changed, "unchanged": unchanged}, indent=2))
+        print(
+            json.dumps({"results": results, "changed": changed, "unchanged": unchanged}, indent=2)
+        )
     else:
         report = format_report(results, changed, unchanged, args.summary)
         print(report)

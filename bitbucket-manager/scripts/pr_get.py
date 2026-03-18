@@ -8,8 +8,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from bb_config import add_common_args, load_config, resolve_repo, resolve_workspace
 from bb_client import BitbucketClient
+from bb_config import add_common_args, load_config, resolve_repo, resolve_workspace
 
 
 def _format_reviewer(r: dict) -> str:
@@ -24,8 +24,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Get Bitbucket PR details")
     add_common_args(parser)
     parser.add_argument("--pr", required=True, type=int, help="PR ID")
-    parser.add_argument("--format", choices=["detail", "json"], default="detail",
-                        help="Output format (default: detail)")
+    parser.add_argument(
+        "--format",
+        choices=["detail", "json"],
+        default="detail",
+        help="Output format (default: detail)",
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)

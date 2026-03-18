@@ -17,11 +17,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from config_loader import JiraConfig, resolve_credentials
+from jira_config_loader import JiraConfig, resolve_credentials
 
 _DEBUG = os.environ.get("JIRA_DEBUG", "").lower() in ("1", "true", "yes")
 
@@ -29,7 +28,7 @@ _DEBUG = os.environ.get("JIRA_DEBUG", "").lower() in ("1", "true", "yes")
 class JiraClient:
     """Thin wrapper around Jira REST API v2."""
 
-    def __init__(self, config: JiraConfig):
+    def __init__(self, config: JiraConfig) -> None:
         self.config = config
         self.base_url = config.jira_url.rstrip("/")
         if not self.base_url.startswith("https://"):
@@ -53,22 +52,19 @@ class JiraClient:
         self,
         method: str,
         path: str,
-        data: Optional[dict] = None,
-        params: Optional[dict] = None,
+        data: dict | None = None,
+        params: dict | None = None,
     ) -> Any:
         """Execute an HTTP request against the Jira REST API."""
         url = f"{self.base_url}{path}"
         if params:
             qs = "&".join(
-                f"{urllib.parse.quote(k)}={urllib.parse.quote(str(v))}"
-                for k, v in params.items()
+                f"{urllib.parse.quote(k)}={urllib.parse.quote(str(v))}" for k, v in params.items()
             )
             url = f"{url}?{qs}"
 
         body = json.dumps(data).encode() if data else None
-        req = urllib.request.Request(
-            url, data=body, headers=self._headers, method=method
-        )
+        req = urllib.request.Request(url, data=body, headers=self._headers, method=method)
 
         try:
             with urllib.request.urlopen(req, timeout=60) as resp:
@@ -76,7 +72,7 @@ class JiraClient:
                     return {}
                 raw = resp.read().decode()
                 return json.loads(raw) if raw else {}
-        except socket.timeout:
+        except TimeoutError:
             print(f"ERROR: Request timed out (60s) {method} {path}", file=sys.stderr)
             raise
         except urllib.error.HTTPError as e:
@@ -91,7 +87,7 @@ class JiraClient:
             print(f"ERROR {e.code} {method} {path}: {detail}", file=sys.stderr)
             raise
         except urllib.error.URLError as e:
-            if isinstance(e.reason, (socket.timeout, TimeoutError)):
+            if isinstance(e.reason, socket.timeout | TimeoutError):
                 print(f"ERROR: Request timed out (60s) {method} {path}", file=sys.stderr)
             else:
                 print(f"ERROR: URL error {method} {path}: {e.reason}", file=sys.stderr)
@@ -100,38 +96,32 @@ class JiraClient:
     # -----------------------------------------------------------------
     # Issue CRUD
     # -----------------------------------------------------------------
-    def create_issue(self, fields: Dict[str, Any]) -> dict:
+    def create_issue(self, fields: dict[str, Any]) -> dict[str, Any]:
         """Create a Jira issue. Returns the full creation response including 'key'."""
-        return self._request("POST", "/rest/api/2/issue", {"fields": fields})
+        return self._request("POST", "/rest/api/2/issue", {"fields": fields})  # type: ignore[no-any-return]
 
-    def update_issue(self, issue_key: str, fields: Dict[str, Any]) -> dict:
+    def update_issue(self, issue_key: str, fields: dict[str, Any]) -> dict[str, Any]:
         """Update fields on an existing issue."""
-        return self._request(
-            "PUT", f"/rest/api/2/issue/{issue_key}", {"fields": fields}
-        )
+        return self._request("PUT", f"/rest/api/2/issue/{issue_key}", {"fields": fields})  # type: ignore[no-any-return]
 
-    def get_issue(
-        self, issue_key: str, fields: Optional[List[str]] = None
-    ) -> dict:
+    def get_issue(self, issue_key: str, fields: list[str] | None = None) -> dict[str, Any]:
         """Fetch a single issue by key."""
         params = {}
         if fields:
             params["fields"] = ",".join(fields)
-        return self._request("GET", f"/rest/api/2/issue/{issue_key}", params=params)
+        return self._request("GET", f"/rest/api/2/issue/{issue_key}", params=params)  # type: ignore[no-any-return]
 
-    def delete_issue(self, issue_key: str, delete_subtasks: bool = False) -> dict:
+    def delete_issue(self, issue_key: str, delete_subtasks: bool = False) -> dict[str, Any]:
         """Delete an issue by key."""
         params = {}
         if delete_subtasks:
             params["deleteSubtasks"] = "true"
-        return self._request(
-            "DELETE", f"/rest/api/2/issue/{issue_key}", params=params
-        )
+        return self._request("DELETE", f"/rest/api/2/issue/{issue_key}", params=params)  # type: ignore[no-any-return]
 
     # -----------------------------------------------------------------
     # Attachments
     # -----------------------------------------------------------------
-    def add_attachment(self, issue_key: str, file_path: str) -> List[dict]:
+    def add_attachment(self, issue_key: str, file_path: str) -> list[dict[str, Any]]:
         """Attach a file to an issue. Returns the attachment metadata list."""
         fp = Path(file_path)
         if not fp.exists():
@@ -143,10 +133,14 @@ class JiraClient:
 
         file_data = fp.read_bytes()
         body = (
-            f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="{fp.name}"\r\n'
-            f"Content-Type: {mime_type}\r\n\r\n"
-        ).encode() + file_data + f"\r\n--{boundary}--\r\n".encode()
+            (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="file"; filename="{fp.name}"\r\n'
+                f"Content-Type: {mime_type}\r\n\r\n"
+            ).encode()
+            + file_data
+            + f"\r\n--{boundary}--\r\n".encode()
+        )
 
         url = f"{self.base_url}/rest/api/2/issue/{issue_key}/attachments"
         headers = {
@@ -159,14 +153,14 @@ class JiraClient:
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 raw = resp.read().decode()
-                return json.loads(raw) if raw else []
+                return json.loads(raw) if raw else []  # type: ignore[no-any-return]
         except urllib.error.HTTPError as e:
             error_body = e.read().decode()
             detail = error_body[:500] if _DEBUG else "(set JIRA_DEBUG=1 for details)"
             print(f"ERROR {e.code} attaching {fp.name} to {issue_key}: {detail}", file=sys.stderr)
             raise
 
-    def add_attachments(self, issue_key: str, file_paths: List[str]) -> List[dict]:
+    def add_attachments(self, issue_key: str, file_paths: list[str]) -> list[dict[str, Any]]:
         """Attach multiple files to an issue. Returns all attachment metadata."""
         results = []
         for fpath in file_paths:
@@ -180,10 +174,10 @@ class JiraClient:
     def search_jql(
         self,
         jql: str,
-        fields: Optional[List[str]] = None,
+        fields: list[str] | None = None,
         max_results: int = 50,
-        next_page_token: Optional[str] = None,
-    ) -> dict:
+        next_page_token: str | None = None,
+    ) -> dict[str, Any]:
         """Search issues using JQL (Jira Cloud v3 API).
 
         Note: The v3 GET /search/jql endpoint returns only issue IDs when
@@ -197,28 +191,30 @@ class JiraClient:
         if next_page_token:
             params["nextPageToken"] = next_page_token
         params["fields"] = ",".join(fields) if fields else "*navigable"
-        return self._request("GET", "/rest/api/3/search/jql", params=params)
+        return self._request("GET", "/rest/api/3/search/jql", params=params)  # type: ignore[no-any-return]
 
     def search_jql_all(
         self,
         jql: str,
-        fields: Optional[List[str]] = None,
+        fields: list[str] | None = None,
         max_results: int = 0,
-    ) -> List[dict]:
+    ) -> list[dict[str, Any]]:
         """Fetch issues matching JQL, handling pagination automatically.
 
         Args:
             max_results: Maximum total issues to return. Set to 0 for no limit
                          (fetches all in batches of 100). Matches get_board_issues contract.
         """
-        all_issues: List[dict] = []
+        all_issues: list[dict[str, Any]] = []
         next_page_token = None
         unlimited = max_results == 0
         remaining = max_results if not unlimited else float("inf")
         while remaining > 0:
             page_size = 100 if unlimited else min(int(remaining), 100)
             result = self.search_jql(
-                jql, fields=fields, max_results=page_size,
+                jql,
+                fields=fields,
+                max_results=page_size,
                 next_page_token=next_page_token,
             )
             issues = result.get("issues", [])
@@ -236,9 +232,9 @@ class JiraClient:
     def get_children(
         self,
         parent_key: str,
-        issue_type: Optional[str] = None,
-        fields: Optional[List[str]] = None,
-    ) -> List[dict]:
+        issue_type: str | None = None,
+        fields: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
         """Fetch all child issues of a parent (epic's stories, story's subtasks)."""
         # Try epic link first, then parent link
         jql_parts = []
@@ -250,10 +246,7 @@ class JiraClient:
         # Also try the standard parent field for subtasks
         jql_parts.append(f"parent = {parent_key}")
 
-        if issue_type:
-            type_filter = f' AND issuetype = "{issue_type}"'
-        else:
-            type_filter = ""
+        type_filter = f' AND issuetype = "{issue_type}"' if issue_type else ""
 
         all_issues = []
         seen_keys = set()
@@ -276,32 +269,32 @@ class JiraClient:
     # -----------------------------------------------------------------
     # Metadata / Discovery
     # -----------------------------------------------------------------
-    def get_fields(self) -> List[dict]:
+    def get_fields(self) -> list[dict[str, Any]]:
         """Fetch all fields (system + custom) available on this instance."""
-        return self._request("GET", "/rest/api/2/field")
+        return self._request("GET", "/rest/api/2/field")  # type: ignore[no-any-return]
 
     def get_create_meta(
-        self, project_key: Optional[str] = None, expand: bool = True
-    ) -> dict:
+        self, project_key: str | None = None, expand: bool = True
+    ) -> dict[str, Any]:
         """Fetch issue creation metadata for the project."""
         pk = project_key or self.config.project_key
         params = {"projectKeys": pk}
         if expand:
             params["expand"] = "projects.issuetypes.fields"
-        return self._request("GET", "/rest/api/2/issue/createmeta", params=params)
+        return self._request("GET", "/rest/api/2/issue/createmeta", params=params)  # type: ignore[no-any-return]
 
     def get_create_meta_for_type(
         self,
         issue_type_id: str,
-        project_key: Optional[str] = None,
-    ) -> List[dict]:
+        project_key: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Fetch all available fields for a specific issue type via createmeta.
 
         Returns a flat list of field dicts (each with key, name, required,
         allowedValues, etc.).  Handles pagination automatically.
         """
         pk = project_key or self.config.project_key
-        all_fields: List[dict] = []
+        all_fields: list[dict[str, Any]] = []
         start = 0
         while True:
             result = self._request(
@@ -320,19 +313,17 @@ class JiraClient:
                 break
         return all_fields
 
-    def get_transitions(self, issue_key: str) -> List[dict]:
+    def get_transitions(self, issue_key: str) -> list[dict[str, Any]]:
         """Fetch available workflow transitions for an issue."""
-        result = self._request(
-            "GET", f"/rest/api/2/issue/{issue_key}/transitions"
-        )
-        return result.get("transitions", [])
+        result = self._request("GET", f"/rest/api/2/issue/{issue_key}/transitions")
+        return result.get("transitions", [])  # type: ignore[no-any-return]
 
     def transition_issue(
         self,
         issue_key: str,
         transition_id: str,
-        fields: Optional[Dict[str, Any]] = None,
-    ) -> dict:
+        fields: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Execute a workflow transition on an issue.
 
         Args:
@@ -340,90 +331,82 @@ class JiraClient:
             transition_id: The transition ID to execute
             fields: Optional fields to set during the transition
         """
-        body: Dict[str, Any] = {"transition": {"id": transition_id}}
+        body: dict[str, Any] = {"transition": {"id": transition_id}}
         if fields:
             body["fields"] = fields
-        return self._request(
-            "POST", f"/rest/api/2/issue/{issue_key}/transitions", body
-        )
+        return self._request("POST", f"/rest/api/2/issue/{issue_key}/transitions", body)  # type: ignore[no-any-return]
 
-    def get_project(self, project_key: Optional[str] = None) -> dict:
+    def get_project(self, project_key: str | None = None) -> dict[str, Any]:
         """Fetch project metadata."""
         pk = project_key or self.config.project_key
-        return self._request("GET", f"/rest/api/2/project/{pk}")
+        return self._request("GET", f"/rest/api/2/project/{pk}")  # type: ignore[no-any-return]
 
-    def get_statuses_for_project(
-        self, project_key: Optional[str] = None
-    ) -> List[dict]:
+    def get_statuses_for_project(self, project_key: str | None = None) -> list[dict[str, Any]]:
         """Fetch all statuses available in the project."""
         pk = project_key or self.config.project_key
-        return self._request("GET", f"/rest/api/2/project/{pk}/statuses")
+        return self._request("GET", f"/rest/api/2/project/{pk}/statuses")  # type: ignore[no-any-return]
 
-    def get_priorities(self) -> List[dict]:
+    def get_priorities(self) -> list[dict[str, Any]]:
         """Fetch all priorities available on this instance."""
-        return self._request("GET", "/rest/api/2/priority")
+        return self._request("GET", "/rest/api/2/priority")  # type: ignore[no-any-return]
 
-    def get_resolutions(self) -> List[dict]:
+    def get_resolutions(self) -> list[dict[str, Any]]:
         """Fetch all resolutions available on this instance."""
-        return self._request("GET", "/rest/api/2/resolution")
+        return self._request("GET", "/rest/api/2/resolution")  # type: ignore[no-any-return]
 
-    def get_components(
-        self, project_key: Optional[str] = None
-    ) -> List[dict]:
+    def get_components(self, project_key: str | None = None) -> list[dict[str, Any]]:
         """Fetch all components for the project."""
         pk = project_key or self.config.project_key
-        return self._request("GET", f"/rest/api/2/project/{pk}/components")
+        return self._request("GET", f"/rest/api/2/project/{pk}/components")  # type: ignore[no-any-return]
 
-    def get_versions(
-        self, project_key: Optional[str] = None
-    ) -> List[dict]:
+    def get_versions(self, project_key: str | None = None) -> list[dict[str, Any]]:
         """Fetch all versions for the project."""
         pk = project_key or self.config.project_key
-        return self._request("GET", f"/rest/api/2/project/{pk}/versions")
+        return self._request("GET", f"/rest/api/2/project/{pk}/versions")  # type: ignore[no-any-return]
 
     # -----------------------------------------------------------------
     # Agile / Sprint
     # -----------------------------------------------------------------
-    def get_boards(
-        self, project_key: Optional[str] = None
-    ) -> List[dict]:
+    def get_boards(self, project_key: str | None = None) -> list[dict[str, Any]]:
         """Fetch all boards for the project via the Agile REST API."""
         pk = project_key or self.config.project_key
         result = self._request(
-            "GET", "/rest/agile/1.0/board",
+            "GET",
+            "/rest/agile/1.0/board",
             params={"projectKeyOrId": pk},
         )
-        return result.get("values", [])
+        return result.get("values", [])  # type: ignore[no-any-return]
 
     def get_sprints(
         self,
         board_id: int,
-        state: Optional[str] = None,
-    ) -> List[dict]:
+        state: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Fetch sprints for a board.
 
         Args:
             board_id: The Agile board ID.
             state: Optional filter: 'active', 'future', 'closed', or comma-separated.
         """
-        params: Dict[str, str] = {}
+        params: dict[str, str] = {}
         if state:
             params["state"] = state
         result = self._request(
-            "GET", f"/rest/agile/1.0/board/{board_id}/sprint",
+            "GET",
+            f"/rest/agile/1.0/board/{board_id}/sprint",
             params=params or None,
         )
-        return result.get("values", [])
+        return result.get("values", [])  # type: ignore[no-any-return]
 
     def get_board_issues(
         self,
         board_id: int,
-        jql: Optional[str] = None,
-        fields: Optional[List[str]] = None,
+        jql: str | None = None,
+        fields: list[str] | None = None,
         max_results: int = 50,
-    ) -> List[dict]:
+    ) -> list[dict[str, Any]]:
         """Fetch issues from a board, optionally filtering with JQL.
-        
+
         Args:
             max_results: Maximum total issues to return. Set to 0 for no limit
                          (fetches all in batches of 50).
@@ -432,9 +415,9 @@ class JiraClient:
         start_at = 0
         unlimited = max_results == 0
         remaining = max_results if not unlimited else float("inf")
-        
+
         field_param = ",".join(fields) if fields else None
-        
+
         while remaining > 0:
             page_size = 50 if unlimited else min(remaining, 50)
             params = {
@@ -445,51 +428,46 @@ class JiraClient:
                 params["jql"] = jql
             if field_param:
                 params["fields"] = field_param
-                
-            result = self._request(
-                "GET", 
-                f"/rest/agile/1.0/board/{board_id}/issue",
-                params=params
-            )
-            
+
+            result = self._request("GET", f"/rest/agile/1.0/board/{board_id}/issue", params=params)
+
             issues = result.get("issues", [])
             if not issues:
                 break
-                
+
             all_issues.extend(issues)
             remaining -= len(issues)
-            
+
             total = result.get("total", 0)
             if start_at + len(issues) >= total:
                 break
-                
+
             start_at += len(issues)
-            
+
         return all_issues
 
-    def get_issue_sprint(self, issue_key: str) -> Optional[dict]:
+    def get_issue_sprint(self, issue_key: str) -> dict[str, Any] | None:
         """Fetch the active/future sprint for an issue via the Agile API.
 
         Returns the sprint dict or None if no sprint is assigned.
         """
         try:
             result = self._request(
-                "GET", f"/rest/agile/1.0/issue/{issue_key}",
+                "GET",
+                f"/rest/agile/1.0/issue/{issue_key}",
                 params={"fields": "sprint"},
             )
-            return result.get("fields", {}).get("sprint")
+            return result.get("fields", {}).get("sprint")  # type: ignore[no-any-return]
         except urllib.error.HTTPError:
             return None
 
-    def move_issues_to_sprint(
-        self, sprint_id: int, issue_keys: List[str]
-    ) -> dict:
+    def move_issues_to_sprint(self, sprint_id: int, issue_keys: list[str]) -> dict[str, Any]:
         """Move issues into a sprint via the Agile API.
 
         This is the recommended way to set sprints — more reliable than
         setting the sprint custom field directly.
         """
-        return self._request(
+        return self._request(  # type: ignore[no-any-return]
             "POST",
             f"/rest/agile/1.0/sprint/{sprint_id}/issue",
             {"issues": issue_keys},
@@ -498,36 +476,34 @@ class JiraClient:
     # -----------------------------------------------------------------
     # Comments
     # -----------------------------------------------------------------
-    def add_comment(self, issue_key: str, body: str) -> dict:
+    def add_comment(self, issue_key: str, body: str) -> dict[str, Any]:
         """Add a comment to an issue. Returns the created comment."""
-        return self._request(
+        return self._request(  # type: ignore[no-any-return]
             "POST",
             f"/rest/api/2/issue/{issue_key}/comment",
             {"body": body},
         )
 
-    def get_comments(self, issue_key: str) -> List[dict]:
+    def get_comments(self, issue_key: str) -> list[dict[str, Any]]:
         """Fetch all comments on an issue."""
-        result = self._request(
-            "GET", f"/rest/api/2/issue/{issue_key}/comment"
-        )
-        return result.get("comments", [])
+        result = self._request("GET", f"/rest/api/2/issue/{issue_key}/comment")
+        return result.get("comments", [])  # type: ignore[no-any-return]
 
     # -----------------------------------------------------------------
     # Issue Links
     # -----------------------------------------------------------------
-    def get_link_types(self) -> List[dict]:
+    def get_link_types(self) -> list[dict[str, Any]]:
         """Fetch all available issue link types (e.g. Blocks, Cloners, Duplicate)."""
         result = self._request("GET", "/rest/api/2/issueLinkType")
-        return result.get("issueLinkTypes", [])
+        return result.get("issueLinkTypes", [])  # type: ignore[no-any-return]
 
     def add_issue_link(
         self,
         link_type_name: str,
         inward_key: str,
         outward_key: str,
-        comment: Optional[str] = None,
-    ) -> dict:
+        comment: str | None = None,
+    ) -> dict[str, Any]:
         """Create a link between two issues.
 
         Args:
@@ -540,19 +516,19 @@ class JiraClient:
         Example: add_issue_link("Blocks", "API-100", "API-200")
             means API-100 blocks API-200.
         """
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "type": {"name": link_type_name},
             "inwardIssue": {"key": inward_key},
             "outwardIssue": {"key": outward_key},
         }
         if comment:
             body["comment"] = {"body": comment}
-        return self._request("POST", "/rest/api/2/issueLink", body)
+        return self._request("POST", "/rest/api/2/issueLink", body)  # type: ignore[no-any-return]
 
-    def get_issue_links(self, issue_key: str) -> List[dict]:
+    def get_issue_links(self, issue_key: str) -> list[dict[str, Any]]:
         """Fetch all links on an issue."""
         issue = self.get_issue(issue_key, fields=["issuelinks"])
-        return issue.get("fields", {}).get("issuelinks", [])
+        return issue.get("fields", {}).get("issuelinks", [])  # type: ignore[no-any-return]
 
     # -----------------------------------------------------------------
     # Utility

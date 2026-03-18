@@ -67,7 +67,7 @@ Then a minimal per-project `.bitbucket.json` only needs optional overrides:
 Run the preflight script before any other operation:
 
 ```bash
-python3 <skill_dir>/scripts/preflight.py
+python3 <skill_dir>/scripts/bb_preflight.py
 ```
 
 This checks Python version, config file, credentials, repo auto-detection, and API connectivity in one pass. Each check prints `[PASS]`, `[FAIL]`, or `[WARN]` with actionable fix instructions. Exit code 0 = all checks passed, 1 = at least one failed.
@@ -75,7 +75,7 @@ This checks Python version, config file, credentials, repo auto-detection, and A
 Skip the connectivity check (faster, offline-safe):
 
 ```bash
-python3 <skill_dir>/scripts/preflight.py --skip-connectivity
+python3 <skill_dir>/scripts/bb_preflight.py --skip-connectivity
 ```
 
 If any check fails, fix the issue and re-run before proceeding.

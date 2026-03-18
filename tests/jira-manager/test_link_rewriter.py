@@ -12,6 +12,8 @@ if _SCRIPTS_DIR not in sys.path:
 
 _MODULE_PATH = Path(_SCRIPTS_DIR) / "link_rewriter.py"
 _spec = importlib.util.spec_from_file_location("link_rewriter", _MODULE_PATH)
+assert _spec is not None
+assert _spec.loader is not None
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 sys.modules["link_rewriter"] = _mod
@@ -21,7 +23,7 @@ rewrite_links_to_git = _mod.rewrite_links_to_git
 rewrite_links_to_local = _mod.rewrite_links_to_local
 
 
-def _make_config(remote_url, branch="main"):
+def _make_config(remote_url: str | None, branch: str = "main") -> mock.MagicMock:
     config = mock.MagicMock()
     config.resolve_git_remote_url.return_value = remote_url
     config.resolve_git_branch.return_value = branch
@@ -31,6 +33,7 @@ def _make_config(remote_url, branch="main"):
 # ---------------------------------------------------------------------------
 # _git_remote_to_browse_base — SSH URLs
 # ---------------------------------------------------------------------------
+
 
 class TestGitRemoteSsh:
     def test_bitbucket_ssh(self):
@@ -62,6 +65,7 @@ class TestGitRemoteSsh:
 # _git_remote_to_browse_base — HTTPS URLs
 # ---------------------------------------------------------------------------
 
+
 class TestGitRemoteHttps:
     def test_bitbucket_https(self):
         result = _git_remote_to_browse_base("https://bitbucket.org/acme/repo.git", "main")
@@ -88,6 +92,7 @@ class TestGitRemoteHttps:
 # _git_remote_to_browse_base — edge cases
 # ---------------------------------------------------------------------------
 
+
 class TestGitRemoteEdgeCases:
     def test_empty_string(self):
         assert _git_remote_to_browse_base("", "main") is None
@@ -104,6 +109,7 @@ class TestGitRemoteEdgeCases:
 # ---------------------------------------------------------------------------
 # rewrite_links_to_git
 # ---------------------------------------------------------------------------
+
 
 class TestRewriteLinksToGit:
     def test_relative_path(self):
@@ -166,12 +172,13 @@ class TestRewriteLinksToGit:
 # rewrite_links_to_local
 # ---------------------------------------------------------------------------
 
+
 class TestRewriteLinksToLocal:
     def test_git_url_to_relative(self):
         config = _make_config("git@github.com:user/repo.git")
         text = "[doc](https://github.com/user/repo/blob/main/path/file.md)"
         result = rewrite_links_to_local(text, config)
-        assert "[doc](path/file.md)" == result
+        assert result == "[doc](path/file.md)"
 
     def test_different_host_not_rewritten(self):
         config = _make_config("git@github.com:user/repo.git")
@@ -199,6 +206,7 @@ class TestRewriteLinksToLocal:
 # Roundtrip
 # ---------------------------------------------------------------------------
 
+
 class TestRoundTrip:
     def test_github_roundtrip(self):
         config = _make_config("git@github.com:user/repo.git")
@@ -218,4 +226,5 @@ class TestRoundTrip:
 
 if __name__ == "__main__":
     import subprocess
+
     sys.exit(subprocess.call([sys.executable, "-m", "pytest", __file__, "-v"]))

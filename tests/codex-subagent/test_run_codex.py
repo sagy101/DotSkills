@@ -1,40 +1,42 @@
 #!/usr/bin/env python3
 """Unit tests for run_codex.py safety-critical parsing functions."""
 
-import pytest
-import sys
 import os
+import sys
+import unittest.mock
+from collections.abc import Generator
+from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "codex-subagent", "scripts"))
 
 from run_codex import (
-    version_gte,
-    scan_for_dangerous_flags,
-    _check_sandbox_flag,
+    DEFAULT_MAX_PARALLEL,
     _check_dangerous_flag,
+    _check_sandbox_flag,
+    _count_active_agents,
+    _ensure_pid_dir,
+    _extract_subcommand,
+    _is_pid_alive,
     _is_sandbox_config_override,
     _is_scope_flag,
     _matches_blocked_flag,
-    _extract_subcommand,
     _normalize_exit_code,
-    build_codex_args,
-    parse_args_with_passthrough,
-    _count_active_agents,
-    _register_agent,
-    _unregister_agent,
-    _is_pid_alive,
-    _ensure_pid_dir,
-    _scan_agents,
     _read_pid_metadata,
-    _signal_cleanup,
+    _register_agent,
+    _scan_agents,
+    _unregister_agent,
+    build_codex_args,
     enforce_parallel_limit,
+    parse_args_with_passthrough,
     print_status,
-    DEFAULT_MAX_PARALLEL,
-    PID_TRACKING_DIR,
+    scan_for_dangerous_flags,
+    version_gte,
 )
 
-
 # ========== version_gte ==========
+
 
 class TestVersionGte:
     def test_equal(self):
@@ -70,6 +72,7 @@ class TestVersionGte:
 
 # ========== _is_sandbox_config_override ==========
 
+
 class TestIsSandboxConfigOverride:
     def test_c_sandbox(self):
         assert _is_sandbox_config_override("-c", "sandbox_mode=danger") is True
@@ -102,6 +105,7 @@ class TestIsSandboxConfigOverride:
 
 # ========== _is_scope_flag ==========
 
+
 class TestIsScopeFlag:
     def test_cd(self):
         assert _is_scope_flag("--cd") is True
@@ -125,6 +129,7 @@ class TestIsScopeFlag:
 
 # ========== _matches_blocked_flag ==========
 
+
 class TestMatchesBlockedFlag:
     def test_exact_long(self):
         assert _matches_blocked_flag("--ephemeral", "--ephemeral") is True
@@ -133,7 +138,9 @@ class TestMatchesBlockedFlag:
         assert _matches_blocked_flag("-o", "-o") is True
 
     def test_long_eq_form(self):
-        assert _matches_blocked_flag("--output-last-message=/tmp/x", "--output-last-message") is True
+        assert (
+            _matches_blocked_flag("--output-last-message=/tmp/x", "--output-last-message") is True
+        )
 
     def test_short_attached(self):
         assert _matches_blocked_flag("-o/tmp/x", "-o") is True
@@ -150,6 +157,7 @@ class TestMatchesBlockedFlag:
 
 
 # ========== _check_sandbox_flag ==========
+
 
 class TestCheckSandboxFlag:
     def test_sandbox_danger_full(self):
@@ -190,6 +198,7 @@ class TestCheckSandboxFlag:
 
 
 # ========== _check_dangerous_flag ==========
+
 
 class TestCheckDangerousFlag:
     def test_dangerously_bypass(self):
@@ -270,6 +279,7 @@ class TestCheckDangerousFlag:
 
 # ========== scan_for_dangerous_flags (integration) ==========
 
+
 class TestScanForDangerousFlags:
     def test_clean_passthrough(self):
         scan_for_dangerous_flags(["--model", "gpt-4", "-c", "temperature=0"])
@@ -302,12 +312,22 @@ class TestScanForDangerousFlags:
             scan_for_dangerous_flags(["--full-auto"])
 
     def test_safe_passthrough_flags_in_list(self):
-        scan_for_dangerous_flags([
-            "--model", "o3", "--skip-git-repo-check",
-            "--output-schema", "/tmp/schema.json",
-            "-i", "img.png", "--oss", "-p", "fast",
-            "--enable", "streaming",
-        ])
+        scan_for_dangerous_flags(
+            [
+                "--model",
+                "o3",
+                "--skip-git-repo-check",
+                "--output-schema",
+                "/tmp/schema.json",
+                "-i",
+                "img.png",
+                "--oss",
+                "-p",
+                "fast",
+                "--enable",
+                "streaming",
+            ]
+        )
 
     def test_catches_dangerously_bypass_in_list(self):
         with pytest.raises(SystemExit):
@@ -362,7 +382,7 @@ BLOCKED_FLAG_SAMPLES = [
 ]
 
 
-def _parse_then_scan(argv):
+def _parse_then_scan(argv: list[str]) -> None:
     """Helper: parse argv then run safety scan on resulting passthrough."""
     _, passthrough = parse_args_with_passthrough(argv)
     scan_for_dangerous_flags(passthrough)
@@ -372,22 +392,28 @@ class TestBlockedFlagsViaAllPaths:
     """Integration: blocked flags must be caught regardless of delivery path."""
 
     # --- Path 1: normal passthrough (unrecognized flag, before '-') ---
-    @pytest.mark.parametrize("blocked", BLOCKED_FLAG_SAMPLES, ids=[b[0] for b in BLOCKED_FLAG_SAMPLES])
-    def test_blocked_via_normal_passthrough(self, blocked):
+    @pytest.mark.parametrize(
+        "blocked", BLOCKED_FLAG_SAMPLES, ids=[b[0] for b in BLOCKED_FLAG_SAMPLES]
+    )
+    def test_blocked_via_normal_passthrough(self, blocked: list[str]) -> None:
         argv = ["--mode", "read-only"] + blocked + ["-"]
         with pytest.raises(SystemExit):
             _parse_then_scan(argv)
 
     # --- Path 2: after '--' separator ---
-    @pytest.mark.parametrize("blocked", BLOCKED_FLAG_SAMPLES, ids=[b[0] for b in BLOCKED_FLAG_SAMPLES])
-    def test_blocked_via_double_dash(self, blocked):
+    @pytest.mark.parametrize(
+        "blocked", BLOCKED_FLAG_SAMPLES, ids=[b[0] for b in BLOCKED_FLAG_SAMPLES]
+    )
+    def test_blocked_via_double_dash(self, blocked: list[str]) -> None:
         argv = ["--mode", "read-only", "--"] + blocked + ["-"]
         with pytest.raises(SystemExit):
             _parse_then_scan(argv)
 
     # --- Path 3: trailing args after '-' stdin marker ---
-    @pytest.mark.parametrize("blocked", BLOCKED_FLAG_SAMPLES, ids=[b[0] for b in BLOCKED_FLAG_SAMPLES])
-    def test_blocked_via_trailing_after_stdin(self, blocked):
+    @pytest.mark.parametrize(
+        "blocked", BLOCKED_FLAG_SAMPLES, ids=[b[0] for b in BLOCKED_FLAG_SAMPLES]
+    )
+    def test_blocked_via_trailing_after_stdin(self, blocked: list[str]) -> None:
         argv = ["--mode", "read-only", "-"] + blocked
         with pytest.raises(SystemExit):
             _parse_then_scan(argv)
@@ -412,22 +438,23 @@ class TestSafePassthroughViaAllPaths:
     ]
 
     @pytest.mark.parametrize("safe", SAFE_FLAG_SAMPLES, ids=[s[0] for s in SAFE_FLAG_SAMPLES])
-    def test_safe_via_normal_passthrough(self, safe):
+    def test_safe_via_normal_passthrough(self, safe: list[str]) -> None:
         argv = ["--mode", "read-only"] + safe + ["-"]
         _parse_then_scan(argv)  # should not raise
 
     @pytest.mark.parametrize("safe", SAFE_FLAG_SAMPLES, ids=[s[0] for s in SAFE_FLAG_SAMPLES])
-    def test_safe_via_double_dash(self, safe):
+    def test_safe_via_double_dash(self, safe: list[str]) -> None:
         argv = ["--mode", "read-only", "--"] + safe + ["-"]
         _parse_then_scan(argv)  # should not raise
 
     @pytest.mark.parametrize("safe", SAFE_FLAG_SAMPLES, ids=[s[0] for s in SAFE_FLAG_SAMPLES])
-    def test_safe_via_trailing_after_stdin(self, safe):
+    def test_safe_via_trailing_after_stdin(self, safe: list[str]) -> None:
         argv = ["--mode", "read-only", "-"] + safe
         _parse_then_scan(argv)  # should not raise
 
 
 # ========== _extract_subcommand ==========
+
 
 class TestExtractSubcommand:
     def test_review_first_token(self):
@@ -478,6 +505,7 @@ class TestExtractSubcommand:
 
 # ========== _normalize_exit_code ==========
 
+
 class TestNormalizeExitCode:
     def test_none(self):
         assert _normalize_exit_code(None) == 1
@@ -501,12 +529,18 @@ class TestNormalizeExitCode:
 
 # ========== build_codex_args ==========
 
+
 class TestBuildCodexArgs:
     def test_read_only_basic(self):
         args = build_codex_args(
-            mode="read-only", resume=False, persist=False, web_search=False,
+            mode="read-only",
+            resume=False,
+            persist=False,
+            web_search=False,
             skip_git_repo_check=False,
-            result_file="/tmp/r.txt", worktree_dir=None, passthrough=[],
+            result_file="/tmp/r.txt",
+            worktree_dir=None,
+            passthrough=[],
         )
         assert args[:1] == ["exec"]
         assert "--sandbox" in args
@@ -518,9 +552,14 @@ class TestBuildCodexArgs:
 
     def test_write_mode(self):
         args = build_codex_args(
-            mode="write", resume=False, persist=False, web_search=False,
+            mode="write",
+            resume=False,
+            persist=False,
+            web_search=False,
             skip_git_repo_check=False,
-            result_file="/tmp/r.txt", worktree_dir=None, passthrough=[],
+            result_file="/tmp/r.txt",
+            worktree_dir=None,
+            passthrough=[],
         )
         assert "--full-auto" in args
         assert "--sandbox" in args
@@ -529,17 +568,27 @@ class TestBuildCodexArgs:
 
     def test_persist_no_ephemeral(self):
         args = build_codex_args(
-            mode="read-only", resume=False, persist=True, web_search=False,
+            mode="read-only",
+            resume=False,
+            persist=True,
+            web_search=False,
             skip_git_repo_check=False,
-            result_file="/tmp/r.txt", worktree_dir=None, passthrough=[],
+            result_file="/tmp/r.txt",
+            worktree_dir=None,
+            passthrough=[],
         )
         assert "--ephemeral" not in args
 
     def test_web_search(self):
         args = build_codex_args(
-            mode="read-only", resume=False, persist=False, web_search=True,
+            mode="read-only",
+            resume=False,
+            persist=False,
+            web_search=True,
             skip_git_repo_check=False,
-            result_file="/tmp/r.txt", worktree_dir=None, passthrough=[],
+            result_file="/tmp/r.txt",
+            worktree_dir=None,
+            passthrough=[],
         )
         assert "-c" in args
         idx = args.index("-c")
@@ -547,9 +596,14 @@ class TestBuildCodexArgs:
 
     def test_worktree_cd(self):
         args = build_codex_args(
-            mode="write", resume=False, persist=False, web_search=False,
+            mode="write",
+            resume=False,
+            persist=False,
+            web_search=False,
             skip_git_repo_check=False,
-            result_file="/tmp/r.txt", worktree_dir="/tmp/wt-123", passthrough=[],
+            result_file="/tmp/r.txt",
+            worktree_dir="/tmp/wt-123",
+            passthrough=[],
         )
         assert "--cd" in args
         idx = args.index("--cd")
@@ -557,9 +611,14 @@ class TestBuildCodexArgs:
 
     def test_resume(self):
         args = build_codex_args(
-            mode="read-only", resume=True, persist=False, web_search=False,
+            mode="read-only",
+            resume=True,
+            persist=False,
+            web_search=False,
             skip_git_repo_check=False,
-            result_file="/tmp/r.txt", worktree_dir=None, passthrough=[],
+            result_file="/tmp/r.txt",
+            worktree_dir=None,
+            passthrough=[],
         )
         assert args[:3] == ["exec", "resume", "--last"]
         assert "--sandbox" not in args
@@ -569,9 +628,13 @@ class TestBuildCodexArgs:
 
     def test_review_subcommand(self):
         args = build_codex_args(
-            mode="read-only", resume=False, persist=False, web_search=False,
+            mode="read-only",
+            resume=False,
+            persist=False,
+            web_search=False,
             skip_git_repo_check=False,
-            result_file="/tmp/r.txt", worktree_dir=None,
+            result_file="/tmp/r.txt",
+            worktree_dir=None,
             passthrough=["review", "--uncommitted"],
         )
         assert args[0] == "exec"
@@ -580,9 +643,14 @@ class TestBuildCodexArgs:
 
     def test_color_always_present(self):
         args = build_codex_args(
-            mode="read-only", resume=False, persist=False, web_search=False,
+            mode="read-only",
+            resume=False,
+            persist=False,
+            web_search=False,
             skip_git_repo_check=False,
-            result_file="/tmp/r.txt", worktree_dir=None, passthrough=[],
+            result_file="/tmp/r.txt",
+            worktree_dir=None,
+            passthrough=[],
         )
         assert "--color" in args
         idx = args.index("--color")
@@ -590,9 +658,13 @@ class TestBuildCodexArgs:
 
     def test_passthrough_appended(self):
         args = build_codex_args(
-            mode="read-only", resume=False, persist=False, web_search=False,
+            mode="read-only",
+            resume=False,
+            persist=False,
+            web_search=False,
             skip_git_repo_check=False,
-            result_file="/tmp/r.txt", worktree_dir=None,
+            result_file="/tmp/r.txt",
+            worktree_dir=None,
             passthrough=["--model", "o3"],
         )
         assert "--model" in args
@@ -600,33 +672,52 @@ class TestBuildCodexArgs:
 
     def test_skip_git_repo_check_appended(self):
         args = build_codex_args(
-            mode="read-only", resume=False, persist=False, web_search=False,
+            mode="read-only",
+            resume=False,
+            persist=False,
+            web_search=False,
             skip_git_repo_check=True,
-            result_file="/tmp/r.txt", worktree_dir=None, passthrough=[],
+            result_file="/tmp/r.txt",
+            worktree_dir=None,
+            passthrough=[],
         )
         assert "--skip-git-repo-check" in args
 
     def test_skip_git_repo_check_not_appended_when_false(self):
         args = build_codex_args(
-            mode="read-only", resume=False, persist=False, web_search=False,
+            mode="read-only",
+            resume=False,
+            persist=False,
+            web_search=False,
             skip_git_repo_check=False,
-            result_file="/tmp/r.txt", worktree_dir=None, passthrough=[],
+            result_file="/tmp/r.txt",
+            worktree_dir=None,
+            passthrough=[],
         )
         assert "--skip-git-repo-check" not in args
 
     def test_skip_git_repo_check_with_resume(self):
         args = build_codex_args(
-            mode="read-only", resume=True, persist=False, web_search=False,
+            mode="read-only",
+            resume=True,
+            persist=False,
+            web_search=False,
             skip_git_repo_check=True,
-            result_file="/tmp/r.txt", worktree_dir=None, passthrough=[],
+            result_file="/tmp/r.txt",
+            worktree_dir=None,
+            passthrough=[],
         )
         assert "--skip-git-repo-check" in args
 
     def test_resume_still_appends_passthrough(self):
         args = build_codex_args(
-            mode="read-only", resume=True, persist=False, web_search=False,
+            mode="read-only",
+            resume=True,
+            persist=False,
+            web_search=False,
             skip_git_repo_check=False,
-            result_file="/tmp/r.txt", worktree_dir=None,
+            result_file="/tmp/r.txt",
+            worktree_dir=None,
             passthrough=["--model", "o3"],
         )
         assert "--model" in args
@@ -634,17 +725,26 @@ class TestBuildCodexArgs:
 
     def test_write_mode_has_ephemeral(self):
         args = build_codex_args(
-            mode="write", resume=False, persist=False, web_search=False,
+            mode="write",
+            resume=False,
+            persist=False,
+            web_search=False,
             skip_git_repo_check=False,
-            result_file="/tmp/r.txt", worktree_dir=None, passthrough=[],
+            result_file="/tmp/r.txt",
+            worktree_dir=None,
+            passthrough=[],
         )
         assert "--ephemeral" in args
 
     def test_review_base_subcommand(self):
         args = build_codex_args(
-            mode="read-only", resume=False, persist=False, web_search=False,
+            mode="read-only",
+            resume=False,
+            persist=False,
+            web_search=False,
             skip_git_repo_check=False,
-            result_file="/tmp/r.txt", worktree_dir=None,
+            result_file="/tmp/r.txt",
+            worktree_dir=None,
             passthrough=["review", "--base", "main"],
         )
         assert args[0] == "exec"
@@ -655,6 +755,7 @@ class TestBuildCodexArgs:
 
 # ========== parse_args_with_passthrough ==========
 
+
 class TestParseArgsWithPassthrough:
     def test_basic_read_only(self):
         parsed, pt = parse_args_with_passthrough(["--mode", "read-only", "-"])
@@ -662,16 +763,12 @@ class TestParseArgsWithPassthrough:
         assert pt == []
 
     def test_passthrough_collected(self):
-        parsed, pt = parse_args_with_passthrough(
-            ["--mode", "write", "--model", "gpt-4", "-"]
-        )
+        parsed, pt = parse_args_with_passthrough(["--mode", "write", "--model", "gpt-4", "-"])
         assert parsed.mode == "write"
         assert pt == ["--model", "gpt-4"]
 
     def test_stdin_marker_stops_parsing(self):
-        _, pt = parse_args_with_passthrough(
-            ["--mode", "read-only", "-", "--extra"]
-        )
+        _, pt = parse_args_with_passthrough(["--mode", "read-only", "-", "--extra"])
         assert pt == ["--extra"]
 
     def test_defaults(self):
@@ -686,13 +783,25 @@ class TestParseArgsWithPassthrough:
         assert parsed.max_parallel == DEFAULT_MAX_PARALLEL
 
     def test_all_wrapper_flags(self):
-        parsed, passthrough = parse_args_with_passthrough([
-            "--mode", "write", "--collision", "medium", "--timeout", "1200",
-            "--web-search", "--resume", "--persist",
-            "--skip-git-repo-check",
-            "--max-parallel", "8",
-            "--review-prompt", "/tmp/p.md", "-",
-        ])
+        parsed, passthrough = parse_args_with_passthrough(
+            [
+                "--mode",
+                "write",
+                "--collision",
+                "medium",
+                "--timeout",
+                "1200",
+                "--web-search",
+                "--resume",
+                "--persist",
+                "--skip-git-repo-check",
+                "--max-parallel",
+                "8",
+                "--review-prompt",
+                "/tmp/p.md",
+                "-",
+            ]
+        )
         assert parsed.mode == "write"
         assert parsed.collision == "medium"
         assert parsed.timeout == 1200
@@ -720,44 +829,83 @@ class TestParseArgsWithPassthrough:
         assert pt == ["--model", "o3"]
 
     def test_mixed_wrapper_and_passthrough(self):
-        parsed, pt = parse_args_with_passthrough([
-            "--mode", "read-only", "review", "--uncommitted", "-",
-        ])
+        parsed, pt = parse_args_with_passthrough(
+            [
+                "--mode",
+                "read-only",
+                "review",
+                "--uncommitted",
+                "-",
+            ]
+        )
         assert parsed.mode == "read-only"
         assert pt == ["review", "--uncommitted"]
 
     def test_double_dash_routes_to_passthrough(self):
-        parsed, pt = parse_args_with_passthrough([
-            "--mode", "read-only", "--", "--skip-git-repo-check", "-",
-        ])
+        parsed, pt = parse_args_with_passthrough(
+            [
+                "--mode",
+                "read-only",
+                "--",
+                "--skip-git-repo-check",
+                "-",
+            ]
+        )
         assert parsed.mode == "read-only"
         assert pt == ["--skip-git-repo-check"]
 
     def test_double_dash_does_not_leak_into_passthrough(self):
         """The literal '--' must NOT appear in passthrough args."""
-        _, pt = parse_args_with_passthrough([
-            "--mode", "read-only", "--", "-m", "o3", "-",
-        ])
+        _, pt = parse_args_with_passthrough(
+            [
+                "--mode",
+                "read-only",
+                "--",
+                "-m",
+                "o3",
+                "-",
+            ]
+        )
         assert "--" not in pt
         assert pt == ["-m", "o3"]
 
     def test_double_dash_multiple_passthrough_flags(self):
-        _, pt = parse_args_with_passthrough([
-            "--mode", "write", "--", "-m", "o3", "-c", "temperature=0", "-",
-        ])
+        _, pt = parse_args_with_passthrough(
+            [
+                "--mode",
+                "write",
+                "--",
+                "-m",
+                "o3",
+                "-c",
+                "temperature=0",
+                "-",
+            ]
+        )
         assert pt == ["-m", "o3", "-c", "temperature=0"]
 
     def test_double_dash_no_stdin_marker(self):
         """If no '-' after '--', everything goes to passthrough."""
-        _, pt = parse_args_with_passthrough([
-            "--mode", "read-only", "--", "--model", "o3",
-        ])
+        _, pt = parse_args_with_passthrough(
+            [
+                "--mode",
+                "read-only",
+                "--",
+                "--model",
+                "o3",
+            ]
+        )
         assert pt == ["--model", "o3"]
 
     def test_skip_git_repo_check_as_wrapper_flag(self):
-        parsed, pt = parse_args_with_passthrough([
-            "--mode", "read-only", "--skip-git-repo-check", "-",
-        ])
+        parsed, pt = parse_args_with_passthrough(
+            [
+                "--mode",
+                "read-only",
+                "--skip-git-repo-check",
+                "-",
+            ]
+        )
         assert parsed.skip_git_repo_check is True
         assert pt == []
 
@@ -780,32 +928,44 @@ class TestParseArgsWithPassthrough:
         assert pt == []
 
     def test_wrapper_flags_after_double_dash_become_passthrough(self):
-        parsed, pt = parse_args_with_passthrough([
-            "--mode", "read-only", "--", "--web-search", "--resume", "-",
-        ])
+        parsed, pt = parse_args_with_passthrough(
+            [
+                "--mode",
+                "read-only",
+                "--",
+                "--web-search",
+                "--resume",
+                "-",
+            ]
+        )
         assert parsed.mode == "read-only"
         assert parsed.web_search is False
         assert parsed.resume is False
         assert pt == ["--web-search", "--resume"]
 
     def test_interleaved_passthrough_between_wrapper_flags(self):
-        parsed, pt = parse_args_with_passthrough([
-            "--model", "o3", "--mode", "write", "-c", "temperature=0", "-",
-        ])
+        parsed, pt = parse_args_with_passthrough(
+            [
+                "--model",
+                "o3",
+                "--mode",
+                "write",
+                "-c",
+                "temperature=0",
+                "-",
+            ]
+        )
         assert parsed.mode == "write"
         assert pt == ["--model", "o3", "-c", "temperature=0"]
 
 
 # ========== Parallel Agent Tracking ==========
 
-import shutil
-import tempfile
-import unittest.mock
-import run_codex as _mod
+import run_codex as _mod  # noqa: E402
 
 
 @pytest.fixture(autouse=False)
-def isolated_pid_dir(tmp_path, monkeypatch):
+def isolated_pid_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[str, None, None]:
     """Redirect PID_TRACKING_DIR to an isolated temp dir for each test."""
     pid_dir = str(tmp_path / "codex-agent-pids")
     monkeypatch.setattr(_mod, "PID_TRACKING_DIR", pid_dir)
@@ -814,12 +974,12 @@ def isolated_pid_dir(tmp_path, monkeypatch):
 
 
 class TestParallelAgentTracking:
-    def test_ensure_pid_dir_creates(self, isolated_pid_dir):
+    def test_ensure_pid_dir_creates(self, isolated_pid_dir: str) -> None:
         assert not os.path.exists(isolated_pid_dir)
         _ensure_pid_dir()
         assert os.path.isdir(isolated_pid_dir)
 
-    def test_ensure_pid_dir_idempotent(self, isolated_pid_dir):
+    def test_ensure_pid_dir_idempotent(self, isolated_pid_dir: str) -> None:
         _ensure_pid_dir()
         _ensure_pid_dir()
         assert os.path.isdir(isolated_pid_dir)
@@ -830,25 +990,27 @@ class TestParallelAgentTracking:
     def test_is_pid_alive_dead(self):
         assert _is_pid_alive(999999999) is False
 
-    def test_count_active_agents_empty(self, isolated_pid_dir):
+    def test_count_active_agents_empty(self, isolated_pid_dir: str) -> None:
         assert _count_active_agents() == 0
 
-    def test_register_creates_pid_file(self, isolated_pid_dir):
+    def test_register_creates_pid_file(self, isolated_pid_dir: str) -> None:
         pid_file = _register_agent()
         assert os.path.isfile(pid_file)
         assert str(os.getpid()) in pid_file
 
-    def test_count_active_includes_self(self, isolated_pid_dir):
+    def test_count_active_includes_self(self, isolated_pid_dir: str) -> None:
         _register_agent()
         assert _count_active_agents() == 1
 
-    def test_unregister_removes_pid_file(self, isolated_pid_dir, monkeypatch):
+    def test_unregister_removes_pid_file(
+        self, isolated_pid_dir: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         pid_file = _register_agent()
         monkeypatch.setattr(_mod, "_pid_file_path", pid_file)
         _unregister_agent()
         assert not os.path.exists(pid_file)
 
-    def test_stale_pid_cleaned_on_count(self, isolated_pid_dir):
+    def test_stale_pid_cleaned_on_count(self, isolated_pid_dir: str) -> None:
         _ensure_pid_dir()
         stale_pid = "999999999"
         stale_file = os.path.join(isolated_pid_dir, stale_pid)
@@ -857,7 +1019,7 @@ class TestParallelAgentTracking:
         assert _count_active_agents() == 0
         assert not os.path.exists(stale_file)
 
-    def test_non_numeric_files_ignored(self, isolated_pid_dir):
+    def test_non_numeric_files_ignored(self, isolated_pid_dir: str) -> None:
         _ensure_pid_dir()
         junk = os.path.join(isolated_pid_dir, "not-a-pid")
         with open(junk, "w") as f:
@@ -865,22 +1027,24 @@ class TestParallelAgentTracking:
         assert _count_active_agents() == 0
         assert os.path.exists(junk)
 
-    def test_enforce_parallel_limit_allows_under(self, isolated_pid_dir):
+    def test_enforce_parallel_limit_allows_under(self, isolated_pid_dir: str) -> None:
         enforce_parallel_limit(6)
 
-    def test_enforce_parallel_limit_blocks_at_limit(self, isolated_pid_dir):
+    def test_enforce_parallel_limit_blocks_at_limit(self, isolated_pid_dir: str) -> None:
         _ensure_pid_dir()
         for i in range(6):
             fake_pid = str(os.getpid() + 1000 + i)
             fake_file = os.path.join(isolated_pid_dir, fake_pid)
             with open(fake_file, "w") as f:
                 f.write(fake_pid)
-        with pytest.raises(SystemExit) as exc_info:
-            with unittest.mock.patch.object(_mod, "_is_pid_alive", return_value=True):
-                enforce_parallel_limit(6)
+        with (
+            pytest.raises(SystemExit) as exc_info,
+            unittest.mock.patch.object(_mod, "_is_pid_alive", return_value=True),
+        ):
+            enforce_parallel_limit(6)
         assert exc_info.value.code == 2
 
-    def test_enforce_registers_and_sets_atexit(self, isolated_pid_dir):
+    def test_enforce_registers_and_sets_atexit(self, isolated_pid_dir: str) -> None:
         enforce_parallel_limit(6)
         assert _mod._pid_file_path is not None
         assert os.path.isfile(_mod._pid_file_path)
@@ -888,8 +1052,9 @@ class TestParallelAgentTracking:
     def test_default_max_parallel_is_six(self):
         assert DEFAULT_MAX_PARALLEL == 6
 
-    def test_register_stores_json_metadata(self, isolated_pid_dir):
+    def test_register_stores_json_metadata(self, isolated_pid_dir: str) -> None:
         import json as _json
+
         pid_file = _register_agent(mode="read-only")
         with open(pid_file) as f:
             data = _json.load(f)
@@ -899,15 +1064,17 @@ class TestParallelAgentTracking:
         assert "started_iso" in data
         assert isinstance(data["started"], float)
 
-    def test_register_default_mode_is_unknown(self, isolated_pid_dir):
+    def test_register_default_mode_is_unknown(self, isolated_pid_dir: str) -> None:
         import json as _json
+
         pid_file = _register_agent()
         with open(pid_file) as f:
             data = _json.load(f)
         assert data["mode"] == "unknown"
 
-    def test_read_pid_metadata_valid_json(self, isolated_pid_dir):
+    def test_read_pid_metadata_valid_json(self, isolated_pid_dir: str) -> None:
         import json as _json
+
         _ensure_pid_dir()
         filepath = os.path.join(isolated_pid_dir, "12345")
         with open(filepath, "w") as f:
@@ -916,7 +1083,7 @@ class TestParallelAgentTracking:
         assert meta["pid"] == 12345
         assert meta["mode"] == "write"
 
-    def test_read_pid_metadata_legacy_plain_text(self, isolated_pid_dir):
+    def test_read_pid_metadata_legacy_plain_text(self, isolated_pid_dir: str) -> None:
         _ensure_pid_dir()
         filepath = os.path.join(isolated_pid_dir, "12345")
         with open(filepath, "w") as f:
@@ -924,7 +1091,7 @@ class TestParallelAgentTracking:
         meta = _read_pid_metadata(filepath)
         assert meta == {}
 
-    def test_read_pid_metadata_corrupt_file(self, isolated_pid_dir):
+    def test_read_pid_metadata_corrupt_file(self, isolated_pid_dir: str) -> None:
         _ensure_pid_dir()
         filepath = os.path.join(isolated_pid_dir, "12345")
         with open(filepath, "w") as f:
@@ -932,7 +1099,7 @@ class TestParallelAgentTracking:
         meta = _read_pid_metadata(filepath)
         assert meta == {}
 
-    def test_scan_agents_returns_active_and_stale_count(self, isolated_pid_dir):
+    def test_scan_agents_returns_active_and_stale_count(self, isolated_pid_dir: str) -> None:
         _register_agent(mode="read-only")
         _ensure_pid_dir()
         stale_file = os.path.join(isolated_pid_dir, "999999999")
@@ -944,42 +1111,51 @@ class TestParallelAgentTracking:
         assert stale_cleaned == 1
         assert not os.path.exists(stale_file)
 
-    def test_scan_agents_empty_dir(self, isolated_pid_dir):
+    def test_scan_agents_empty_dir(self, isolated_pid_dir: str) -> None:
         active, stale = _scan_agents()
         assert active == []
         assert stale == 0
 
-    def test_enforce_passes_mode_to_register(self, isolated_pid_dir):
+    def test_enforce_passes_mode_to_register(self, isolated_pid_dir: str) -> None:
         import json as _json
+
         enforce_parallel_limit(6, mode="write")
         assert _mod._pid_file_path is not None
         with open(_mod._pid_file_path) as f:
             data = _json.load(f)
         assert data["mode"] == "write"
 
-    def test_enforce_blocked_message_mentions_status(self, isolated_pid_dir, capsys):
+    def test_enforce_blocked_message_mentions_status(
+        self, isolated_pid_dir: str, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         _ensure_pid_dir()
         for i in range(6):
             fake_pid = str(os.getpid() + 1000 + i)
             fake_file = os.path.join(isolated_pid_dir, fake_pid)
             with open(fake_file, "w") as f:
                 f.write(fake_pid)
-        with pytest.raises(SystemExit):
-            with unittest.mock.patch.object(_mod, "_is_pid_alive", return_value=True):
-                enforce_parallel_limit(6)
+        with (
+            pytest.raises(SystemExit),
+            unittest.mock.patch.object(_mod, "_is_pid_alive", return_value=True),
+        ):
+            enforce_parallel_limit(6)
         captured = capsys.readouterr()
         assert "--status" in captured.err
 
 
 class TestPrintStatus:
-    def test_no_agents_tracked(self, isolated_pid_dir, capsys):
+    def test_no_agents_tracked(
+        self, isolated_pid_dir: str, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         with pytest.raises(SystemExit) as exc_info:
             print_status()
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "No codex sub-agents tracked" in captured.out
 
-    def test_shows_active_agents(self, isolated_pid_dir, capsys):
+    def test_shows_active_agents(
+        self, isolated_pid_dir: str, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         _register_agent(mode="read-only")
         with pytest.raises(SystemExit) as exc_info:
             print_status()
@@ -990,7 +1166,9 @@ class TestPrintStatus:
         assert "mode=read-only" in captured.out
         assert "running=" in captured.out
 
-    def test_shows_stale_cleaned(self, isolated_pid_dir, capsys):
+    def test_shows_stale_cleaned(
+        self, isolated_pid_dir: str, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         _ensure_pid_dir()
         stale_file = os.path.join(isolated_pid_dir, "999999999")
         with open(stale_file, "w") as f:
@@ -1002,7 +1180,7 @@ class TestPrintStatus:
         assert "Stale PIDs cleaned: 1" in captured.out
         assert "Active agents: 0" in captured.out
 
-    def test_shows_limit(self, isolated_pid_dir, capsys):
+    def test_shows_limit(self, isolated_pid_dir: str, capsys: pytest.CaptureFixture[str]) -> None:
         _register_agent()
         with pytest.raises(SystemExit):
             print_status()

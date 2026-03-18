@@ -22,11 +22,11 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_loader import add_config_arg, find_config, load_config
 from jira_client import JiraClient
-
+from jira_config_loader import JiraConfig, add_config_arg, find_config, load_config
 
 # Well-known custom field name patterns to detect
 KNOWN_FIELDS = {
@@ -41,7 +41,7 @@ KNOWN_FIELDS = {
 }
 
 
-def _match_by_name(all_fields, mappings):
+def _match_by_name(all_fields: list[dict[str, Any]], mappings: dict[str, str]) -> None:
     """Pass 1: match fields by name (high confidence)."""
     for field_info in all_fields:
         fid = field_info.get("id", "")
@@ -52,7 +52,7 @@ def _match_by_name(all_fields, mappings):
                 break
 
 
-def _match_by_schema(all_fields, mappings):
+def _match_by_schema(all_fields: list[dict[str, Any]], mappings: dict[str, str]) -> None:
     """Pass 2: fall back to schema type match for unresolved fields."""
     for field_info in all_fields:
         fid = field_info.get("id", "")
@@ -71,7 +71,7 @@ def _match_by_schema(all_fields, mappings):
                 break
 
 
-def discover_fields(client: JiraClient) -> dict:
+def discover_fields(client: JiraClient) -> dict[str, str]:
     """Discover custom field mappings.
 
     Uses a two-pass strategy: first match by field name (high confidence),
@@ -79,13 +79,13 @@ def discover_fields(client: JiraClient) -> dict:
     This prevents mapping story_points to a random float custom field.
     """
     all_fields = client.get_fields()
-    mappings = {}
+    mappings: dict[str, str] = {}
     _match_by_name(all_fields, mappings)
     _match_by_schema(all_fields, mappings)
     return mappings
 
 
-def discover_issue_types(client: JiraClient) -> dict:
+def discover_issue_types(client: JiraClient) -> dict[str, str]:
     """Discover available issue types for the project."""
     try:
         project = client.get_project()
@@ -99,7 +99,7 @@ def discover_issue_types(client: JiraClient) -> dict:
         return {}
 
 
-def discover_create_meta(client: JiraClient) -> dict:
+def discover_create_meta(client: JiraClient) -> dict[str, dict[str, Any]]:
     """Discover required fields per issue type via createmeta."""
     meta = {}
     try:
@@ -110,9 +110,7 @@ def discover_create_meta(client: JiraClient) -> dict:
                 required = []
                 for fid, finfo in itype.get("fields", {}).items():
                     if finfo.get("required"):
-                        required.append(
-                            {"id": fid, "name": finfo.get("name", fid)}
-                        )
+                        required.append({"id": fid, "name": finfo.get("name", fid)})
                 meta[type_name] = {
                     "id": itype["id"],
                     "required_fields": required,
@@ -126,14 +124,15 @@ def discover_create_meta(client: JiraClient) -> dict:
 # Full catalog discovery (--all)
 # ------------------------------------------------------------------
 
+
 def _normalize_key(name: str) -> str:
     """Normalize a display name to a lowercase snake_case key."""
     return name.strip().lower().replace(" ", "_").replace("-", "_")
 
 
-def _discover_statuses(client: JiraClient) -> dict:
+def _discover_statuses(client: JiraClient) -> dict[str, Any]:
     """Discover all statuses available in the project, grouped by issue type."""
-    catalog_entry = {
+    catalog_entry: dict[str, Any] = {
         "id": "status",
         "name": "Status",
         "type": "status",
@@ -156,9 +155,9 @@ def _discover_statuses(client: JiraClient) -> dict:
     return catalog_entry
 
 
-def _discover_priorities(client: JiraClient) -> dict:
+def _discover_priorities(client: JiraClient) -> dict[str, Any]:
     """Discover all priorities."""
-    catalog_entry = {
+    catalog_entry: dict[str, Any] = {
         "id": "priority",
         "name": "Priority",
         "type": "priority",
@@ -174,9 +173,9 @@ def _discover_priorities(client: JiraClient) -> dict:
     return catalog_entry
 
 
-def _discover_resolutions(client: JiraClient) -> dict:
+def _discover_resolutions(client: JiraClient) -> dict[str, Any]:
     """Discover all resolutions."""
-    catalog_entry = {
+    catalog_entry: dict[str, Any] = {
         "id": "resolution",
         "name": "Resolution",
         "type": "resolution",
@@ -192,9 +191,9 @@ def _discover_resolutions(client: JiraClient) -> dict:
     return catalog_entry
 
 
-def _discover_components(client: JiraClient) -> dict:
+def _discover_components(client: JiraClient) -> dict[str, Any]:
     """Discover all project components."""
-    catalog_entry = {
+    catalog_entry: dict[str, Any] = {
         "id": "components",
         "name": "Component/s",
         "type": "component",
@@ -210,9 +209,9 @@ def _discover_components(client: JiraClient) -> dict:
     return catalog_entry
 
 
-def _discover_versions(client: JiraClient) -> dict:
+def _discover_versions(client: JiraClient) -> dict[str, Any]:
     """Discover all project versions (fix versions / affects versions)."""
-    catalog_entry = {
+    catalog_entry: dict[str, Any] = {
         "id": "fixVersions",
         "name": "Fix Version/s",
         "type": "version",
@@ -233,7 +232,7 @@ def _discover_versions(client: JiraClient) -> dict:
     return catalog_entry
 
 
-def _discover_all_fields(client: JiraClient) -> dict:
+def _discover_all_fields(client: JiraClient) -> dict[str, dict[str, Any]]:
     """Discover all system + custom fields and build a catalog with allowed values."""
     all_fields = client.get_fields()
     catalog = {}
@@ -261,9 +260,9 @@ def _discover_all_fields(client: JiraClient) -> dict:
     return catalog
 
 
-def _discover_sprints(client: JiraClient) -> dict:
+def _discover_sprints(client: JiraClient) -> dict[str, Any]:
     """Discover sprints via the Agile REST API (boards → sprints)."""
-    catalog_entry = {
+    catalog_entry: dict[str, Any] = {
         "id": "sprint",
         "name": "Sprint",
         "type": "sprint",
@@ -306,7 +305,7 @@ _CATALOG_DISCOVERERS = [
 ]
 
 
-def discover_full_catalog(client: JiraClient, verbose: bool = False) -> dict:
+def discover_full_catalog(client: JiraClient, verbose: bool = False) -> dict[str, Any]:
     """Run full discovery: fields, statuses, priorities, components, versions, resolutions, sprints."""
     catalog = {}
 
@@ -330,7 +329,9 @@ def discover_full_catalog(client: JiraClient, verbose: bool = False) -> dict:
     return catalog
 
 
-def _run_basic_discovery(client, verbose):
+def _run_basic_discovery(
+    client: JiraClient, verbose: bool
+) -> tuple[dict[str, str], dict[str, str], dict[str, dict[str, Any]]]:
     """Run basic field and issue type discovery. Returns (field_mappings, issue_types, create_meta)."""
     print("Discovering custom fields ...")
     field_mappings = discover_fields(client)
@@ -364,28 +365,23 @@ def _run_basic_discovery(client, verbose):
     return field_mappings, issue_types, create_meta
 
 
-def _print_suggestion(suggestion):
+def _print_suggestion(suggestion: dict[str, Any]) -> None:
     """Print the suggestion block, excluding verbose _fields_index and create_meta."""
     display = dict(suggestion)
     if "field_catalog" in display:
         display["field_catalog"] = {
-            k: v for k, v in display["field_catalog"].items()
-            if k != "_fields_index"
+            k: v for k, v in display["field_catalog"].items() if k != "_fields_index"
         }
     display.pop("create_meta", None)
     print("\n--- Suggested .jira.json additions ---")
     print(json.dumps(display, indent=2))
 
 
-def _run_search(client, query):
+def _run_search(client: JiraClient, query: str) -> None:
     """Search all Jira fields by name substring (case-insensitive)."""
     all_fields = client.get_fields()
     query_lower = query.lower()
-    matches = []
-    for f in all_fields:
-        fname = f.get("name", "")
-        if query_lower in fname.lower():
-            matches.append(f)
+    matches = [f for f in all_fields if query_lower in f.get("name", "").lower()]
     if not matches:
         print(f"No fields matching '{query}'.")
         return
@@ -398,7 +394,7 @@ def _run_search(client, query):
         print(f"  {fname} ({fid})  [{custom}, {schema_type}]")
 
 
-def _run_fields_for_type(client, config, type_name):
+def _run_fields_for_type(client: JiraClient, config: JiraConfig, type_name: str) -> None:
     """List all available fields (with allowed values) for a given issue type."""
     type_id = None
     normalized = type_name.lower().replace(" ", "_")
@@ -407,11 +403,12 @@ def _run_fields_for_type(client, config, type_name):
             type_id = tid
             break
     if not type_id:
-        print(f"ERROR: Unknown issue type '{type_name}'. "
-              f"Known types: {', '.join(sorted(config.issue_types.keys()))}",
-              file=sys.stderr)
-        print("Run discover_fields.py --apply to refresh issue types.",
-              file=sys.stderr)
+        print(
+            f"ERROR: Unknown issue type '{type_name}'. "
+            f"Known types: {', '.join(sorted(config.issue_types.keys()))}",
+            file=sys.stderr,
+        )
+        print("Run discover_fields.py --apply to refresh issue types.", file=sys.stderr)
         sys.exit(1)
 
     print(f"Fields available for '{type_name}' (type id={type_id}):\n")
@@ -436,7 +433,7 @@ def _run_fields_for_type(client, config, type_name):
                 print(f"    ... and {len(allowed) - 20} more")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Discover Jira project metadata")
     add_config_arg(parser)
     parser.add_argument(
@@ -444,14 +441,12 @@ def main():
         action="store_true",
         help="Update .jira.json with discovered values",
     )
-    parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Show all discovered fields"
-    )
+    parser.add_argument("--verbose", "-v", action="store_true", help="Show all discovered fields")
     parser.add_argument(
         "--all",
         action="store_true",
         help="Full discovery: statuses, priorities, components, versions, "
-             "resolutions, and all fields. Saves to field_catalog in config.",
+        "resolutions, and all fields. Saves to field_catalog in config.",
     )
     parser.add_argument(
         "--search",
@@ -462,7 +457,7 @@ def main():
         "--fields-for-type",
         metavar="TYPE",
         help="List all available fields and allowed values for an issue type "
-             "(e.g. epic, story, bug)",
+        "(e.g. epic, story, bug)",
     )
     args = parser.parse_args()
 
@@ -490,7 +485,7 @@ def main():
         print("\nFull field catalog discovery ...")
         field_catalog = discover_full_catalog(client, verbose=args.verbose)
 
-    suggestion = {}
+    suggestion: dict[str, Any] = {}
     if field_mappings:
         suggestion["field_mappings"] = field_mappings
     if issue_types:
@@ -510,7 +505,7 @@ def main():
     print("\nDone.")
 
 
-def _apply_suggestion(config_path: Path, suggestion):
+def _apply_suggestion(config_path: Path, suggestion: dict[str, Any]) -> None:
     """Write discovered mappings into .jira.json."""
     if not suggestion:
         print("\nNothing to apply.")
@@ -528,9 +523,7 @@ def _apply_suggestion(config_path: Path, suggestion):
         existing_catalog.update(suggestion["field_catalog"])
         raw["field_catalog"] = existing_catalog
 
-    config_path.write_text(
-        json.dumps(raw, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
+    config_path.write_text(json.dumps(raw, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"\nUpdated {config_path}")
 
 
