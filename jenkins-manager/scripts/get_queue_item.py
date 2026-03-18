@@ -40,11 +40,14 @@ def main() -> None:
         print(json.dumps(item, indent=2))
         return
 
-    # Table output
-    print(f"Queue item #{item.get('id', args.queue_id)}:")
+    _print_queue_table(item, args.queue_id)
+
+
+def _print_queue_table(item: dict, queue_id: int) -> None:
+    """Print queue item details in table format."""
+    print(f"Queue item #{item.get('id', queue_id)}:")
     print()
 
-    # Status
     executable = item.get("executable")
     if executable:
         print("  Status     STARTED")
@@ -59,17 +62,14 @@ def main() -> None:
     else:
         print("  Status     QUEUED")
 
-    # Why waiting
     why = item.get("why")
     if why:
         print(f"  Reason     {why}")
 
-    # Task info
     task = item.get("task", {})
     if task:
         print(f"  Job        {task.get('name', '')}")
 
-    # Queue time
     in_queue_since = item.get("inQueueSince")
     if in_queue_since:
         print(f"  Queued at  {_format_timestamp(in_queue_since)}")

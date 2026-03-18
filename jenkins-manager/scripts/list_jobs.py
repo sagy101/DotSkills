@@ -5,12 +5,50 @@ import argparse
 import json
 import re
 import sys
+import urllib.error
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from jenkins_client import JenkinsClient, color_to_status
 from jenkins_config import load_config
+
+
+def _collect_jobs(client: JenkinsClient, folder: str | None) -> list[dict]:
+    """Collect jobs from a specific folder or all folders."""
+    all_jobs: list[dict] = []
+    if folder:
+        jobs = client.list_jobs_in_folder(folder)
+        for j in jobs:
+            j["_folder"] = folder
+        return jobs
+
+    top_level = client.list_top_level_jobs()
+    for item in top_level:
+        cls = item.get("_class", "")
+        name = item.get("name", "")
+        if "Folder" in cls or "OrganizationFolder" in cls:
+            try:
+                jobs = client.list_jobs_in_folder(name)
+            except (urllib.error.HTTPError, urllib.error.URLError):
+                continue
+            for j in jobs:
+                j["_folder"] = name
+            all_jobs.extend(jobs)
+        else:
+            item["_folder"] = ""
+            all_jobs.append(item)
+    return all_jobs
+
+
+def _filter_by_name(jobs: list[dict], name_pattern: str) -> list[dict]:
+    """Filter jobs by regex or substring pattern."""
+    try:
+        pattern = re.compile(name_pattern, re.IGNORECASE)
+        return [j for j in jobs if pattern.search(j.get("name", ""))]
+    except re.error:
+        name_lower = name_pattern.lower()
+        return [j for j in jobs if name_lower in j.get("name", "").lower()]
 
 
 def main() -> None:
@@ -25,44 +63,10 @@ def main() -> None:
 
     config = load_config(args.config)
     client = JenkinsClient(config)
+    all_jobs = _collect_jobs(client, args.folder)
 
-    # Collect jobs
-    all_jobs: list[dict] = []
-
-    if args.folder:
-        # Search specific folder
-        jobs = client.list_jobs_in_folder(args.folder)
-        for j in jobs:
-            j["_folder"] = args.folder
-        all_jobs.extend(jobs)
-    else:
-        # Search all top-level items
-        top_level = client.list_top_level_jobs()
-        for item in top_level:
-            cls = item.get("_class", "")
-            name = item.get("name", "")
-            if "Folder" in cls or "OrganizationFolder" in cls:
-                try:
-                    jobs = client.list_jobs_in_folder(name)
-                    for j in jobs:
-                        j["_folder"] = name
-                    all_jobs.extend(jobs)
-                except Exception:
-                    continue
-            else:
-                # Top-level job (not in a folder)
-                item["_folder"] = ""
-                all_jobs.append(item)
-
-    # Filter by name pattern
     if args.name:
-        try:
-            pattern = re.compile(args.name, re.IGNORECASE)
-            all_jobs = [j for j in all_jobs if pattern.search(j.get("name", ""))]
-        except re.error:
-            # Fall back to substring match
-            name_lower = args.name.lower()
-            all_jobs = [j for j in all_jobs if name_lower in j.get("name", "").lower()]
+        all_jobs = _filter_by_name(all_jobs, args.name)
 
     if args.format == "json":
         print(json.dumps(all_jobs, indent=2))

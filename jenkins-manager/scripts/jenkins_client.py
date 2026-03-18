@@ -140,28 +140,33 @@ class JenkinsClient:
             print(f"ERROR: Request timed out ({timeout}s) {method} {path}", file=sys.stderr)
             raise
         except urllib.error.HTTPError as e:
-            error_body = e.read().decode()
-            if _DEBUG:
-                detail = error_body[:500]
-            else:
-                detail = f"HTTP {e.code} (set JENKINS_DEBUG=1 for details)"
-            print(f"ERROR {e.code} {method} {path}: {detail}", file=sys.stderr)
+            self._log_http_error(e, method, path)
             raise
         except urllib.error.URLError as e:
-            if isinstance(e.reason, socket.timeout | TimeoutError):
-                print(f"ERROR: Request timed out ({timeout}s) {method} {path}", file=sys.stderr)
-            elif isinstance(e.reason, ssl.SSLCertVerificationError):
-                print(
-                    f"ERROR: SSL certificate verification failed for {self.base_url}",
-                    file=sys.stderr,
-                )
-                print(
-                    "  Fix: Set ssl_verify: false in .jenkins.json, or set SSL_CERT_FILE env var",
-                    file=sys.stderr,
-                )
-            else:
-                print(f"ERROR: URL error {method} {path}: {e.reason}", file=sys.stderr)
+            self._log_url_error(e, method, path, timeout)
             raise
+
+    def _log_http_error(self, e: urllib.error.HTTPError, method: str, path: str) -> None:
+        error_body = e.read().decode()
+        detail = error_body[:500] if _DEBUG else f"HTTP {e.code} (set JENKINS_DEBUG=1 for details)"
+        print(f"ERROR {e.code} {method} {path}: {detail}", file=sys.stderr)
+
+    def _log_url_error(
+        self, e: urllib.error.URLError, method: str, path: str, timeout: int
+    ) -> None:
+        if isinstance(e.reason, socket.timeout | TimeoutError):
+            print(f"ERROR: Request timed out ({timeout}s) {method} {path}", file=sys.stderr)
+        elif isinstance(e.reason, ssl.SSLCertVerificationError):
+            print(
+                f"ERROR: SSL certificate verification failed for {self.base_url}",
+                file=sys.stderr,
+            )
+            print(
+                "  Fix: Set ssl_verify: false in .jenkins.json, or set SSL_CERT_FILE env var",
+                file=sys.stderr,
+            )
+        else:
+            print(f"ERROR: URL error {method} {path}: {e.reason}", file=sys.stderr)
 
     def _api_json(self, path: str, tree: str | None = None, timeout: int = 30) -> dict:
         """GET {path}/api/json with optional tree parameter."""
