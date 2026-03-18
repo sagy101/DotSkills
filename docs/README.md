@@ -13,6 +13,7 @@ Each skill with non-trivial design decisions has a companion design document exp
 | [bitbucket-manager](bitbucket-manager/bitbucket-manager-design.md) | Why, capabilities, zero-dep stdlib design, repo auto-detection, dry-run gates, config hierarchy | Stable (v1.0) |
 | [jira-manager](jira-manager/jira-manager-design.md) | Why, capabilities, discovery-first architecture, bulk update scoping, field discovery flow, config discovery | Stable (v1.6) |
 | [eks-pod-ops](eks-pod-ops/eks-pod-ops-design.md) | Why, secret redaction pipeline, exec blocklist, sidecar-aware container selection, Rancher Desktop workaround, module structure | Stable (v1.1) |
+| [sbt-build-test](sbt-build-test/sbt-build-test-design.md) | Why, four-command agent interface, isolated Ivy home, hybrid discovery, batched SBT evaluation, workspace graph, auto-publish chains | Stable (v10.0) |
 
 ## Templates
 
@@ -36,6 +37,8 @@ docs/
 │   └── eks-pod-ops-design.md
 ├── jira-manager/
 │   └── jira-manager-design.md
+├── sbt-build-test/
+│   └── sbt-build-test-design.md
 └── templates/
     └── skill-design-doc-template.md
 ```
