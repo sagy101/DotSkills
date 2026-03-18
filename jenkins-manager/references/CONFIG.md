@@ -32,9 +32,10 @@ If both exist, they are **deep-merged** (project-level wins on conflicts).
 | `base_url` | Yes | — | Jenkins server URL (no trailing slash) |
 | `credentials.username_env` | No | `"JENKINS_USER"` | Environment variable name for the Jenkins username |
 | `credentials.token_env` | No | `"JENKINS_TOKEN"` | Environment variable name for the Jenkins API token |
-| `env_file` | No | `null` | Optional path to a `.env` file. Absolute paths are used as-is (useful in global config). Relative paths resolve against project root (traversal-protected). |
+| `env_file` | No | `null` | Optional path to a `.env` file. Can be at top level or under `credentials`. Absolute paths are used as-is (useful in global config). Relative paths resolve against project root (traversal-protected). |
 | `job_cache` | No | `{}` | Map of repo name → `folder/job` path for fast pipeline lookups. Avoids API search on every run. |
 | `default_branch` | No | `null` | Default branch for status lookups when not in a git repo. Auto-detects from current git branch if not set. |
+| `default_username` | No | `null` | Fallback username when `JENKINS_USER` env var is not set. Useful for shared configs where the username is the same for all users. |
 | `ssl_verify` | No | `true` | Set `false` for self-signed certificates or on-prem instances with custom CAs. |
 
 ## Config resolution order

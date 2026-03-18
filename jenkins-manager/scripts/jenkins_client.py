@@ -351,6 +351,29 @@ class JenkinsClient:
             raise
 
     # -----------------------------------------------------------------
+    # Test results
+    # -----------------------------------------------------------------
+    def get_test_report(
+        self,
+        folder: str | None,
+        job: str,
+        branch: str | None,
+        build_number: int | str,
+    ) -> dict | None:
+        """Get JUnit test report for a build. Returns None if no test report exists (404)."""
+        path = self._build_job_path(folder, job, branch)
+        try:
+            return self._api_json(
+                f"{path}/{build_number}/testReport",
+                tree="duration,empty,failCount,passCount,skipCount,"
+                "suites[name,duration,cases[className,name,status,errorDetails,errorStackTrace]]",
+            )
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None
+            raise
+
+    # -----------------------------------------------------------------
     # Queue
     # -----------------------------------------------------------------
     def get_queue_item(self, queue_id: int) -> dict | None:

@@ -18,7 +18,7 @@ These scripts are implementation details — the agent calls the three commands 
 | Script | Purpose |
 |---|---|
 | `run_sbt_capture.sh` | Runs SBT with log capture, error summary extraction, and workspace dep pre-check |
-| `run_sbt.sh` | Low-level SBT wrapper: Java resolution, isolated cache flags, `sbt_env` forwarding, test-run locking |
+| `run_sbt.sh` | Low-level SBT wrapper: Java resolution, isolated cache flags, `sbt_env` forwarding, test-run locking, stale lock auto-clearing, `--batch` mode |
 | `check_workspace_deps.sh` | Pre-checks that workspace `ProjectRef` dependencies are published in the isolated cache |
 | `preflight_check.sh` | Validates Java, python3, credentials, isolated cache, branch alignment, stale publishes, resolver risks |
 | `discover_deps.sh` | Scans a single repo for ProjectRef deps, workspace artifact deps (direct + transitive), dirty-repo warnings, build config |
@@ -27,7 +27,7 @@ These scripts are implementation details — the agent calls the three commands 
 | `publish_chain.sh` | Publishes selected repos and their upstream deps in dependency order |
 | `refresh_downstream.sh` | Removes isolated-cache and Coursier entries, optionally clears `target/`, and can rebuild |
 | `verify_local_resolution.sh` | Shows classpath matches, resolution source, local publish candidates, and guidance |
-| `parse_test_reports.sh` | Parses JUnit XML reports into pass/fail summaries with failure details |
+| `parse_test_reports.sh` | Parses JUnit XML reports into pass/fail summaries with failure details; cross-references SBT log to detect crashed suites |
 | `common.sh` | Shared utilities: Java resolution, cache paths, log file naming, test locks, artifact name/version extraction, build file collection |
 | `resolve_projects.sh` | Sourced helper: builds the `SERVICES` array from workspace auto-scan + `.sbt-workspace.conf` |
 | `workspace_graph.py` | Python helper: builds workspace dependency graph JSON with topological sort |
@@ -244,3 +244,10 @@ Combines direct and transitive artifact lists, checks each workspace repo with u
 12. **Workspace dependency pre-check** — `run_sbt_capture.sh` runs `check_workspace_deps.sh` before launching SBT to detect missing workspace artifacts. This avoids the slow SBT startup -> resolution failure -> diagnose cycle.
 13. **Transitive version resolution** — `publish_chain.sh` searches build files from ALL repos in the chain (not just the target) to resolve the correct version for each upstream. E.g., shared-models' version is found in platform-commons' build files even when the target is service-a.
 14. **Cache clearing before re-publish** — `publish_chain.sh` clears stale cached artifacts before each `publishLocal` to avoid Ivy's non-SNAPSHOT overwrite protection.
+15. **Stale lock auto-clearing** — `run_sbt.sh` checks lock file PIDs with `kill -0` and treats locks with dead PIDs or locks older than 2 hours as stale, removing them automatically. `sbt_build.sh` also reports stale locks visibly before the build starts.
+16. **Batch mode for test commands** — `run_sbt.sh` adds `--batch` for test commands to force a fresh SBT process, avoiding stale incremental state from SBT server reuse. `sbt_build.sh --fresh` explicitly enables this.
+17. **SBT log cross-reference for crashed tests** — `parse_test_reports.sh` auto-finds the most recent SBT log file, parses `[error] Failed tests:` entries, and flags any suite listed by SBT but missing from JUnit XML as `CRASHED`. Prevents false "ALL PASSED" verdicts.
+18. **Deep subproject test report scanning** — `sbt_build.sh` uses `find -maxdepth 4` to discover test reports in nested multi-project layouts (e.g. `sdks/chatgpt/target/test-reports`), not just one level deep.
+19. **SBT server kill on refresh** — `sbt_refresh.sh --kill-server` (auto-triggered with `--clean-target`) shuts down the SBT server process to avoid incremental state carrying over after cache wipes.
+20. **Log freshness detection** — `run_sbt_capture.sh` compares log file mtime against invocation start time and warns if the log is from a previous run.
+21. **Human-readable exit codes** — `run_sbt_capture.sh` prints exit code meaning: 0=SUCCESS, 1=SBT error, 2=Infrastructure error.

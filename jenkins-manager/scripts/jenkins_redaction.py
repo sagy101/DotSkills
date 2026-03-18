@@ -5,6 +5,16 @@ Mirrors eks-pod-ops redaction pattern. Always-on by default.
 
 import re
 
+# ─── ANSI Escape Code Stripping ─────────────────────────────────────────────
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
+
+def strip_ansi(text: str) -> str:
+    """Remove ANSI escape codes (color, bold, etc.) from text."""
+    return _ANSI_RE.sub("", text)
+
+
 # ─── Redaction Patterns ───────────────────────────────────────────────────────
 
 REDACTION_PATTERNS = [
@@ -66,7 +76,9 @@ def redact_text(text: str) -> str:
     """Apply redaction patterns to text. Returns redacted text.
 
     Always-on — no config toggle. Safety by default.
+    Strips ANSI escape codes first so patterns match regardless of color codes.
     """
+    text = strip_ansi(text)
     for pattern, replacement in REDACTION_PATTERNS:
         text = pattern.sub(replacement, text)
 

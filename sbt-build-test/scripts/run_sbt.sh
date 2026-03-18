@@ -26,6 +26,7 @@ shift
 WORKSPACE_DIR=""
 ARTIFACT_VERSION_VALUE="${ARTIFACT_VERSION:-}"
 SBT_ENV_VALUE="${SBT_ENV:-}"
+FORCE_BATCH=false
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 source "$SCRIPT_DIR/common.sh"
@@ -46,6 +47,10 @@ while [ "$#" -gt 0 ]; do
       [ "$#" -ge 2 ] || usage
       SBT_ENV_VALUE="$2"
       shift 2
+      ;;
+    --batch)
+      FORCE_BATCH=true
+      shift
       ;;
     --)
       shift
@@ -105,9 +110,31 @@ trap cleanup EXIT
 if [ "$NEEDS_TEST_LOCK" = true ]; then
   LOCK_FILE="$(test_activity_lock_file "$PROJECT_DIR")"
   if [ -f "$LOCK_FILE" ]; then
-    echo "ERROR: Another test-oriented sbt command is already active for $PROJECT_DIR" >&2
-    echo "Hint: wait for the active sbt test run to finish before starting another test or parsing reports for this repo." >&2
-    exit 2
+    # Check if the lock holder is still alive
+    _LOCK_PID=$(grep -oE '^pid=[0-9]+' "$LOCK_FILE" 2>/dev/null | cut -d= -f2 || true)
+    _LOCK_STALE=false
+    if [ -n "$_LOCK_PID" ]; then
+      if ! kill -0 "$_LOCK_PID" 2>/dev/null; then
+        _LOCK_STALE=true
+      fi
+    fi
+    # Also treat locks older than 2 hours as stale regardless of PID
+    if [ "$_LOCK_STALE" = false ] && [ -f "$LOCK_FILE" ]; then
+      _LOCK_AGE_LIMIT=$((2 * 60 * 60))
+      _LOCK_MTIME=$(stat -f '%m' "$LOCK_FILE" 2>/dev/null || stat -c '%Y' "$LOCK_FILE" 2>/dev/null || echo 0)
+      _NOW=$(date '+%s')
+      if [ $((_NOW - _LOCK_MTIME)) -ge "$_LOCK_AGE_LIMIT" ]; then
+        _LOCK_STALE=true
+      fi
+    fi
+    if [ "$_LOCK_STALE" = true ]; then
+      echo "WARNING: Stale lock file detected (PID ${_LOCK_PID:-unknown} is no longer running). Removing." >&2
+      rm -f "$LOCK_FILE"
+    else
+      echo "ERROR: Another test-oriented sbt command is already active for $PROJECT_DIR" >&2
+      echo "Hint: wait for the active sbt test run to finish before starting another test or parsing reports for this repo." >&2
+      exit 2
+    fi
   fi
   {
     echo "pid=$$"
@@ -120,6 +147,10 @@ if [ "$NEEDS_TEST_LOCK" = true ]; then
 fi
 
 SBT_CMD=(sbt "${SBT_HEAP_ARGS[@]}" "-Dsbt.ivy.home=$SBT_BUILD_CACHE_ROOT")
+# Use --batch for test commands to force a fresh SBT process (avoids stale incremental state from SBT server)
+if [ "$FORCE_BATCH" = true ] || [ "$NEEDS_TEST_LOCK" = true ]; then
+  SBT_CMD+=(--batch)
+fi
 if [ -n "$SBT_ENV_VALUE" ]; then
   SBT_CMD+=("-Dsbt_env=$SBT_ENV_VALUE")
 fi

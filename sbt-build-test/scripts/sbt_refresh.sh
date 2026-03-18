@@ -49,12 +49,17 @@ ARTIFACT_VERSION=""
 ARTIFACT_NAME=""
 CACHE_VERSION=""
 CLEAN_TARGET=false
+KILL_SERVER=false
 REBUILD=false
 REBUILD_ARGS=()
 DRY_RUN=false
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --kill-server)
+      KILL_SERVER=true
+      shift
+      ;;
     --workspace-dir)
       [ "$#" -ge 2 ] || usage
       WORKSPACE_DIR="$2"
@@ -113,6 +118,33 @@ WORKSPACE_DIR="$(resolve_workspace_dir "$WORKSPACE_DIR" "$PROJECT_DIR")"
 # Default rebuild arg
 if [ "$REBUILD" = true ] && [ ${#REBUILD_ARGS[@]} -eq 0 ]; then
   REBUILD_ARGS=(compile)
+fi
+
+# ── Kill SBT server if requested or --clean-target is used ─────────────────
+if [ "$KILL_SERVER" = true ] || [ "$CLEAN_TARGET" = true ]; then
+  _PROJ_NAME="$(basename "$PROJECT_DIR")"
+  if [ "$DRY_RUN" = true ]; then
+    echo "[dry-run] Would attempt to shut down SBT server for $_PROJ_NAME"
+  else
+    echo "=== Shutting down SBT server for $_PROJ_NAME ==="
+    # Try graceful shutdown first via sbt --client
+    if (cd "$PROJECT_DIR" && sbt --client shutdown 2>/dev/null); then
+      echo "  SBT server shut down gracefully."
+    else
+      # Fallback: kill any sbt process associated with this project
+      _KILLED=false
+      for _pid in $(pgrep -f "sbt.*$(basename "$PROJECT_DIR")" 2>/dev/null || true); do
+        if kill "$_pid" 2>/dev/null; then
+          echo "  Killed SBT process $_pid"
+          _KILLED=true
+        fi
+      done
+      if [ "$_KILLED" = false ]; then
+        echo "  No active SBT server found."
+      fi
+    fi
+    echo ""
+  fi
 fi
 
 # ── Phase 1: Publish upstream deps ──────────────────────────────────────────

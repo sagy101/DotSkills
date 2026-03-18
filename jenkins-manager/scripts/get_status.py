@@ -4,6 +4,7 @@
 import argparse
 import json
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -33,11 +34,96 @@ def _format_timestamp(ts: int) -> str:
     return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
+def _print_build(
+    build: dict,
+    folder: str | None,
+    job: str | None,
+    branch: str | None,
+    fmt: str = "table",
+    watch_ts: str | None = None,
+) -> None:
+    """Print build info in table or JSON format."""
+    if fmt == "json":
+        print(json.dumps(build, indent=2))
+        return
+
+    job_path = f"{folder}/{job}" if folder else job
+    branch_str = f" @ {branch}" if branch else ""
+    header = f"Build status for {job_path}{branch_str}:"
+    if watch_ts:
+        header = f"[{watch_ts}] {header}"
+    print(header)
+    print()
+
+    number = build.get("number", "?")
+    result = build.get("result") or ("BUILDING" if build.get("building") else "UNKNOWN")
+    duration = build.get("duration", 0)
+    timestamp = build.get("timestamp", 0)
+    url = build.get("url", "")
+
+    print(f"  Build    #{number}")
+    print(f"  Status   {result}")
+    if duration:
+        print(f"  Duration {_format_duration(duration)}")
+    if timestamp:
+        print(f"  Started  {_format_timestamp(timestamp)}")
+    if url:
+        print(f"  URL      {url}")
+
+
+def _watch_build(
+    client: "JenkinsClient",
+    folder: str | None,
+    job: str,
+    branch: str | None,
+    build: dict,
+    fmt: str,
+    interval: int,
+    timeout: int,
+) -> None:
+    """Poll until build finishes or timeout. Exits the process."""
+    start = time.monotonic()
+    while True:
+        is_building = build.get("building", False)
+        now_ts = datetime.now(tz=timezone.utc).strftime("%H:%M:%S")
+        _print_build(build, folder, job, branch, fmt=fmt, watch_ts=now_ts)
+
+        if not is_building:
+            result = build.get("result", "UNKNOWN")
+            print()
+            print(f"Build finished: {result}")
+            sys.exit(0 if result == "SUCCESS" else 1)
+
+        elapsed = time.monotonic() - start
+        if elapsed >= timeout:
+            print()
+            print(f"Timeout after {timeout}s — build still running.")
+            sys.exit(2)
+
+        remaining = timeout - elapsed
+        sleep_time = min(interval, remaining)
+        print()
+        print(f"  Building... next check in {int(sleep_time)}s (timeout in {int(remaining)}s)")
+        print()
+        time.sleep(sleep_time)
+        build = client.get_last_build(folder, job, branch) or {}
+        if not build:
+            print("Build disappeared during polling.")
+            sys.exit(1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Check Jenkins build status")
     add_common_args(parser)
     parser.add_argument(
         "--format", choices=["table", "json"], default="table", help="Output format"
+    )
+    parser.add_argument("--watch", action="store_true", help="Poll until build finishes")
+    parser.add_argument(
+        "--interval", type=int, default=60, help="Poll interval in seconds (default: 60)"
+    )
+    parser.add_argument(
+        "--timeout", type=int, default=600, help="Max wait time in seconds (default: 600)"
     )
     args = parser.parse_args()
 
@@ -71,30 +157,10 @@ def main() -> None:
         print(f"No builds found for {job_path}{branch_str}")
         sys.exit(0)
 
-    if args.format == "json":
-        print(json.dumps(build, indent=2))
-        return
-
-    # Table output
-    job_path = f"{folder}/{job}" if folder else job
-    branch_str = f" @ {branch}" if branch else ""
-    print(f"Build status for {job_path}{branch_str}:")
-    print()
-
-    number = build.get("number", "?")
-    result = build.get("result") or ("BUILDING" if build.get("building") else "UNKNOWN")
-    duration = build.get("duration", 0)
-    timestamp = build.get("timestamp", 0)
-    url = build.get("url", "")
-
-    print(f"  Build    #{number}")
-    print(f"  Status   {result}")
-    if duration:
-        print(f"  Duration {_format_duration(duration)}")
-    if timestamp:
-        print(f"  Started  {_format_timestamp(timestamp)}")
-    if url:
-        print(f"  URL      {url}")
+    if args.watch:
+        _watch_build(client, folder, job, branch, build, args.format, args.interval, args.timeout)
+    else:
+        _print_build(build, folder, job, branch, fmt=args.format)
 
 
 if __name__ == "__main__":

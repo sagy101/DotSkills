@@ -9,7 +9,7 @@ description: >
 license: MIT
 metadata:
   author: sagy101
-  version: "1.0"
+  version: "2.0"
 compatibility: >
   Python 3.10+. Jenkins REST API with API token authentication.
   Works with any Jenkins 2.x+ deployment (Freestyle, Pipeline, MultiBranch, OrganizationFolder).
@@ -95,9 +95,12 @@ If any check fails, fix the issue and re-run before proceeding.
 python3 <skill_dir>/scripts/get_status.py
 python3 <skill_dir>/scripts/get_status.py --folder MyFolder --job my-service --branch main
 python3 <skill_dir>/scripts/get_status.py --format json
+python3 <skill_dir>/scripts/get_status.py --watch --interval 30 --timeout 300
 ```
 
 Auto-resolves folder, job, and branch from git remote + current branch. Override with flags.
+
+Flags: `--watch` (poll until build finishes), `--interval N` (poll interval in seconds, default 60), `--timeout N` (max wait in seconds, default 600). Watch mode exit codes: 0=success, 1=build failed, 2=timeout.
 
 ### View build logs
 
@@ -111,7 +114,20 @@ python3 <skill_dir>/scripts/get_logs.py --folder MyFolder --job my-service --bra
 
 Flags: `--tail N` (default 100, 0 for all), `--grep PATTERN` (regex filter), `--build N` (specific build number).
 
-**All log output is redacted** — secrets (API keys, tokens, passwords, AWS keys, connection strings, private keys, JWTs) are scrubbed before display.
+**All log output is redacted** — secrets (API keys, tokens, passwords, AWS keys, connection strings, private keys, JWTs) are scrubbed before display. ANSI escape codes (color, bold, etc.) are automatically stripped before redaction and grep matching.
+
+### View test results
+
+```bash
+python3 <skill_dir>/scripts/get_test_results.py
+python3 <skill_dir>/scripts/get_test_results.py --build 142
+python3 <skill_dir>/scripts/get_test_results.py --failures-only
+python3 <skill_dir>/scripts/get_test_results.py --format json
+```
+
+Shows structured test results from JUnit reports: totals (pass/fail/skip) and failed test details (suite, test name, error message). Works with any language/framework that produces JUnit XML. Gracefully handles 404 when JUnit plugin is not installed.
+
+Flags: `--build N` (specific build number), `--failures-only` (show only failed tests), `--format json`.
 
 ### Trigger a build
 

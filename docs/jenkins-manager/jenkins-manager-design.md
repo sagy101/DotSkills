@@ -27,6 +27,8 @@ Jira (plan) → Code → Bitbucket (PR) → Jenkins (build/deploy) → EKS (veri
 | **Queue status** | Check if a triggered build is queued, blocked, stuck, or started |
 | **List folders** | Browse top-level organization folders |
 | **List jobs** | Search jobs across folders with regex filtering |
+| **Test results** | Structured JUnit test report output (pass/fail/skip, failed test details) |
+| **Watch mode** | Poll build status until completion with configurable interval and timeout |
 | **Pre-flight** | Validate config, credentials, connectivity, and job discovery in one pass |
 
 ---
@@ -46,7 +48,7 @@ This avoids requiring users to memorize Jenkins job paths while still allowing e
 
 **4. Branch name URL encoding** — Jenkins encodes `/` as `%2F` in URL paths for branches like `feature/TICKET-123`. This is handled transparently by `url_encode_branch()` in every script — the user passes the natural branch name.
 
-**5. Secret redaction on all log output** — Jenkins console logs can leak secrets (env vars, connection strings, API keys). All console output passes through `redact_text()` before the agent sees it. Always-on, no toggle. Mirrors the eks-pod-ops redaction module with identical patterns.
+**5. ANSI stripping + secret redaction on all log output** — Jenkins console logs contain ANSI escape codes (color, bold) and can leak secrets. All console output first passes through `strip_ansi()` to remove escape codes, then `redact_text()` to scrub secrets. This ensures `--grep` patterns match cleanly regardless of embedded color codes. Always-on, no toggle.
 
 **6. Config hierarchy mirrors other skills** — Global `~/.jenkins.json` → local `.jenkins.json` → CLI flags. Deep-merge on overlap. Same pattern as bitbucket-manager, jira-manager, confluence-publisher. Users configure once globally and override per-project.
 
@@ -70,8 +72,9 @@ jenkins-manager/
 │   ├── jenkins_client.py     # Jenkins REST API wrapper (Basic auth, CSRF, SSL)
 │   ├── jenkins_redaction.py   # Secret scrubbing for log output
 │   ├── jenkins_preflight.py  # Pre-flight validation (6 checks)
-│   ├── get_status.py         # Build status
-│   ├── get_logs.py           # Console output with redaction
+│   ├── get_status.py         # Build status + --watch polling mode
+│   ├── get_logs.py           # Console output with ANSI stripping + redaction
+│   ├── get_test_results.py   # Structured JUnit test report output
 │   ├── get_changesets.py     # Commits in a build
 │   ├── get_queue_item.py     # Queue item status
 │   ├── trigger_build.py      # Trigger build (--dry-run gate)
@@ -84,7 +87,7 @@ jenkins-manager/
 **Script → shared module dependency:**
 - All operation scripts import `jenkins_config` (config + branch/job resolution)
 - Scripts that call the API import `jenkins_client` (HTTP wrapper)
-- `get_logs.py` and `trigger_build.py` import `jenkins_redaction` (secret scrubbing)
+- `get_logs.py` and `trigger_build.py` import `jenkins_redaction` (ANSI stripping + secret scrubbing)
 
 ---
 
@@ -139,4 +142,4 @@ The [official MCP Server plugin](https://plugins.jenkins.io/mcp-server) requires
 
 ## Status
 
-**Stable (v1.0)** — All 11 scripts validated against live Jenkins instance. Supports build status, logs, trigger, changesets, queue status, folder/job listing, and pre-flight checks.
+**Stable (v2.0)** — All 12 scripts validated against live Jenkins instance. v2.0 adds ANSI escape code stripping (fixes `--grep` on colorized output), `--watch` polling mode on build status, structured test results via JUnit API, `env_file` under `credentials` block, `default_username` config fallback, and `resolve_full_job_path()` helper with auto-discovery + caching hints.

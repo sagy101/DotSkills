@@ -30,6 +30,7 @@ class JenkinsConfig:
     env_file: str | None = None
     job_cache: dict[str, str] = field(default_factory=dict)
     default_branch: str | None = None
+    default_username: str | None = None
     ssl_verify: bool = True
 
     # Resolved at runtime
@@ -313,13 +314,17 @@ def load_config(config_path: str | None = None) -> JenkinsConfig:
     # Strip trailing slash from base_url
     base_url = raw["base_url"].rstrip("/")
 
+    # env_file can be at top level or under credentials (check both)
+    env_file = raw.get("env_file") or creds.get("env_file")
+
     return JenkinsConfig(
         base_url=base_url,
         username_env=creds.get("username_env", "JENKINS_USER"),
         token_env=creds.get("token_env", "JENKINS_TOKEN"),
-        env_file=raw.get("env_file"),
+        env_file=env_file,
         job_cache=raw.get("job_cache", {}),
         default_branch=raw.get("default_branch"),
+        default_username=raw.get("default_username"),
         ssl_verify=raw.get("ssl_verify", True),
         project_root=project_root,
     )
@@ -352,12 +357,15 @@ def resolve_credentials(config: JenkinsConfig) -> tuple[str, str]:
         env_vars = load_env_file(env_path)
 
     username = env_vars.get(config.username_env) or os.environ.get(config.username_env)
+    if not username and config.default_username:
+        username = config.default_username
     token = env_vars.get(config.token_env) or os.environ.get(config.token_env)
 
     if not username:
         print(f"ERROR: Credential not found: {config.username_env}")
         print("Set it globally in your shell profile (recommended):")
         print(_credential_hint(config.username_env))
+        print("Or set 'default_username' in .jenkins.json as a fallback.")
         sys.exit(2)
     if not token:
         print(f"ERROR: Credential not found: {config.token_env}")
@@ -395,6 +403,45 @@ def resolve_job_path(
         return cli_folder, cli_job
 
     return cli_folder, repo_name
+
+
+def resolve_full_job_path(
+    config: JenkinsConfig,
+    client: Any,
+    cli_folder: str | None = None,
+    cli_job: str | None = None,
+) -> tuple[str | None, str | None]:
+    """Resolve folder + job with full auto-discovery.
+
+    Priority: CLI flags > job_cache > API search via find_job().
+    Prints a hint to add to job_cache on first API discovery.
+    """
+    folder, job = resolve_job_path(config, cli_folder, cli_job)
+
+    if not job:
+        return folder, job
+
+    # If folder is already known, we're done
+    if folder:
+        return folder, job
+
+    # Try API discovery
+    try:
+        discovered = client.find_job(job)
+    except Exception:
+        discovered = None
+
+    if discovered:
+        folder, job = discovered
+        if folder:
+            print(
+                f"Hint: Add to job_cache in .jenkins.json to skip discovery next time: "
+                f'"{job}": "{folder}/{job}"',
+                file=sys.stderr,
+            )
+        return folder, job
+
+    return None, job
 
 
 def resolve_branch(

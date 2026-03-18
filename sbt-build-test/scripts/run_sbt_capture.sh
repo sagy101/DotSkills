@@ -27,11 +27,18 @@ LOG_LABEL="sbt"
 LOG_FILE=""
 TAIL_LINES=0
 AUTO_PUBLISH_DEPS=false
+FORCE_BATCH=false
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
+_START_TIME=$(date '+%s')
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --batch)
+      FORCE_BATCH=true
+      shift
+      ;;
     --workspace-dir)
       [ "$#" -ge 2 ] || usage
       WORKSPACE_DIR="$2"
@@ -118,6 +125,9 @@ fi
 if [ -n "$SBT_ENV_VALUE" ]; then
   RUN_CMD+=(--sbt-env "$SBT_ENV_VALUE")
 fi
+if [ "$FORCE_BATCH" = true ]; then
+  RUN_CMD+=(--batch)
+fi
 RUN_CMD+=(--)
 for arg in "$@"; do
   RUN_CMD+=("$arg")
@@ -201,13 +211,29 @@ else
   RUN_RC=$?
 fi
 
+# ── Check log freshness ────────────────────────────────────────────────────
+_LOG_MTIME=$(stat -f '%m' "$LOG_FILE" 2>/dev/null || stat -c '%Y' "$LOG_FILE" 2>/dev/null || echo 0)
+if [ "$_LOG_MTIME" -lt "$_START_TIME" ] && [ "$_LOG_MTIME" -gt 0 ]; then
+  echo ""
+  echo "WARNING: Log file is from a previous run (mtime predates this invocation)."
+  echo "This may indicate the SBT command did not execute. Check for lock contention or server issues."
+  echo ""
+fi
+
 echo "=== SBT Run Summary ==="
 echo "Project: $PROJECT_DIR"
 printf 'Command:'
 printf ' %q' "${RUN_CMD[@]}"
 echo
 echo "Log: $LOG_FILE"
-echo "Exit code: $RUN_RC"
+
+# Human-readable exit code explanation
+case "$RUN_RC" in
+  0) echo "Exit code: 0 (SUCCESS)" ;;
+  1) echo "Exit code: 1 (SBT error — compilation failure, test failure, or resolution error)" ;;
+  2) echo "Exit code: 2 (Infrastructure error — lock contention, missing Java, missing config)" ;;
+  *) echo "Exit code: $RUN_RC" ;;
+esac
 
 if [ "$RUN_RC" -eq 0 ]; then
   echo "Result: SUCCESS"

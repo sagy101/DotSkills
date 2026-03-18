@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from jenkins_client import JenkinsClient
 from jenkins_config import add_common_args, load_config, resolve_branch, resolve_job_path
-from jenkins_redaction import redact_text
+from jenkins_redaction import redact_text, strip_ansi
 
 
 def main() -> None:
@@ -58,7 +58,8 @@ def main() -> None:
     # Fetch console output
     console = client.get_build_console(folder, job, branch, build_number)
 
-    # Redact secrets before any output
+    # Strip ANSI codes and redact secrets before any output
+    console = strip_ansi(console)
     console = redact_text(console)
 
     # Apply filters

@@ -55,11 +55,16 @@ SKIP_PREFLIGHT=false
 AUTO_PUBLISH=false
 CONTINUE_ON_ERROR=false
 CAPTURE_ARGS=()
+FRESH_MODE=false
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --all)
       BUILD_ALL=true
+      shift
+      ;;
+    --fresh)
+      FRESH_MODE=true
       shift
       ;;
     --workspace-dir)
@@ -127,6 +132,11 @@ done
 
 [ "$#" -gt 0 ] || usage
 SBT_ARGS=("$@")
+
+# Pass --fresh mode as --batch to capture/run scripts
+if [ "$FRESH_MODE" = true ]; then
+  CAPTURE_ARGS+=(--batch)
+fi
 
 # ── Resolve workspace ────────────────────────────────────────────────────────
 if [ ${#PROJECT_DIRS[@]} -gt 0 ]; then
@@ -273,6 +283,31 @@ for sbt_arg in "${SBT_ARGS[@]}"; do
   esac
 done
 
+# ── Pre-check: report stale locks (visible to user, not hidden in log) ──────
+if [ "$IS_TEST_CMD" = true ]; then
+  for _check_dir in "${PROJECT_DIRS[@]}"; do
+    _check_lock="$(test_activity_lock_file "$_check_dir")"
+    if [ -f "$_check_lock" ]; then
+      _check_pid=$(grep -oE '^pid=[0-9]+' "$_check_lock" 2>/dev/null | cut -d= -f2 || true)
+      _check_stale=false
+      if [ -n "$_check_pid" ] && ! kill -0 "$_check_pid" 2>/dev/null; then
+        _check_stale=true
+      fi
+      if [ "$_check_stale" = false ] && [ -f "$_check_lock" ]; then
+        _check_age_limit=$((2 * 60 * 60))
+        _check_mtime=$(stat -f '%m' "$_check_lock" 2>/dev/null || stat -c '%Y' "$_check_lock" 2>/dev/null || echo 0)
+        _check_now=$(date '+%s')
+        if [ $((_check_now - _check_mtime)) -ge "$_check_age_limit" ]; then
+          _check_stale=true
+        fi
+      fi
+      if [ "$_check_stale" = true ]; then
+        echo "WARNING: Stale lock detected for $(basename "$_check_dir") (PID ${_check_pid:-unknown} is dead). Will auto-clear."
+      fi
+    fi
+  done
+fi
+
 # ── Build each project ───────────────────────────────────────────────────────
 OVERALL_RC=0
 RESULTS=()
@@ -308,15 +343,12 @@ for PROJECT_DIR in "${PROJECT_DIRS[@]}"; do
     SBT_RC=$?
   fi
 
-  # Auto-parse test reports
+  # Auto-parse test reports (search up to 3 levels deep for multi-project builds)
   if [ "$IS_TEST_CMD" = true ] && [ "$SBT_RC" -le 1 ]; then
     REPORT_DIRS=()
-    if [ -d "$PROJECT_DIR/target/test-reports" ]; then
-      REPORT_DIRS+=("$PROJECT_DIR/target")
-    fi
-    for sub_target in "$PROJECT_DIR"/*/target/test-reports; do
-      [ -d "$sub_target" ] && REPORT_DIRS+=("$(dirname "$sub_target")")
-    done
+    while IFS= read -r _report_dir; do
+      [ -n "$_report_dir" ] && REPORT_DIRS+=("$(dirname "$_report_dir")")
+    done < <(find "$PROJECT_DIR" -maxdepth 4 -path "*/target/test-reports" -type d 2>/dev/null | sort)
 
     if [ ${#REPORT_DIRS[@]} -gt 0 ]; then
       echo ""
