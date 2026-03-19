@@ -93,14 +93,16 @@ If any check fails, fix the issue and re-run before proceeding.
 
 ```bash
 python3 <skill_dir>/scripts/get_status.py
+python3 <skill_dir>/scripts/get_status.py --build 1094
 python3 <skill_dir>/scripts/get_status.py --folder MyFolder --job my-service --branch main
 python3 <skill_dir>/scripts/get_status.py --format json
 python3 <skill_dir>/scripts/get_status.py --watch --interval 30 --timeout 300
+python3 <skill_dir>/scripts/get_status.py --build 1094 --watch
 ```
 
 Auto-resolves folder, job, and branch from git remote + current branch. Override with flags.
 
-Flags: `--watch` (poll until build finishes), `--interval N` (poll interval in seconds, default 60), `--timeout N` (max wait in seconds, default 600). Watch mode exit codes: 0=success, 1=build failed, 2=timeout.
+Flags: `--build N` (specific build number, default: last build), `--watch` (poll until build finishes), `--interval N` (poll interval in seconds, default 60), `--timeout N` (max wait in seconds, default 600). Watch mode exit codes: 0=success, 1=build failed, 2=timeout.
 
 ### View build logs
 

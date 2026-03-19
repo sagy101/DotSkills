@@ -20,7 +20,7 @@ Jira (plan) → Code → Bitbucket (PR) → Jenkins (build/deploy) → EKS (veri
 
 | Capability | Description |
 |---|---|
-| **Build status** | Check latest build result for a job + branch with auto-discovery |
+| **Build status** | Check latest or specific build result for a job + branch with auto-discovery |
 | **Console logs** | View build output with tail/grep filtering and secret redaction |
 | **Trigger build** | Start a build with optional parameters (dry-run required first) |
 | **Build changes** | View commits included in a specific build |

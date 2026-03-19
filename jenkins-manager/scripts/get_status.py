@@ -80,6 +80,7 @@ def _watch_build(
     fmt: str,
     interval: int,
     timeout: int,
+    build_number: int | None = None,
 ) -> None:
     """Poll until build finishes or timeout. Exits the process."""
     start = time.monotonic()
@@ -106,7 +107,10 @@ def _watch_build(
         print(f"  Building... next check in {int(sleep_time)}s (timeout in {int(remaining)}s)")
         print()
         time.sleep(sleep_time)
-        build = client.get_last_build(folder, job, branch) or {}
+        if build_number:
+            build = client.get_build_info(folder, job, branch, build_number) or {}
+        else:
+            build = client.get_last_build(folder, job, branch) or {}
         if not build:
             print("Build disappeared during polling.")
             sys.exit(1)
@@ -115,6 +119,7 @@ def _watch_build(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Check Jenkins build status")
     add_common_args(parser)
+    parser.add_argument("--build", type=int, help="Build number (default: last build)")
     parser.add_argument(
         "--format", choices=["table", "json"], default="table", help="Output format"
     )
@@ -148,17 +153,35 @@ def main() -> None:
             print("Use --folder and --job flags, or add to job_cache in .jenkins.json")
             sys.exit(1)
 
-    # Try to get last build
-    build = client.get_last_build(folder, job, branch)
-
-    if not build:
-        job_path = f"{folder}/{job}" if folder else job
-        branch_str = f" @ {branch}" if branch else ""
-        print(f"No builds found for {job_path}{branch_str}")
-        sys.exit(0)
+    # Determine build
+    build_number = args.build
+    if build_number:
+        build = client.get_build_info(folder, job, branch, build_number)
+        if not build:
+            job_path = f"{folder}/{job}" if folder else job
+            branch_str = f" @ {branch}" if branch else ""
+            print(f"Build #{build_number} not found for {job_path}{branch_str}")
+            sys.exit(1)
+    else:
+        build = client.get_last_build(folder, job, branch)
+        if not build:
+            job_path = f"{folder}/{job}" if folder else job
+            branch_str = f" @ {branch}" if branch else ""
+            print(f"No builds found for {job_path}{branch_str}")
+            sys.exit(0)
 
     if args.watch:
-        _watch_build(client, folder, job, branch, build, args.format, args.interval, args.timeout)
+        _watch_build(
+            client,
+            folder,
+            job,
+            branch,
+            build,
+            args.format,
+            args.interval,
+            args.timeout,
+            build_number=args.build,
+        )
     else:
         _print_build(build, folder, job, branch, fmt=args.format)
 
