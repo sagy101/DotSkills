@@ -3,8 +3,8 @@ name: sbt-build-test
 description: >
   Use for ANY SBT operation: compile, test, publishLocal, dependency discovery, cross-repo builds. Handles multi-repo dependency chains automatically — detects upstream repos, publishes them in correct order, clears caches, and rebuilds. Uses an isolated build cache so normal sbt is never affected.
 metadata:
-  author: Sagy Ashlag
-  version: "10.0"
+  author: sagy101
+  version: "11.0"
 ---
 
 # SBT Multi-Repo Build & Test
@@ -59,6 +59,7 @@ bash <skill_dir>/scripts/sbt_build.sh --all [options] -- <sbt-commands>
 | `--tail <lines>` | Lines of log tail to show (default: 60) |
 | `--auto-publish-deps` | Auto-publishLocal missing AND stale workspace deps before building |
 | `--continue-on-error` | Keep going when a project fails (useful with `--all`) |
+| `--fresh` | Force fresh SBT process (no server reuse) — use when SBT returns stale results |
 | `--skip-preflight` | Skip Java/cache pre-check (for repeated calls) |
 
 **Examples:**
@@ -141,7 +142,8 @@ bash <skill_dir>/scripts/sbt_refresh.sh <project-dir> [options]
 | `--artifact-version <ver>` | Version for publishLocal |
 | `--artifact <name>` | Artifact name for targeted cache clearing |
 | `--version <ver>` | Version for targeted cache clearing |
-| `--clean-target` | Delete project `target/` directory |
+| `--clean-target` | Delete project `target/` directory (also kills SBT server) |
+| `--kill-server` | Explicitly shut down the SBT server for this project |
 | `--rebuild` | Rebuild with `compile` after refresh |
 | `--rebuild-arg <arg>` | Explicit SBT arg for rebuild (overrides `--rebuild`) |
 | `--workspace-dir <dir>` | Override workspace directory |
@@ -206,6 +208,16 @@ bash <skill_dir>/scripts/sbt_reset.sh --dry-run
 | Compile + test everything | `sbt_build.sh --all --auto-publish-deps --continue-on-error -- test` |
 | Reset to clean state (resolve from remote) | `sbt_reset.sh` |
 | Reset only local publishes | `sbt_reset.sh --local-only` |
+| SBT returns stale test results after edits | `sbt_build.sh <target> --fresh -- test` |
+| SBT server is stuck/corrupted | `sbt_refresh.sh <target> --kill-server --clean-target --rebuild` |
+
+## Exit Codes
+
+| Code | Meaning |
+|---|---|
+| `0` | SUCCESS — build/test completed without errors |
+| `1` | SBT error — compilation failure, test failure, or dependency resolution error |
+| `2` | Infrastructure error — lock contention, missing Java, missing config, or no test reports |
 
 ## Important rules
 
@@ -228,6 +240,9 @@ bash <skill_dir>/scripts/sbt_reset.sh --dry-run
 | `NoSuchMethodError` / `NoSuchFieldError` | Stale artifact on classpath | `sbt_refresh.sh <project> --publish-upstreams --clean-target --rebuild` |
 | `not a valid command` | Wrong scoped SBT command | Run `sbt_status.sh <project>` and use a listed subproject name |
 | `No test-reports directory found` | Tests did not generate XML reports | Run tests first via `sbt_build.sh` |
+| `CRASH (no JUnit XML produced)` | Test suite crashed before writing XML | Check SBT log for ClassCastException, OutOfMemoryError, or initialization errors |
+| `Stale lock file detected` | A previous build was killed leaving a lock | Auto-cleaned — no action needed |
+| `WARNING: Log file is from a previous run` | SBT did not execute (likely lock contention) | Check for concurrent builds or stale SBT server |
 
 ## Troubleshooting
 

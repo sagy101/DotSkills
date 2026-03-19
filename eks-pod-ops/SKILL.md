@@ -5,7 +5,7 @@ description: >
   Use when the user asks to check logs, debug a pod, exec into a container, find pods, restart
   a service, or interact with Kubernetes/EKS in any way.
 metadata:
-  author: sashlag
+  author: sagy101
   version: "1.1"
 ---
 
