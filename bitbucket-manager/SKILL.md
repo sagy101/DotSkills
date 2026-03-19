@@ -2,9 +2,10 @@
 name: bitbucket-manager
 description: >
   Create, update, get, list, merge, decline, and comment on Bitbucket Cloud pull requests.
-  View build/pipeline status checks, extract linked Jira issues from PRs, and list workspace
-  repositories. Use when the user wants to manage Bitbucket PRs, check CI status, or browse
-  repos. Pure Python stdlib — zero pip dependencies.
+  Add, edit, delete, and resolve PR comments. View Bitbucket PR build checks, commit/branch
+  pipeline status, extract linked Jira issues from PRs, and list workspace repositories.
+  Use when the user wants to manage Bitbucket PRs, view PR build checks, or browse repos.
+  Pure Python stdlib — zero pip dependencies.
 license: MIT
 metadata:
   author: sagy101
@@ -28,9 +29,11 @@ Use when the user wants to:
 - **Merge** a PR (with precondition checks)
 - **Decline** a PR
 - **Comment** on a PR (general or inline file-level comments)
+- **Edit** an existing PR comment
+- **Delete** one or more PR comments
 - **Resolve** one or more PR comments in bulk
 - **View comments** on one or more PRs (threaded view with filters)
-- **Check** build/pipeline status for a PR or commit
+- **View** Bitbucket PR build checks or commit/branch pipeline status
 - **Extract** Jira issue keys linked to a PR
 - **List** repositories in a workspace
 
@@ -84,8 +87,8 @@ If any check fails, fix the issue and re-run before proceeding.
 ## Workflow
 
 1. **Pre-flight** — run checks above
-2. **Determine operation** — create / update / get / list / merge / decline / comment / checks
-3. **Plan** — for create, update, merge, decline: show plan and **wait for user approval**
+2. **Determine operation** — create / update / get / list / merge / decline / comment / edit / delete / checks
+3. **Plan** — for create, update, merge, decline, edit, delete: show plan and **wait for user approval**
 4. **Execute** — run the appropriate script
 5. **Verify** — offer to get PR details or list checks after write operations
 
@@ -158,17 +161,44 @@ python3 <skill_dir>/scripts/pr_comment.py --pr 42 --body "Fix this" --file src/a
 # Threaded reply to an existing comment
 python3 <skill_dir>/scripts/pr_comment.py --pr 42 --body "Fixed in latest push." --parent-id 769609697
 
+# Dry run for posting
+python3 <skill_dir>/scripts/pr_comment.py --pr 42 --body "LGTM" --dry-run
+```
+
+### Edit a comment
+
+```bash
+# Edit an existing comment (requires --body with new text)
+python3 <skill_dir>/scripts/pr_comment.py --pr 42 --edit 769609697 --body "Updated review comment"
+
+# Dry run
+python3 <skill_dir>/scripts/pr_comment.py --pr 42 --edit 769609697 --body "Updated text" --dry-run
+```
+
+### Delete comments
+
+```bash
+# Delete a single comment
+python3 <skill_dir>/scripts/pr_comment.py --pr 42 --delete 769609697
+
+# Delete multiple comments (1s delay between calls for rate-limit safety)
+python3 <skill_dir>/scripts/pr_comment.py --pr 42 --delete 769609697 769609700 769609705
+
+# Dry run
+python3 <skill_dir>/scripts/pr_comment.py --pr 42 --delete 769609697 769609700 --dry-run
+```
+
+### Resolve comments
+
+```bash
 # Resolve a single comment (no --body needed)
 python3 <skill_dir>/scripts/pr_comment.py --pr 42 --resolve 769609697
 
 # Resolve multiple comments at once (1s delay between calls for rate-limit safety)
 python3 <skill_dir>/scripts/pr_comment.py --pr 42 --resolve 769609697 769609700 769609705
 
-# Dry run (works with single or bulk resolve)
+# Dry run
 python3 <skill_dir>/scripts/pr_comment.py --pr 42 --resolve 769609697 769609700 --dry-run
-
-# Dry run for posting
-python3 <skill_dir>/scripts/pr_comment.py --pr 42 --body "LGTM" --dry-run
 ```
 
 ### List comments
@@ -242,7 +272,7 @@ All scripts accept `--repo <slug>` (auto-detected from git remote if omitted), `
 
 1. **ALWAYS use the provided scripts.** Every operation has a dedicated script. Run them via `python3 <skill_dir>/scripts/<script>.py`. NEVER write inline Python to call `BitbucketClient`, `bb_config`, or the Bitbucket REST API directly. The scripts handle auth, config merging, error formatting, repo auto-detection, and pagination.
 2. **If a script fails, debug the script invocation** (wrong flags, missing config, missing credentials). Do NOT abandon the scripts and write custom code. Check the error table below and re-run with corrected arguments.
-3. **Never create, update, merge, or decline without plan + explicit user approval.** Use `--dry-run` for write operations.
+3. **Never create, update, merge, decline, edit, or delete without plan + explicit user approval.** Use `--dry-run` for write operations.
 4. **Never print credentials.** Only confirm env vars are set.
 5. **Repo slug is auto-detected from git remote.** Override with `--repo` if needed.
 
@@ -265,7 +295,8 @@ When composing `--description` or `--body` arguments:
 | `401 Unauthorized` | Bad credentials | Verify `BITBUCKET_EMAIL` and `BITBUCKET_TOKEN` env vars. Token must be an app password, not account password |
 | `403 Forbidden` | Insufficient permissions | App password needs repository and PR read/write scopes |
 | `403` on resolve | Tried to resolve a general comment | Only inline (diff) comments can be resolved. General PR comments cannot be resolved via the API |
-| `404 Not Found` | Wrong workspace, repo slug, or PR ID | Verify config `workspace` and run `repo_list.py` to check |
+| `403` on delete | Not the comment author | You can only delete comments you authored |
+| `404 Not Found` | Wrong workspace, repo slug, PR ID, or comment ID | Verify config `workspace` and run `repo_list.py` to check |
 | `400 Bad Request` | Invalid payload (e.g. bad branch name) | Check branch exists; review `--dry-run` output |
 | `409 Conflict` | Merge conflict or PR not mergeable | Resolve conflicts in the source branch first |
 | `429 Too Many Requests` | Rate limited | Automatic retry with exponential backoff (2s/4s/8s, 3 retries). If still failing, wait and retry manually. Bitbucket Cloud limit: 1000 req/hr |

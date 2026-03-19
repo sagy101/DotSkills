@@ -322,6 +322,34 @@ class BitbucketClient:
             f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments/{comment_id}",
         )
 
+    def update_pr_comment(
+        self,
+        workspace: str,
+        repo_slug: str,
+        pr_id: int,
+        comment_id: int,
+        body: str,
+    ) -> dict:
+        """Update the body of an existing PR comment."""
+        return self._request(  # type: ignore[no-any-return]
+            "PUT",
+            f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments/{comment_id}",
+            data={"content": {"raw": body}},
+        )
+
+    def delete_pr_comment(
+        self,
+        workspace: str,
+        repo_slug: str,
+        pr_id: int,
+        comment_id: int,
+    ) -> dict:
+        """Delete a PR comment. Returns empty dict on success (HTTP 204)."""
+        return self._request(  # type: ignore[no-any-return]
+            "DELETE",
+            f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments/{comment_id}",
+        )
+
     def resolve_pr_comment(
         self,
         workspace: str,
