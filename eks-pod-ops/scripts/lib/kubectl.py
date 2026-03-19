@@ -53,11 +53,18 @@ def run_kubectl(
     if result.returncode != 0 and any(
         kw in output.lower() for kw in ("token", "expired", "unauthorized")
     ):
-        sso_session = env_cfg.get("sso_session", "lab")
-        die(
-            f"Authentication failed. SSO session may be expired.\n"
-            f"Run: aws sso login --sso-session {sso_session}"
-        )
+        sso_session = env_cfg.get("sso_session", "")
+        if sso_session:
+            die(
+                f"Authentication failed. SSO session may be expired.\n"
+                f"Run: aws sso login --sso-session {sso_session}"
+            )
+        else:
+            die(
+                "Authentication failed. SSO session may be expired.\n"
+                "Run: aws sso login --sso-session <your-sso-session>\n"
+                "Check ~/.aws/config for available sso-session names."
+            )
 
     if redact:
         output = redact_text(output, config)

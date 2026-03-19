@@ -108,6 +108,21 @@ def auto_generate_config(output_path: Path, environments: dict[str, dict[str, st
         f.write("\n")
 
 
+def _list_sso_sessions() -> list[str]:
+    """List SSO session names from ~/.aws/config."""
+    aws_config = Path.home() / ".aws" / "config"
+    if not aws_config.is_file():
+        return []
+    parser = configparser.ConfigParser()
+    parser.read(aws_config)
+    sessions = [
+        section.removeprefix("sso-session ")
+        for section in parser.sections()
+        if section.startswith("sso-session ")
+    ]
+    return sorted(set(sessions))
+
+
 def check_environment(config: dict, env_name: str, *, has_aws: bool) -> bool:
     """Check kubeconfig and SSO session for a specific environment."""
     all_ok = True
@@ -143,12 +158,19 @@ def check_environment(config: dict, env_name: str, *, has_aws: bool) -> bool:
             if result.returncode == 0:
                 all_ok &= check("SSO session", True, f"Profile '{profile}' authenticated")
             else:
-                sso_session = env_cfg.get("sso_session", "lab")
-                all_ok &= check(
-                    "SSO session",
-                    False,
-                    f"Expired. Run: aws sso login --sso-session {sso_session}",
-                )
+                sso_session = env_cfg.get("sso_session", "")
+                if sso_session:
+                    hint = f"Expired. Run: aws sso login --sso-session {sso_session}"
+                else:
+                    available = _list_sso_sessions()
+                    if available:
+                        hint = (
+                            f"Expired. Run: aws sso login --sso-session <session>\n"
+                            f"           Available sessions: {', '.join(available)}"
+                        )
+                    else:
+                        hint = "Expired. Run: aws sso login --sso-session <your-sso-session>"
+                all_ok &= check("SSO session", False, hint)
         except subprocess.TimeoutExpired:
             all_ok &= check("SSO session", False, "Timed out checking credentials")
 
