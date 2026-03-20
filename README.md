@@ -146,6 +146,12 @@ python3 skill-sync/scripts/sync.py --source . --level user --targets all
 python3 skill-sync/scripts/sync.py --source . --level project --project /path/to/project
 ```
 
+Or with command auto-approval (recommended):
+
+```bash
+python3 skill-sync/scripts/sync.py --source . --level user --targets all --sync-settings
+```
+
 Or copy manually:
 
 ```bash
@@ -153,6 +159,40 @@ cp -r <skill-name> /path/to/your-project/<ide-skills-dir>/
 ```
 
 Skills are automatically discovered by supported AI tools when placed in the correct directory.
+
+## Command Auto-approval
+
+Read-only skill scripts (fetch ticket, list PRs, get build logs, view pod logs…) run without
+a confirmation click. Write scripts (create, update, delete, trigger, restart, comment…) always
+require explicit approval.
+
+Add `--sync-settings` to any `skill-sync` call to deploy the whitelist alongside the skills:
+
+```bash
+# With skills — installs both skills and whitelist config in one step
+python3 skill-sync/scripts/sync.py --source . --level project --project /path/to/project \
+  --targets all --sync-settings
+```
+
+### Claude Code
+
+Configured via a `PermissionRequest` hook in `.claude/settings.json` (already in this repo).
+The hook script `.claude/hooks/command-whitelist.sh` checks each Bash command against a list
+of read-only skill scripts and auto-approves matching ones. Non-matching commands fall through
+to the normal approval dialog.
+
+**Read-only (auto-approved):** `fetch_tickets.py` · `pr_get.py` · `pr_list.py` · `pr_checks.py` ·
+`get_status.py` · `get_logs.py` · `get_test_results.py` · `eks_ops.py pods` · `eks_ops.py logs` ·
+`diff_pages.py` · `validate_manifest.py` · and more — see `.claude/hooks/command-whitelist.sh`.
+
+**Write (always prompted):** `create_ticket.py` · `pr_create.py` · `pr_merge.py` · `trigger_build.py` ·
+`eks_ops.py exec` · `eks_ops.py restart` · `publish_page.py` · `delete_page.py` · and all other
+scripts that modify external systems.
+
+### Windsurf
+
+Configured via `.windsurf/rules/rules.md` — a Cascade AI rules file that instructs Windsurf which
+scripts to run automatically and which to prompt before running. See that file for the full list.
 
 ## Compatibility
 

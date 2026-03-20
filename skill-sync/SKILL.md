@@ -26,6 +26,7 @@ Use this skill when the user wants to:
 - Update installed skill copies after editing the source repo
 - Copy skill files from one location to IDE skill directories
 - Check which IDEs are detected on their machine
+- Set up command auto-approval (whitelist) so read-only skill scripts run without prompting
 
 ## Workflow
 
@@ -82,6 +83,28 @@ python <skill_dir>/scripts/sync.py \
   --targets <comma_separated_or_all>
 ```
 
+### Step 4b — Sync settings (optional but recommended)
+
+Add `--sync-settings` to also deploy the command-approval whitelist config to each target IDE:
+
+```bash
+python <skill_dir>/scripts/sync.py \
+  --source <source_repo> \
+  --level <user|project|both> \
+  [--project <path>] \
+  --targets <comma_separated_or_all> \
+  --sync-settings
+```
+
+What `--sync-settings` copies per IDE:
+
+| IDE | What gets synced |
+|---|---|
+| Claude Code | `.claude/hooks/command-whitelist.sh` + `PermissionRequest` hook merged into `settings.json` |
+| Windsurf | `.windsurf/rules/rules.md` (Cascade AI approval rules) |
+
+The merge is non-destructive — existing `settings.json` keys are preserved.
+
 ### Step 5 — Report
 
 Show the summary: how many skills synced, to which IDEs, file counts.
@@ -107,6 +130,7 @@ python <skill_dir>/scripts/sync.py \
   --targets <list|all>      # IDE targets: windsurf,claude,cursor,codex,gemini,antigravity or all
   --dry-run                 # Preview without copying
   --detect                  # Just print detected IDEs and exit
+  --sync-settings           # Also sync command-whitelist config (hook + rules)
 ```
 
 ## Important rules

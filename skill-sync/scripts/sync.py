@@ -17,6 +17,7 @@ Usage:
 
 import argparse
 import fnmatch
+import json
 import platform
 import shutil
 import sys
@@ -225,6 +226,139 @@ def sync_skills(
 
 
 # ---------------------------------------------------------------------------
+# Settings sync — whitelist config for Claude Code and Windsurf
+# ---------------------------------------------------------------------------
+
+# PermissionRequest hook entry to inject into Claude Code settings.json
+_CLAUDE_HOOK_ENTRY = {
+    "matcher": "Bash",
+    "hooks": [
+        {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/command-whitelist.sh",
+        }
+    ],
+}
+
+
+def _sync_claude_settings(source: Path, target_claude_dir: Path, dry_run: bool) -> bool:
+    """Merge the command-whitelist hook into a Claude Code settings.json.
+
+    Copies the hook script and injects the PermissionRequest entry into
+    settings.json without overwriting any existing keys.
+    Returns True if changes were made (or would be made in dry-run).
+    """
+    hook_src = source / ".claude" / "hooks" / "command-whitelist.sh"
+    if not hook_src.is_file():
+        print(f"    [warn] hook script not found: {hook_src}")
+        return False
+
+    hook_dst = target_claude_dir / "hooks" / "command-whitelist.sh"
+    settings_dst = target_claude_dir / "settings.json"
+
+    if dry_run:
+        print(f"    [dry-run] copy {hook_src.name} -> {hook_dst}")
+        print(f"    [dry-run] merge PermissionRequest hook -> {settings_dst}")
+        return True
+
+    # Copy hook script
+    hook_dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(hook_src, hook_dst)
+    hook_dst.chmod(0o755)
+
+    # Merge hook entry into settings.json
+    settings: dict = {}
+    if settings_dst.is_file():
+        try:
+            settings = json.loads(settings_dst.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            pass
+
+    hooks = settings.setdefault("hooks", {})
+    existing = hooks.setdefault("PermissionRequest", [])
+
+    # Only add if not already present (match on hook command path)
+    already_present = any(
+        any(
+            h.get("command", "").endswith("command-whitelist.sh")
+            for h in entry.get("hooks", [])
+        )
+        for entry in existing
+    )
+    if not already_present:
+        existing.insert(0, _CLAUDE_HOOK_ENTRY)
+
+    target_claude_dir.mkdir(parents=True, exist_ok=True)
+    settings_dst.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    print(f"    command-whitelist.sh + PermissionRequest hook -> {target_claude_dir}")
+    return True
+
+
+def _sync_windsurf_rules(source: Path, target_project: Path, dry_run: bool) -> bool:
+    """Copy .windsurf/rules/ from source into the target project directory.
+
+    Returns True if changes were made (or would be made in dry-run).
+    """
+    rules_src = source / ".windsurf" / "rules"
+    if not rules_src.is_dir():
+        print(f"    [warn] Windsurf rules not found: {rules_src}")
+        return False
+
+    rules_dst = target_project / ".windsurf" / "rules"
+
+    if dry_run:
+        files = list(rules_src.rglob("*.md"))
+        for f in files:
+            print(f"    [dry-run] copy {f.name} -> {rules_dst / f.name}")
+        return bool(files)
+
+    rules_dst.mkdir(parents=True, exist_ok=True)
+    copied = 0
+    for f in rules_src.rglob("*.md"):
+        shutil.copy2(f, rules_dst / f.name)
+        copied += 1
+    print(f"    {copied} rule file(s) -> {rules_dst}")
+    return copied > 0
+
+
+def sync_settings(
+    source: Path,
+    detected_ides: dict[str, dict[str, str | Path | None]],
+    targets: list[str],
+    project: Path | None,
+    dry_run: bool = False,
+) -> None:
+    """Sync whitelist config files to target IDEs."""
+    print(f"\n{'[DRY RUN] ' if dry_run else ''}Syncing settings:")
+    any_action = False
+
+    if "claude" in targets and "claude" in detected_ides:
+        ide = detected_ides["claude"]
+        for label in ("user", "project"):
+            target_path = ide.get(f"{label}_path")
+            if not target_path:
+                continue
+            tp = Path(target_path) if not isinstance(target_path, Path) else target_path
+            # settings.json lives one level up from the skills dir
+            claude_dir = tp.parent
+            print(f"\n  Claude Code ({label}): {claude_dir}")
+            any_action |= _sync_claude_settings(source, claude_dir, dry_run)
+
+    if "windsurf" in targets and "windsurf" in detected_ides:
+        ide = detected_ides["windsurf"]
+        # Windsurf rules are project-level only
+        project_path = ide.get("project_path")
+        if project_path and project:
+            print(f"\n  Windsurf (project): {project / '.windsurf'}")
+            any_action |= _sync_windsurf_rules(source, project, dry_run)
+        elif not project:
+            print("  Windsurf: skipped (--sync-settings for Windsurf rules requires --level project)")
+
+    if not any_action:
+        print("  (nothing to sync)")
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -260,6 +394,14 @@ def parse_args() -> argparse.Namespace:
         "--detect",
         action="store_true",
         help="Only detect and print installed IDEs, then exit",
+    )
+    parser.add_argument(
+        "--sync-settings",
+        action="store_true",
+        help=(
+            "Also sync command-whitelist config to target IDEs "
+            "(Claude Code: hook script + settings.json merge; Windsurf: rules/*.md)"
+        ),
     )
     return parser.parse_args()
 
@@ -363,6 +505,9 @@ def main() -> None:
 
     stats = sync_skills(skills, detected, targets, patterns, dry_run=args.dry_run)
     _print_summary(stats, len(skills), args.dry_run)
+
+    if args.sync_settings:
+        sync_settings(source, detected, targets, project, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":
