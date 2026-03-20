@@ -77,7 +77,6 @@ flowchart LR
 
 | Skill | What It Does |
 |---|---|
-| [skill-creator](./skill-creator/) | Scaffold new skills from scripts or from scratch |
 | [skill-sync](./skill-sync/) | Distribute skills to 6 IDEs, OS-agnostic, user or project level |
 | [codebase-analyzer](./codebase-analyzer/) | Line counts, language breakdown, test ratios, git churn hotspots |
 
@@ -86,6 +85,7 @@ flowchart LR
 | Skill | What It Does | Links |
 |---|---|---|
 | [codex-subagent](./codex-subagent/) | Delegate tasks to OpenAI Codex CLI — parallel work, fresh context, safety wrapper | [design](./docs/codex-subagent/codex-subagent-design.md) |
+| [skill-creator](./skill-creator/) | Scaffold new skills from scripts or from scratch, spec compliance verification | |
 
 ## Security Principles
 
