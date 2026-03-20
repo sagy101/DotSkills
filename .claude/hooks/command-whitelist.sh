@@ -1,95 +1,92 @@
 #!/usr/bin/env bash
-# DotSkills command whitelist — auto-approve read-only skill script invocations.
+# DotSkills command whitelist — auto-approve read-only skill scripts.
 #
-# Fires on PermissionRequest for the Bash tool.
-# Outputs an allow decision if the command calls a read-only skill script;
-# exits 0 silently otherwise so the normal approval dialog appears.
+# Fires on PermissionRequest for Bash tool calls.
+# Outputs an allow decision if the command matches a read-only skill script;
+# exits silently otherwise so the normal approval dialog is shown.
 #
-# Read-only = scripts that only fetch/list/query external systems.
-# Write scripts (create, update, delete, trigger, restart, exec, comment) are NOT listed here.
+# Read-only = fetches/reads data from external systems, no side effects.
+# Write operations (create, update, delete, trigger, restart, exec) are NOT whitelisted.
 
 INPUT=$(cat)
 COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
 
 [[ -z "$COMMAND" ]] && exit 0
 
-allow() {
+_allow() {
   printf '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
   exit 0
 }
 
 # ---------------------------------------------------------------------------
-# jira-manager — read-only scripts
+# Always-safe read-only scripts (matched by basename anywhere in the command)
 # ---------------------------------------------------------------------------
-[[ "$COMMAND" == *"fetch_tickets.py"*    ]] && allow
-[[ "$COMMAND" == *"discover_fields.py"*  ]] && allow
-[[ "$COMMAND" == *"diff_tickets.py"*     ]] && allow
-[[ "$COMMAND" == *"validate_estimates.py"* ]] && allow
+
+# jira-manager
+[[ "$COMMAND" == *"fetch_tickets.py"*     ]] && _allow
+[[ "$COMMAND" == *"discover_fields.py"*   ]] && _allow
+[[ "$COMMAND" == *"diff_tickets.py"*      ]] && _allow
+[[ "$COMMAND" == *"validate_estimates.py"* ]] && _allow
+
+# bitbucket-manager
+[[ "$COMMAND" == *"bb_preflight.py"*  ]] && _allow
+[[ "$COMMAND" == *"pr_get.py"*        ]] && _allow
+[[ "$COMMAND" == *"pr_list.py"*       ]] && _allow
+[[ "$COMMAND" == *"pr_comments.py"*   ]] && _allow
+[[ "$COMMAND" == *"pr_checks.py"*     ]] && _allow
+[[ "$COMMAND" == *"build_status.py"*  ]] && _allow
+[[ "$COMMAND" == *"pr_jira.py"*       ]] && _allow
+[[ "$COMMAND" == *"repo_list.py"*     ]] && _allow
+
+# jenkins-manager
+[[ "$COMMAND" == *"jenkins_preflight.py"* ]] && _allow
+[[ "$COMMAND" == *"get_status.py"*        ]] && _allow
+[[ "$COMMAND" == *"get_logs.py"*          ]] && _allow
+[[ "$COMMAND" == *"get_test_results.py"*  ]] && _allow
+[[ "$COMMAND" == *"get_changesets.py"*    ]] && _allow
+[[ "$COMMAND" == *"get_queue_item.py"*    ]] && _allow
+[[ "$COMMAND" == *"list_folders.py"*      ]] && _allow
+[[ "$COMMAND" == *"list_jobs.py"*         ]] && _allow
+
+# eks-pod-ops (preflight only — pods/logs handled below with subcommand check)
+[[ "$COMMAND" == *"eks_preflight.py"* ]] && _allow
+
+# confluence-publisher (read-only)
+[[ "$COMMAND" == *"diff_pages.py"*       ]] && _allow
+[[ "$COMMAND" == *"validate_manifest.py"* ]] && _allow
+[[ "$COMMAND" == *"verify_hierarchy.py"* ]] && _allow
+[[ "$COMMAND" == *"discover_pages.py"*   ]] && _allow
+[[ "$COMMAND" == *"diff_versions.py"*    ]] && _allow
+
+# skill-sync (distribution utility, no external side effects)
+[[ "$COMMAND" == *"sync.py"* ]] && _allow
+
+# skill-creator (read-only validation)
+[[ "$COMMAND" == *"quick_validate.py"* ]] && _allow
 
 # ---------------------------------------------------------------------------
-# bitbucket-manager — read-only scripts
+# Scripts that are read-only only for specific subcommands / flags
 # ---------------------------------------------------------------------------
-[[ "$COMMAND" == *"bb_preflight.py"*     ]] && allow
-[[ "$COMMAND" == *"pr_get.py"*           ]] && allow
-[[ "$COMMAND" == *"pr_list.py"*          ]] && allow
-[[ "$COMMAND" == *"pr_comments.py"*      ]] && allow   # list comments (read)
-[[ "$COMMAND" == *"pr_checks.py"*        ]] && allow
-[[ "$COMMAND" == *"build_status.py"*     ]] && allow
-[[ "$COMMAND" == *"pr_jira.py"*          ]] && allow
-[[ "$COMMAND" == *"repo_list.py"*        ]] && allow
 
-# ---------------------------------------------------------------------------
-# jenkins-manager — read-only scripts
-# ---------------------------------------------------------------------------
-[[ "$COMMAND" == *"jenkins_preflight.py"* ]] && allow
-[[ "$COMMAND" == *"get_status.py"*        ]] && allow
-[[ "$COMMAND" == *"get_logs.py"*          ]] && allow
-[[ "$COMMAND" == *"get_test_results.py"*  ]] && allow
-[[ "$COMMAND" == *"get_changesets.py"*    ]] && allow
-[[ "$COMMAND" == *"get_queue_item.py"*    ]] && allow
-[[ "$COMMAND" == *"list_folders.py"*      ]] && allow
-[[ "$COMMAND" == *"list_jobs.py"*         ]] && allow
-
-# ---------------------------------------------------------------------------
-# eks-pod-ops — pods and logs subcommands only (exec and restart require approval)
-# ---------------------------------------------------------------------------
-[[ "$COMMAND" == *"eks_preflight.py"* ]] && allow
+# eks_ops.py: only pods and logs are read-only (exec and restart are not)
 if [[ "$COMMAND" == *"eks_ops.py"* ]]; then
   if [[ "$COMMAND" =~ eks_ops\.py[[:space:]]+(pods|logs) ]]; then
-    allow
+    _allow
   fi
-  # exec / restart — fall through to normal approval dialog
-  exit 0
 fi
 
-# ---------------------------------------------------------------------------
-# confluence-publisher — read-only scripts
-# ---------------------------------------------------------------------------
-[[ "$COMMAND" == *"diff_pages.py"*        ]] && allow
-[[ "$COMMAND" == *"validate_manifest.py"* ]] && allow
-[[ "$COMMAND" == *"verify_hierarchy.py"*  ]] && allow
-[[ "$COMMAND" == *"discover_pages.py"*    ]] && allow
-[[ "$COMMAND" == *"diff_versions.py"*     ]] && allow
-
-# page_versions.py — allow --list and --fetch, block --revert
+# page_versions.py: --list and --fetch are read-only; --revert is not
 if [[ "$COMMAND" == *"page_versions.py"* ]]; then
-  if [[ "$COMMAND" != *"--revert"* ]] && [[ "$COMMAND" =~ --(list|fetch) ]]; then
-    allow
+  if [[ "$COMMAND" =~ --(list|fetch) ]] && [[ "$COMMAND" != *"--revert"* ]]; then
+    _allow
   fi
-  exit 0
 fi
 
-# export_pages.py — only allow --dry-run (without it, it overwrites local files)
+# export_pages.py: --dry-run is safe (no local files written)
 if [[ "$COMMAND" == *"export_pages.py"* ]]; then
-  [[ "$COMMAND" == *"--dry-run"* ]] && allow
-  exit 0
+  if [[ "$COMMAND" == *"--dry-run"* ]]; then
+    _allow
+  fi
 fi
 
-# ---------------------------------------------------------------------------
-# skill-sync and skill-creator — safe meta/tooling scripts
-# ---------------------------------------------------------------------------
-[[ "$COMMAND" == *"sync.py"*           ]] && allow
-[[ "$COMMAND" == *"quick_validate.py"* ]] && allow
-
-# No match — let the normal approval dialog appear
 exit 0
