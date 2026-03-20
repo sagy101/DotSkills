@@ -11,10 +11,8 @@ Every skill maps to a stage in the developer workflow. The goal: an AI agent tha
 
 ```mermaid
 flowchart LR
-    Ticket["Ticket
+    Task["Task Definition
     (jira-manager)"]
-    Design["Design / Branch
-    (bitbucket-manager)"]
     Plan["Plan + Code
     (native AI)"]
     Build["Build / Test
@@ -29,18 +27,17 @@ flowchart LR
     (bitbucket-manager)"]
     Docs["Documentation
     (confluence-publisher)"]
-    Update["Ticket Update
+    Update["Task Update
     (jira-manager)"]
 
-    Ticket --> Design --> Plan --> Build
+    Task --> Plan --> Build
     Build --> Debug
     Debug -->|fix| Plan
     Build --> Review --> PR
     PR -->|feedback| Plan
-    PR --> Docs --> Update --> Ticket
+    PR --> Docs --> Update --> Task
 
-    style Ticket fill:#4a9eff,color:#fff
-    style Design fill:#7c4dff,color:#fff
+    style Task fill:#4a9eff,color:#fff
     style Plan fill:#666,color:#fff
     style Build fill:#ff6d00,color:#fff
     style Debug fill:#ff6d00,color:#fff
@@ -60,32 +57,64 @@ flowchart LR
 
 **Zero or minimal dependencies.** Most skills are pure Python stdlib with no pip install, no venv setup, and no build step. A skill works the moment it is copied into your IDE's skill directory.
 
-## Skills at a Glance
+## Skills by Stage
 
-| Loop Stage | Skill | What It Does | Links |
-|---|---|---|---|
-| Ticket | [jira-manager](./jira-manager/) | CRUD, bulk ops, JQL, field discovery, transitions | [design](./docs/jira-manager/jira-manager-design.md) |
-| Design / PR | [bitbucket-manager](./bitbucket-manager/) | PR lifecycle, comments, build checks, Jira extraction | [design](./docs/bitbucket-manager/bitbucket-manager-design.md) |
-| Build | [sbt-build-test](./sbt-build-test/) | Multi-repo builds, dependency chains, test parsing | [design](./docs/sbt-build-test/sbt-build-test-design.md) |
-| CI/CD | [jenkins-manager](./jenkins-manager/) | Build status, logs, triggers, auto-discovery from git | [design](./docs/jenkins-manager/jenkins-manager-design.md) |
-| Debug | [eks-pod-ops](./eks-pod-ops/) | Pod logs, exec, restarts, secret redaction | [design](./docs/eks-pod-ops/eks-pod-ops-design.md) |
-| Review | [super-review](./super-review/) | Parallel multi-perspective reviews, graded reports | [design](./docs/super-review/super-review-design.md) |
-| Review | [review-prompts](./review-prompts/) | 12 review prompt types, standalone or file injection | |
-| Docs | [confluence-publisher](./confluence-publisher/) | Markdown to Confluence, hierarchies, Mermaid, surgical edits | [design](./docs/confluence-publisher/confluence-publisher-design.md) |
+### Task Definition
 
-**Meta / Tooling**
+| Skill | What It Does | Links |
+|---|---|---|
+| [jira-manager](./jira-manager/) | CRUD, bulk ops, JQL, field discovery, transitions | [design](./docs/jira-manager/jira-manager-design.md) |
 
-| Skill | What It Does |
-|---|---|
-| [skill-sync](./skill-sync/) | Distribute skills to 6 IDEs, OS-agnostic, user or project level |
-| [codebase-analyzer](./codebase-analyzer/) | Line counts, language breakdown, test ratios, git churn hotspots |
-
-**Miscellaneous**
+### Code
 
 | Skill | What It Does | Links |
 |---|---|---|
 | [codex-subagent](./codex-subagent/) | Delegate tasks to OpenAI Codex CLI — parallel work, fresh context, safety wrapper | [design](./docs/codex-subagent/codex-subagent-design.md) |
-| [skill-creator](./skill-creator/) | Scaffold new skills from scripts or from scratch, spec compliance verification | |
+
+### Build / Test
+
+| Skill | What It Does | Links |
+|---|---|---|
+| [sbt-build-test](./sbt-build-test/) | Multi-repo builds, dependency chains, test parsing | [design](./docs/sbt-build-test/sbt-build-test-design.md) |
+
+### CI/CD
+
+| Skill | What It Does | Links |
+|---|---|---|
+| [jenkins-manager](./jenkins-manager/) | Build status, logs, triggers, auto-discovery from git | [design](./docs/jenkins-manager/jenkins-manager-design.md) |
+
+### Debug
+
+| Skill | What It Does | Links |
+|---|---|---|
+| [eks-pod-ops](./eks-pod-ops/) | Pod logs, exec, restarts, secret redaction | [design](./docs/eks-pod-ops/eks-pod-ops-design.md) |
+
+### Code Review
+
+| Skill | What It Does | Links |
+|---|---|---|
+| [super-review](./super-review/) | Parallel multi-perspective reviews, graded reports | [design](./docs/super-review/super-review-design.md) |
+| [review-prompts](./review-prompts/) | 12 review prompt types, standalone or file injection | |
+
+### Pull Request
+
+| Skill | What It Does | Links |
+|---|---|---|
+| [bitbucket-manager](./bitbucket-manager/) | PR lifecycle, comments, build checks, Jira extraction | [design](./docs/bitbucket-manager/bitbucket-manager-design.md) |
+
+### Documentation
+
+| Skill | What It Does | Links |
+|---|---|---|
+| [confluence-publisher](./confluence-publisher/) | Markdown to Confluence, hierarchies, Mermaid, surgical edits | [design](./docs/confluence-publisher/confluence-publisher-design.md) |
+
+### Meta / Tooling
+
+| Skill | What It Does |
+|---|---|
+| [skill-creator](./skill-creator/) | Scaffold new skills from scripts or from scratch, spec compliance verification |
+| [skill-sync](./skill-sync/) | Distribute skills to 6 IDEs, OS-agnostic, user or project level |
+| [codebase-analyzer](./codebase-analyzer/) | Line counts, language breakdown, test ratios, git churn hotspots |
 
 ## Security Principles
 
