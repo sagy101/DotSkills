@@ -1,54 +1,120 @@
-# dotskills
+# DotSkills
 
-A personal collection of reusable [Agent Skills](https://agentskills.io) for AI coding assistants.
+**Production-grade Agent Skills that close the developer loop — from Jira ticket to merged PR.**
 
-Each skill is a self-contained directory following the [Agent Skills Open Standard](https://agentskills.io/specification) — a `SKILL.md` definition file plus optional scripts, references, and assets.
+A curated collection of 14 self-contained skills following the [Agent Skills Open Standard](https://agentskills.io/specification).
+Works with **Claude Code**, **Windsurf**, **Cursor**, **Codex**, **Gemini CLI**, and **Antigravity**.
 
-## Available skills
+## The Developer Loop
 
-### Development Tools
+Every skill maps to a stage in the developer workflow. The goal: an AI agent that can assist across the entire loop without ever touching secrets or making irreversible changes without approval.
 
-| Skill | Description |
+```mermaid
+flowchart LR
+    Ticket["Ticket
+    (jira-manager)"]
+    Design["Design / Branch
+    (bitbucket-manager)"]
+    Plan["Plan + Code
+    (native AI)"]
+    Build["Build / Test
+    (sbt-build-test
+    jenkins-manager)"]
+    Debug["Debug
+    (eks-pod-ops)"]
+    Review["Code Review
+    (super-review
+    review-prompts)"]
+    PR["Pull Request
+    (bitbucket-manager)"]
+    Docs["Documentation
+    (confluence-publisher)"]
+    Update["Ticket Update
+    (jira-manager)"]
+
+    Ticket --> Design --> Plan --> Build
+    Build --> Debug
+    Debug -->|fix| Plan
+    Build --> Review --> PR
+    PR -->|feedback| Plan
+    PR --> Docs --> Update --> Ticket
+
+    style Ticket fill:#4a9eff,color:#fff
+    style Design fill:#7c4dff,color:#fff
+    style Plan fill:#666,color:#fff
+    style Build fill:#ff6d00,color:#fff
+    style Debug fill:#ff6d00,color:#fff
+    style Review fill:#00c853,color:#fff
+    style PR fill:#7c4dff,color:#fff
+    style Docs fill:#00bcd4,color:#fff
+    style Update fill:#4a9eff,color:#fff
+```
+
+## Why DotSkills
+
+**AI agents are great at writing code but bad at integration.** Without guardrails, they write ad-hoc curl commands, miss pagination, hardcode credentials, and skip safety checks on destructive operations.
+
+**Each skill wraps one external system with deterministic CLI scripts.** Scripts absorb the complexity — they handle pagination, retries, error formatting, and output parsing. The agent makes simple, sequential calls. Every additional agent step is a place to fall; every script is a place to land.
+
+**Security is not an afterthought.** Credentials are never stored in config files (only env var *names*). All output passes through secret redaction pipelines. Dangerous commands are blocklisted before execution. Write operations default to dry-run. Destructive actions require explicit user approval. PR approval is intentionally omitted — that is a human-only action.
+
+**Zero or minimal dependencies.** Most skills are pure Python stdlib with no pip install, no venv setup, and no build step. A skill works the moment it is copied into your IDE's skill directory.
+
+## Skills at a Glance
+
+| Loop Stage | Skill | What It Does | Links |
+|---|---|---|---|
+| Ticket | [jira-manager](./jira-manager/) | CRUD, bulk ops, JQL, field discovery, transitions | [design](./docs/jira-manager/jira-manager-design.md) |
+| Design / PR | [bitbucket-manager](./bitbucket-manager/) | PR lifecycle, comments, build checks, Jira extraction | [design](./docs/bitbucket-manager/bitbucket-manager-design.md) |
+| Build | [sbt-build-test](./sbt-build-test/) | Multi-repo builds, dependency chains, test parsing | [design](./docs/sbt-build-test/sbt-build-test-design.md) |
+| CI/CD | [jenkins-manager](./jenkins-manager/) | Build status, logs, triggers, auto-discovery from git | [design](./docs/jenkins-manager/jenkins-manager-design.md) |
+| Debug | [eks-pod-ops](./eks-pod-ops/) | Pod logs, exec, restarts, secret redaction | [design](./docs/eks-pod-ops/eks-pod-ops-design.md) |
+| Review | [super-review](./super-review/) | Parallel multi-perspective reviews, graded reports | [design](./docs/super-review/super-review-design.md) |
+| Review | [review-prompts](./review-prompts/) | 12 review prompt types, standalone or file injection | |
+| Docs | [confluence-publisher](./confluence-publisher/) | Markdown to Confluence, hierarchies, Mermaid, surgical edits | [design](./docs/confluence-publisher/confluence-publisher-design.md) |
+
+**Meta / Tooling**
+
+| Skill | What It Does |
 |---|---|
-| [sbt-build-test](./sbt-build-test/) | SBT multi-repo build, test, publishLocal, and dependency management — automatic cross-repo dependency chains, isolated build cache, JUnit XML parsing, workspace graph discovery. See [design](./docs/sbt-build-test/sbt-build-test-design.md). |
-| [codex-subagent](./codex-subagent/) | Delegate coding tasks to OpenAI Codex CLI as a sub-agent — parallel work, fresh context, second opinions. Python safety wrapper, collision confidence, guardrails. POSIX-only. See [design](./docs/codex-subagent/codex-subagent-design.md). |
-| [super-review](./super-review/) | Run parallel multi-perspective code reviews using sub-agents — synthesize, de-duplicate, grade, and present unified findings. Backend-agnostic (works with codex-subagent, Claude Code, or any sub-agent executor). See [design](./docs/super-review/super-review-design.md). |
-| [review-prompts](./review-prompts/) | Reusable review prompt library — code review, security, plan review, architecture, performance, testing, prompt engineering, and language-specific prompts. Works standalone or as a file injection to sub-agents. |
+| [skill-sync](./skill-sync/) | Distribute skills to 6 IDEs, OS-agnostic, user or project level |
+| [codebase-analyzer](./codebase-analyzer/) | Line counts, language breakdown, test ratios, git churn hotspots |
 
-### Productivity / Integration
+**Miscellaneous**
 
-| Skill | Description |
-|---|---|
-| [bitbucket-manager](./bitbucket-manager/) | Manage Bitbucket Cloud PRs — create, update, merge, decline, comment, list. Build/pipeline status checks, Jira issue extraction, repo listing. Zero pip deps (pure stdlib). See [design](./docs/bitbucket-manager/bitbucket-manager-design.md). |
-| [confluence-publisher](./confluence-publisher/) | Publish markdown docs to Confluence Cloud — pages, hierarchy, cross-links, Mermaid diagrams, diff/preview, export, fetch. Surgical HTML edits (find/replace without overwriting formatting), version diff, version history, page revert |
-| [jira-manager](./jira-manager/) | Create, update, fetch, delete, diff, and validate Jira tickets — bulk create from markdown/JSON, bulk update (list, board, JQL), full field catalog discovery (statuses, priorities, components, versions), status transitions, generic `--set` and `--filter` flags for any discovered field, estimation validation, link rewriting |
-| [jenkins-manager](./jenkins-manager/) | Check Jenkins CI/CD build status, view console logs, trigger builds, view build changesets, check queue status, list jobs/folders. Auto-discovers job from git remote. Secret redaction on all log output. Zero pip deps (pure stdlib). See [design](./docs/jenkins-manager/jenkins-manager-design.md). |
-| [eks-pod-ops](./eks-pod-ops/) | Read pod logs, list/describe pods, exec into containers, and restart deployments on EKS clusters. Automatic secret redaction (tokens, keys, passwords, JWTs), exec blocklist (blocks bare `env`/`printenv`, secret file reads), sidecar-aware container selection, Rancher Desktop kubectl workaround. Zero pip deps (pure stdlib) |
+| Skill | What It Does | Links |
+|---|---|---|
+| [codex-subagent](./codex-subagent/) | Delegate tasks to OpenAI Codex CLI — parallel work, fresh context, safety wrapper | [design](./docs/codex-subagent/codex-subagent-design.md) |
+| [skill-creator](./skill-creator/) | Scaffold new skills from scripts or from scratch, spec compliance verification | |
 
-### Meta / Tooling
+## Security Principles
 
-| Skill | Description |
-|---|---|
-| [skill-creator](./skill-creator/) | Create polished, generic Agent Skills from use-case-specific scripts or from scratch — prompt engineering best practices, Agent Skills spec compliance, comprehensive verification (compilation, diff review, env/config checks, error handling) |
-| [skill-sync](./skill-sync/) | Sync skills from this repo to IDE skill directories (Windsurf, Claude Code, Cursor, Codex, Gemini CLI, Antigravity) — OS-agnostic, user-level or project-level, auto-detects installed IDEs |
-| [codebase-analyzer](./codebase-analyzer/) | Analyze any codebase for structured metrics — line counts by category, language breakdown, test:code ratio, file-size distribution, TODO tracking, git churn hotspots. Terminal, JSON, and Markdown output |
+- **Credentials via env var names only** — config stores `"token_env": "JIRA_TOKEN"`, never the token itself
+- **Automatic secret redaction** — all output passes through regex pipelines (Bearer tokens, AWS keys, JWTs, passwords, high-entropy strings)
+- **Exec blocklist** — dangerous commands (`env`, `printenv`, secret file reads) blocked before execution
+- **Dry-run by default** — write operations support `--dry-run`; agents preview before acting
+- **Approval gates** — destructive operations (merge, decline, delete) require explicit user confirmation
+- **No rubber-stamping** — PR approval intentionally omitted; approval is a human-only action
+- **Log scrubbing** — Jenkins and EKS log output is redacted before reaching the agent context
 
-## Usage
-
-The easiest way to distribute skills is with **skill-sync**:
+## Quick Start
 
 ```bash
-# Detect which IDEs are installed
+# Clone
+git clone https://github.com/sagy101/DotSkills.git
+cd DotSkills
+
+# Detect installed IDEs
 python3 skill-sync/scripts/sync.py --source . --level both --detect
 
-# Sync all skills to user-level (global) for all detected IDEs
+# Sync all skills (preview first)
+python3 skill-sync/scripts/sync.py --source . --level user --dry-run
+
+# Sync for real
 python3 skill-sync/scripts/sync.py --source . --level user --targets all
 
-# Sync to a specific project
+# Or sync to a specific project
 python3 skill-sync/scripts/sync.py --source . --level project --project /path/to/project
-
-# Preview first with --dry-run
-python3 skill-sync/scripts/sync.py --source . --level user --dry-run
 ```
 
 Or copy manually:
@@ -61,39 +127,14 @@ Skills are automatically discovered by supported AI tools when placed in the cor
 
 ## Compatibility
 
-Skills in this repo follow the [Agent Skills Open Standard](https://agentskills.io/specification) and work with:
+Skills follow the [Agent Skills Open Standard](https://agentskills.io/specification) and work with:
+
 - **Windsurf** (`.windsurf/skills/`)
 - **Claude Code** (`.claude/skills/`)
 - **Cursor** (`.cursor/skills/`)
 - **OpenAI Codex** (`.codex/skills/`)
 - **Gemini CLI** (`.gemini/skills/`)
 - **Antigravity** (`.agent/skills/`)
-
-## Tests
-
-Tests live in `tests/` at the repo root, organized by skill:
-
-```
-tests/
-  codex-subagent/
-    test_run_codex.py    # 83 tests — safety parsing, flag scanning, arg building
-  eks-pod-ops/
-    test_eks_redaction.py  # 49 tests — secret redaction patterns, exec blocklist
-    test_eks_config.py     #  9 tests — config loading, env resolution, kubeconfig paths
-    test_pods.py         #  6 tests — container selection, pod parsing, sidecar skipping
-  jenkins-manager/
-    test_jenkins_config.py      # 30 tests — repo parsing, branch encoding, deep merge, job/branch resolution
-    test_jenkins_redaction.py   # 33 tests — secret redaction patterns, Jenkins log false positives
-    test_client.py              # 20 tests — color-status mapping, API path construction
-  sbt-build-test/
-    test_workspace_graph.py     # 30 tests — repo scanning, topo sort, dependency graph, multi-artifact repos
-```
-
-Run with pytest:
-
-```bash
-python3 -m pytest tests/ -v
-```
 
 ## Structure
 
@@ -107,7 +148,32 @@ skill-name/
   assets/               # Optional — images, data files, templates
 ```
 
-## Adding a new skill
+Design documents for each skill live in [`docs/`](./docs/).
+
+## Tests
+
+330+ tests across the repo, organized by skill in `tests/`:
+
+```
+tests/
+  codex-subagent/        # 83 tests — safety parsing, flag scanning, arg building
+  eks-pod-ops/           # 64 tests — secret redaction, config loading, pod parsing
+  jenkins-manager/       # 83 tests — config, redaction, client, status, ANSI stripping
+  jira-manager/          # 70+ tests — config, field resolution, JQL, links, workflows
+  sbt-build-test/        # 30 tests — workspace graph, topo sort, dependency graph
+  confluence-publisher/  # page utils, element replacement
+  bitbucket-manager/     # E2E integration tests
+```
+
+```bash
+python3 -m pytest tests/ -v
+```
+
+## Roadmap
+
+- **Team notification skill** — Slack/Teams integration to notify developers on build results, PR status, and ticket transitions. Exploring [Vercel AI Chat SDK](https://sdk.vercel.ai/) as the foundation.
+
+## Adding a New Skill
 
 Use the skill-creator's init script to scaffold a new skill:
 
