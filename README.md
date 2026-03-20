@@ -11,10 +11,8 @@ Every skill maps to a stage in the developer workflow. The goal: an AI agent tha
 
 ```mermaid
 flowchart LR
-    Ticket["Ticket
+    Task["Task Definition
     (jira-manager)"]
-    Design["Design / Branch
-    (bitbucket-manager)"]
     Plan["Plan + Code
     (native AI)"]
     Build["Build / Test
@@ -29,18 +27,17 @@ flowchart LR
     (bitbucket-manager)"]
     Docs["Documentation
     (confluence-publisher)"]
-    Update["Ticket Update
+    Update["Task Update
     (jira-manager)"]
 
-    Ticket --> Design --> Plan --> Build
+    Task --> Plan --> Build
     Build --> Debug
     Debug -->|fix| Plan
     Build --> Review --> PR
     PR -->|feedback| Plan
-    PR --> Docs --> Update --> Ticket
+    PR --> Docs --> Update --> Task
 
-    style Ticket fill:#4a9eff,color:#fff
-    style Design fill:#7c4dff,color:#fff
+    style Task fill:#4a9eff,color:#fff
     style Plan fill:#666,color:#fff
     style Build fill:#ff6d00,color:#fff
     style Debug fill:#ff6d00,color:#fff
@@ -62,17 +59,11 @@ flowchart LR
 
 ## Skills by Stage
 
-### Ticket
+### Task Definition
 
 | Skill | What It Does | Links |
 |---|---|---|
 | [jira-manager](./jira-manager/) | CRUD, bulk ops, JQL, field discovery, transitions | [design](./docs/jira-manager/jira-manager-design.md) |
-
-### Design / PR
-
-| Skill | What It Does | Links |
-|---|---|---|
-| [bitbucket-manager](./bitbucket-manager/) | PR lifecycle, comments, build checks, Jira extraction | [design](./docs/bitbucket-manager/bitbucket-manager-design.md) |
 
 ### Code
 
@@ -104,6 +95,12 @@ flowchart LR
 |---|---|---|
 | [super-review](./super-review/) | Parallel multi-perspective reviews, graded reports | [design](./docs/super-review/super-review-design.md) |
 | [review-prompts](./review-prompts/) | 12 review prompt types, standalone or file injection | |
+
+### Pull Request
+
+| Skill | What It Does | Links |
+|---|---|---|
+| [bitbucket-manager](./bitbucket-manager/) | PR lifecycle, comments, build checks, Jira extraction | [design](./docs/bitbucket-manager/bitbucket-manager-design.md) |
 
 ### Documentation
 
