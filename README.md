@@ -133,8 +133,10 @@ auto-approved to reduce prompt fatigue during agent sessions.
 
 - **Claude Code**: `skill-sync` automatically installs a `PreToolUse` hook when syncing
   to a project. No manual setup needed.
-- **Windsurf**: Manually add patterns from the
-  [read command whitelist](docs/windsurf-read-whitelist.md) to your Windsurf
+- **Windsurf**: `skill-sync` automatically merges command prefixes into your
+  Windsurf `settings.json` when syncing to Windsurf targets.
+- **Other IDEs**: Manually add patterns from the
+  [read command whitelist](docs/read-command-whitelist.md) to your IDE's
   allowed-commands configuration.
 
 See [`.claude/hooks/read-commands.json`](.claude/hooks/read-commands.json) for the

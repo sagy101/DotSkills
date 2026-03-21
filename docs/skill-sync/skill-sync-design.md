@@ -63,7 +63,7 @@ skill-sync/
 docs/
 ├── skill-sync/
 │   └── skill-sync-design.md     # This document
-└── windsurf-read-whitelist.md   # Windsurf-format whitelist (derived from JSON)
+└── read-command-whitelist.md    # IDE-agnostic whitelist (derived from JSON)
 ```
 
 **sync.py modules:**

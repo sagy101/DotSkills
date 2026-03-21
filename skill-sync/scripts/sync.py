@@ -310,12 +310,7 @@ def update_claude_hooks(
 
     print("\n  Claude Code: installing read-command auto-approval hook")
 
-    for label in ("user", "project"):
-        target_path = ide.get(f"{label}_path")
-        if not target_path:
-            continue
-        tp = Path(target_path) if not isinstance(target_path, Path) else target_path
-
+    for label, tp in _iter_ide_paths(ide):
         # tp is the skills dir (e.g. ~/.claude/skills or <project>/.claude/skills)
         # settings.json and hooks/ live one level up from the skills dir
         claude_dir = tp.parent  # .claude/
@@ -328,7 +323,7 @@ def update_claude_hooks(
 
 
 # ---------------------------------------------------------------------------
-# Read command pattern loading (shared by all IDE handlers)
+# Shared helpers for IDE auto-approval handlers
 # ---------------------------------------------------------------------------
 
 
@@ -339,6 +334,19 @@ def _load_read_patterns(source: Path) -> list[dict]:
         print(f"  WARNING: {patterns_file} not found, skipping auto-approval setup")
         return []
     return json.loads(patterns_file.read_text(encoding="utf-8"))
+
+
+def _iter_ide_paths(
+    ide: dict[str, str | Path | None],
+) -> list[tuple[str, Path]]:
+    """Yield (label, resolved_path) for each configured IDE target (user/project)."""
+    result = []
+    for label in ("user", "project"):
+        target = ide.get(f"{label}_path")
+        if not target:
+            continue
+        result.append((label, Path(target) if not isinstance(target, Path) else target))
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -396,18 +404,22 @@ def _pattern_to_gemini_regex(pattern: str) -> str:
 
 
 def _generate_gemini_policy(patterns: list[dict]) -> str:
-    """Generate TOML policy content from read command patterns."""
+    """Generate TOML policy content from read command patterns.
+
+    Uses the Gemini CLI policy engine schema:
+    https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/policy-engine.md
+    """
     lines = [_GEMINI_POLICY_HEADER]
     for entry in patterns:
         skill = entry["skill"]
         pat = entry["pattern"]
         script_name = pat.split("/")[-1].split(" ")[0]
         regex = _pattern_to_gemini_regex(pat)
+        lines.append(f"# {skill}: {script_name}")
         lines.append("[[rule]]")
-        lines.append(f'description = "{skill}: {script_name} (read-only)"')
-        lines.append('tool = "shell"')
         lines.append(f"commandRegex = '{regex}'")
         lines.append('decision = "allow"')
+        lines.append("priority = 100")
         lines.append("")
     return "\n".join(lines)
 
@@ -433,11 +445,7 @@ def update_gemini_approval(
     content = _generate_gemini_policy(read_patterns)
     print("\n  Gemini CLI: installing read-command auto-approval policy")
 
-    for label in ("user", "project"):
-        target_path = ide.get(f"{label}_path")
-        if not target_path:
-            continue
-        tp = Path(target_path) if not isinstance(target_path, Path) else target_path
+    for label, tp in _iter_ide_paths(ide):
         gemini_dir = tp.parent  # .gemini/
         policy_dir = gemini_dir / "policies"
         policy_file = policy_dir / _GEMINI_POLICY_FILE
@@ -458,7 +466,7 @@ def update_gemini_approval(
 
 
 # ---------------------------------------------------------------------------
-# Windsurf — cascadeCommandsAllowList in settings.json
+# Windsurf — windsurf.cascadeCommandsAllowList in settings.json
 # ---------------------------------------------------------------------------
 
 
@@ -526,7 +534,7 @@ def _update_windsurf_settings(
         except (json.JSONDecodeError, OSError):
             data = {}
 
-    existing = set(data.get("cascadeCommandsAllowList", []))
+    existing = set(data.get("windsurf.cascadeCommandsAllowList", []))
     new_prefixes = prefixes - existing
 
     if not new_prefixes:
@@ -538,7 +546,7 @@ def _update_windsurf_settings(
         return False
 
     merged = sorted(existing | prefixes)
-    data["cascadeCommandsAllowList"] = merged
+    data["windsurf.cascadeCommandsAllowList"] = merged
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     print(f"    Added {len(new_prefixes)} prefixes ({len(merged)} total) to {settings_path}")
@@ -552,7 +560,7 @@ def update_windsurf_approval(
 ) -> None:
     """Install read-command auto-approval for Windsurf.
 
-    Merges command prefixes into Windsurf's cascadeCommandsAllowList in its
+    Merges command prefixes into Windsurf's windsurf.cascadeCommandsAllowList in its
     user-level settings.json. Additive: never removes existing entries.
     """
     ide = detected_ides.get("windsurf")
@@ -568,11 +576,7 @@ def update_windsurf_approval(
     all_prefixes: set[str] = set()
     all_skipped: list[str] = []
 
-    for label in ("user", "project"):
-        skills_path = ide.get(f"{label}_path")
-        if not skills_path:
-            continue
-        sp = Path(skills_path) if not isinstance(skills_path, Path) else skills_path
+    for label, sp in _iter_ide_paths(ide):
         prefixes, skipped = _patterns_to_windsurf_prefixes(read_patterns, sp)
         all_prefixes.update(prefixes)
         if not all_skipped:
@@ -586,7 +590,7 @@ def update_windsurf_approval(
 
     if all_skipped:
         print(f"    NOTE: {len(all_skipped)} flag-based patterns skipped (prefix matching unsafe)")
-        print("    See docs/windsurf-read-whitelist.md for manual configuration")
+        print("    See docs/read-command-whitelist.md for manual configuration")
 
 
 # ---------------------------------------------------------------------------
@@ -596,10 +600,11 @@ def update_windsurf_approval(
 
 def _print_cursor_info() -> None:
     """Print info about Cursor auto-approval limitations."""
-    print("\n  Cursor: auto-approval not supported")
-    print("    Cursor stores its command allowlist in an internal SQLite database")
-    print("    (state.vscdb) which cannot be safely modified externally.")
-    print("    See docs/windsurf-read-whitelist.md for the command list to add manually.")
+    print("\n  Cursor: auto-approval requires manual setup")
+    print("    Enable YOLO mode in Settings > Features, then add command prefixes")
+    print("    to the allowlist. See docs/read-command-whitelist.md for the list.")
+    print("    NOTE: Cursor's allowlist has known bypass issues (CVE-2026-22708).")
+    print("    Programmatic configuration is not supported due to storage instability.")
 
 
 def _print_codex_info() -> None:

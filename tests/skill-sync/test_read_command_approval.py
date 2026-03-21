@@ -19,7 +19,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 HOOK_SCRIPT = REPO_ROOT / ".claude" / "hooks" / "approve-read-commands.sh"
 READ_COMMANDS_JSON = REPO_ROOT / ".claude" / "hooks" / "read-commands.json"
-WINDSURF_WHITELIST = REPO_ROOT / "docs" / "windsurf-read-whitelist.md"
+WINDSURF_WHITELIST = REPO_ROOT / "docs" / "read-command-whitelist.md"
 SYNC_SCRIPT = REPO_ROOT / "skill-sync" / "scripts" / "sync.py"
 
 # ---------------------------------------------------------------------------
@@ -110,7 +110,7 @@ class TestDataFilesIntegrity:
 
 
 class TestWindsurfWhitelistConsistency:
-    """Ensure windsurf-read-whitelist.md and read-commands.json are in sync."""
+    """Ensure read-command-whitelist.md and read-commands.json are in sync."""
 
     def test_all_json_patterns_in_whitelist(self, read_patterns, windsurf_patterns):
         json_set = {e["pattern"] for e in read_patterns}
@@ -915,6 +915,55 @@ class TestWriteCommandVariations:
 
     def test_codex_write_mode_with_timeout(self):
         cmd = "python3 /p/codex-subagent/scripts/run_codex.py --mode write --timeout 600 -"
+        assert _run_hook(cmd)[0] != 0
+
+    # Additional write command variations for comprehensive coverage
+    def test_pr_update_with_destination(self):
+        cmd = "python3 /p/bitbucket-manager/scripts/pr_update.py --pr 42 --destination develop"
+        assert _run_hook(cmd)[0] != 0
+
+    def test_pr_merge_bare(self):
+        cmd = "python3 /p/bitbucket-manager/scripts/pr_merge.py --pr 42"
+        assert _run_hook(cmd)[0] != 0
+
+    def test_bulk_create_without_dry_run(self):
+        cmd = "python3 /p/jira-manager/scripts/bulk_create.py --source tickets.md --epic PROJ-100"
+        assert _run_hook(cmd)[0] != 0
+
+    def test_bulk_update_without_confirm(self):
+        cmd = "python3 /p/jira-manager/scripts/bulk_update.py --tickets PROJ-1,PROJ-2 --status Done"
+        assert _run_hook(cmd)[0] != 0
+
+    def test_trigger_build_bare(self):
+        cmd = "python3 /p/jenkins-manager/scripts/trigger_build.py"
+        assert _run_hook(cmd)[0] != 0
+
+    def test_trigger_build_with_params(self):
+        cmd = "python3 /p/jenkins-manager/scripts/trigger_build.py --parameters ENV=prod VERSION=2.0"
+        assert _run_hook(cmd)[0] != 0
+
+    def test_eks_restart_with_watch(self):
+        cmd = "python3 /p/eks-pod-ops/scripts/eks_ops.py restart --env dev --service svc --watch"
+        assert _run_hook(cmd)[0] != 0
+
+    def test_publish_page_bare_minimum(self):
+        cmd = "python3 /p/confluence-publisher/scripts/publish_page.py --file doc.md"
+        assert _run_hook(cmd)[0] != 0
+
+    def test_sbt_build_with_auto_publish(self):
+        cmd = "bash /p/sbt-build-test/scripts/sbt_build.sh /svc --auto-publish-deps -- compile"
+        assert _run_hook(cmd)[0] != 0
+
+    def test_sync_with_detect(self):
+        cmd = "python3 /p/skill-sync/scripts/sync.py --source . --detect"
+        assert _run_hook(cmd)[0] != 0
+
+    def test_export_pages_without_dry_run(self):
+        cmd = "python3 /p/confluence-publisher/scripts/export_pages.py --tree"
+        assert _run_hook(cmd)[0] != 0
+
+    def test_delete_page_with_page_id(self):
+        cmd = "python3 /p/confluence-publisher/scripts/delete_page.py --page-id 123456"
         assert _run_hook(cmd)[0] != 0
 
 

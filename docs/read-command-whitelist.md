@@ -1,8 +1,9 @@
-# Windsurf Read Command Whitelist
+# Read Command Whitelist
 
 Read-only skill commands that can be safely auto-approved. Add these patterns to
-your Windsurf allowed-commands configuration to reduce approval prompts during
-agent sessions.
+your IDE's allowed-commands configuration to reduce approval prompts during
+agent sessions. Works with Windsurf, Cursor YOLO mode, or any IDE that supports
+command prefix allowlists.
 
 These commands only **read** data — they never create, update, or delete resources.
 
