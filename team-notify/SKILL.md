@@ -11,8 +11,7 @@ metadata:
   version: "1.0"
 compatibility: >
   Python 3.8+. Pure stdlib — no pip install required. Works with Slack incoming webhooks
-  (requires a Slack App) and Microsoft Teams incoming webhooks (old O365 connector format)
-  or Power Automate Workflows URLs (Adaptive Card format).
+  (requires a Slack App) and Microsoft Teams Power Automate Workflows URLs (Adaptive Card format).
 ---
 
 # Team Notify
@@ -42,9 +41,10 @@ Use when the agent needs to:
 3. Click **Add New Webhook to Workspace** → pick channel → Allow
 4. Copy the webhook URL (`https://hooks.slack.com/services/...`) and export it
 
-**Teams setup** — two options:
-- **New (recommended)**: Power Automate Workflows app (~10 min). In Teams: channel `...` menu → Workflows → "Post to a channel when a webhook request is received" → copy URL. Set `"format": "adaptive"` in config.
-- **Legacy (until ~April 2026)**: Old O365 connector URL. Set `"format": "messagecard"` (default) in config.
+**Teams setup** (~10 min, one-time):
+1. In Teams: right-click channel → **Workflows** (or `...` menu → Workflows)
+2. Select **"Post to a channel when a webhook request is received"**
+3. Follow the setup wizard, copy the generated URL and export it
 
 No venv or pip install needed — all scripts use Python stdlib only.
 
@@ -67,7 +67,7 @@ Multi-channel example with Teams:
 {
   "channels": {
     "slack": { "webhook_env": "SLACK_WEBHOOK_URL" },
-    "teams": { "webhook_env": "TEAMS_WEBHOOK_URL", "format": "adaptive" }
+    "teams": { "webhook_env": "TEAMS_WEBHOOK_URL" }
   },
   "default_channel": "slack",
   "developer_mention": "@here"
@@ -163,7 +163,7 @@ python3 $S/notify_preflight.py --config /path/to/.notify.json
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| `[ERROR] teams: HTTP 400` | Wrong payload format for the URL type | Check `format` field: `"messagecard"` for old connector URLs, `"adaptive"` for Workflows URLs |
+| `[ERROR] teams: HTTP 400` | URL is not a Power Automate Workflows URL | Use a Workflows URL ("Post to a channel when a webhook request is received") |
 | `[ERROR] slack: HTTP 403` | Webhook URL revoked or channel deleted | Regenerate the webhook URL in Slack App settings |
 | `[ERROR] teams: HTTP 404` | Workflow URL expired or connector deleted | Recreate the workflow in Teams; update `TEAMS_WEBHOOK_URL` |
 | Config not found | Wrong working directory | Run from project root, or pass `--config ~/.notify.json` |

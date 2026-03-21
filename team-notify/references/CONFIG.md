@@ -15,8 +15,7 @@ If both exist, they are **deep-merged** (project-level wins on conflicts).
       "webhook_env": "SLACK_WEBHOOK_URL"
     },
     "teams": {
-      "webhook_env": "TEAMS_WEBHOOK_URL",
-      "format": "adaptive"
+      "webhook_env": "TEAMS_WEBHOOK_URL"
     }
   },
   "default_channel": "slack",
@@ -30,7 +29,6 @@ If both exist, they are **deep-merged** (project-level wins on conflicts).
 |-------|----------|---------|-------------|
 | `channels` | Yes | — | Map of channel name → channel config. Keys `slack` and `teams` are the supported types. |
 | `channels.<name>.webhook_env` | Yes | — | Name of the environment variable that holds the webhook URL. Never put the URL itself here. |
-| `channels.teams.format` | No | `"messagecard"` | Payload format for Teams. `"messagecard"` = old O365 connector (works until ~April 2026). `"adaptive"` = new Power Automate Workflows URL (Adaptive Cards). |
 | `default_channel` | No | `"slack"` | Channel used when `--channel` is not passed. Use `"all"` to send to every configured channel by default. |
 | `developer_mention` | No | `""` | Text prepended to messages when `--mention` flag is used. E.g. `"@here"`, `"@channel"`, `"@jane"`. |
 
@@ -48,7 +46,7 @@ Put webhook references in `~/.notify.json` so they apply everywhere:
 {
   "channels": {
     "slack": { "webhook_env": "SLACK_WEBHOOK_URL" },
-    "teams": { "webhook_env": "TEAMS_WEBHOOK_URL", "format": "adaptive" }
+    "teams": { "webhook_env": "TEAMS_WEBHOOK_URL" }
   },
   "developer_mention": "@here"
 }
@@ -84,22 +82,7 @@ The `webhook_env` config field only stores the **name** of the env var, never th
 
 Treat this URL as a password — anyone with it can post to your channel.
 
-### Teams — Power Automate Workflows (recommended, use `"format": "adaptive"`)
+### Teams — Power Automate Workflows
 1. In Teams: right-click channel → **Workflows** (or `...` menu → Workflows)
 2. Select **"Post to a channel when a webhook request is received"**
 3. Follow the setup wizard, copy the generated URL
-4. Set `"format": "adaptive"` in config
-
-### Teams — Old O365 Connector (legacy, `"format": "messagecard"`, retiring ~April 2026)
-1. In Teams: channel `...` menu → **Connectors** → find **Incoming Webhook** → Configure
-2. Give it a name, optionally upload an icon
-3. Copy the webhook URL, click Done
-
-## Teams format selection
-
-| URL origin | `format` value | Notes |
-|---|---|---|
-| Power Automate Workflows | `"adaptive"` | Recommended. Requires Adaptive Card JSON. |
-| Old O365 Connector | `"messagecard"` (default) | Legacy. Retires ~April 2026. |
-
-If you see HTTP 400 errors posting to Teams, the `format` value likely doesn't match the URL type.

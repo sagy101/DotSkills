@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Send a notification to Slack and/or Microsoft Teams via incoming webhooks.
 
+Teams uses the Power Automate Workflows format (Adaptive Cards).
+
 Usage:
     python3 notify.py --message "Build #42 failed" [OPTIONS]
 
@@ -149,31 +151,6 @@ def _build_slack_payload(message: str, title: str | None, level: str, link: str 
     }
 
 
-def _build_teams_messagecard_payload(message: str, title: str | None, level: str, link: str | None, mention: str | None) -> dict:
-    text_parts = []
-    if mention:
-        text_parts.append(mention)
-    text_parts.append(message)
-
-    payload: dict = {
-        "@type": "MessageCard",
-        "@context": "https://schema.org/extensions",
-        "themeColor": TEAMS_COLORS.get(level, "0076D7"),
-        "summary": title or message[:80],
-        "title": f"{LEVEL_EMOJI.get(level, '')} {title}" if title else LEVEL_EMOJI.get(level, ""),
-        "text": " ".join(text_parts),
-    }
-    if link:
-        payload["potentialAction"] = [
-            {
-                "@type": "OpenUri",
-                "name": "View details",
-                "targets": [{"os": "default", "uri": link}],
-            }
-        ]
-    return payload
-
-
 def _build_teams_adaptive_payload(message: str, title: str | None, level: str, link: str | None, mention: str | None) -> dict:
     body = []
     display_title = f"{LEVEL_EMOJI.get(level, '')} {title}".strip() if title else LEVEL_EMOJI.get(level, "")
@@ -228,14 +205,12 @@ def _send(url: str, payload: dict, platform: str) -> bool:
         return False
 
     if status != 200 or body not in ("ok", "1", ""):
-        # Slack returns "ok", Teams Workflows returns "1", old Teams connector returns ""
+        # Slack returns "ok"; Teams Workflows returns "1"
         if status == 200 and platform == "teams" and body == "1":
             return True
         if status == 200 and platform == "slack" and body == "ok":
             return True
-        if status == 200 and platform == "teams" and body == "":
-            return True
-        # Some Teams endpoints return 200 with non-"1" body on success too
+        # Some Teams endpoints return 200 with varying body on success
         if status == 200:
             return True
         print(f"[ERROR] {platform}: Unexpected response {status} — {body[:200]}", file=sys.stderr)
@@ -305,11 +280,7 @@ def main() -> None:
         if ch == "slack":
             payload = _build_slack_payload(args.message, args.title, args.level, args.link, developer_mention)
         elif ch == "teams":
-            fmt = ch_cfg.get("format", "messagecard")
-            if fmt == "adaptive":
-                payload = _build_teams_adaptive_payload(args.message, args.title, args.level, args.link, developer_mention)
-            else:
-                payload = _build_teams_messagecard_payload(args.message, args.title, args.level, args.link, developer_mention)
+            payload = _build_teams_adaptive_payload(args.message, args.title, args.level, args.link, developer_mention)
         else:
             print(f"[ERROR] Unknown channel type '{ch}'. Supported: slack, teams.", file=sys.stderr)
             errors.append(ch)
