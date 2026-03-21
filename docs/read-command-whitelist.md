@@ -95,4 +95,5 @@ These commands only **read** data — they never create, update, or delete resou
 ```
 */scripts/notify_preflight.py *
 */scripts/notify_preflight.py
+*/scripts/notify.py *
 ```
