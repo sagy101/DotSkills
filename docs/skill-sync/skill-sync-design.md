@@ -70,7 +70,11 @@ docs/
 - `discover_skills()` — finds skill directories in source
 - `detect_ides()` — resolves IDE paths for user/project level
 - `sync_skills()` — copies skills to all targets
+- `update_read_approvals()` — dispatcher that calls all IDE-specific handlers
 - `update_claude_hooks()` — installs PreToolUse hook and updates settings.json
+- `update_gemini_approval()` — generates TOML policy file with regex rules
+- `update_windsurf_approval()` — merges command prefixes into Windsurf settings
+- `_print_cursor_info()` / `_print_codex_info()` — guidance for unsupported IDEs
 - `main()` — CLI entry point with argparse
 
 ---
@@ -125,16 +129,20 @@ Setup scripts (`jira_setup_env.py`, `confluence_setup_env.py`, `analyzer_setup_e
 
 The read-command registry in `read-commands.json` can be adapted to other IDEs:
 
-| IDE | Mechanism | Feasibility | Approach |
+| IDE | Mechanism | Status | Approach |
 |---|---|---|---|
 | **Claude Code** | `PreToolUse` hook in `settings.json` | Implemented | Shell script with pattern matching |
-| **Gemini CLI** | TOML policy files in `.gemini/policies/` | High | Generate `[[rule]]` entries with `decision = "allow"` |
-| **Windsurf** | `cascadeCommandsAllowList` in VS Code settings | High | Merge command prefixes into `settings.json` |
-| **Codex CLI** | `approval_policy` in `.codex/config.toml` | Medium | Policy is coarse-grained (not per-command) |
-| **Cursor** | SQLite `state.vscdb` allowlist | Medium | Requires SQLite manipulation, fragile |
-| **Antigravity** | Allow list in VS Code-style settings | Low | Buggy; documented issues with allowlist enforcement |
+| **Gemini CLI** | TOML policy files in `.gemini/policies/` | Implemented | Generate `[[rule]]` entries with `commandRegex` and `decision = "allow"` |
+| **Windsurf** | `cascadeCommandsAllowList` in user settings | Implemented | Merge command prefixes into OS-specific `settings.json` |
+| **Codex CLI** | `approval_policy` in `.codex/config.toml` | Info only | Policy is coarse-grained (not per-command); prints setup guidance |
+| **Cursor** | SQLite `state.vscdb` allowlist | Info only | Requires SQLite manipulation while IDE may hold lock; prints guidance |
+| **Antigravity** | Allow list in VS Code-style settings | Not supported | Buggy; documented issues with allowlist enforcement |
 
-Gemini CLI has the cleanest story after Claude Code: drop a `.gemini/policies/read-commands.toml` file and it takes effect. Windsurf is a JSON merge. Cursor requires SQLite. Antigravity has active bugs.
+**Gemini CLI** generates a dedicated TOML policy file (`dotskills-read-commands.toml`) with regex rules. Content comparison provides idempotency — re-running sync only rewrites the file if patterns changed.
+
+**Windsurf** merges command prefixes into the user-level `settings.json` (`cascadeCommandsAllowList`). Flag-based dual-mode patterns (e.g., `page_versions.py --list`) are skipped because Windsurf's prefix matching cannot distinguish flag positions. A note directs users to the manual whitelist doc for these patterns.
+
+**Cursor and Codex** lack clean per-command allowlist mechanisms, so sync prints informational messages with the closest available workaround.
 
 ---
 
@@ -142,10 +150,11 @@ Gemini CLI has the cleanest story after Claude Code: drop a `.gemini/policies/re
 
 | Guardrail | Enforced By | Default |
 |---|---|---|
-| Shell operator rejection | Hook script (`approve-read-commands.sh`) | Always on — rejects `;`, `&&`, `\|\|`, `\|`, `` ` ``, `$()` |
+| Shell operator rejection | Hook script (`approve-read-commands.sh`) | Always on — rejects `;`, `&&`, `\|\|`, `\|`, `` ` ``, `$()`, newlines |
 | Write commands never auto-approved | Pattern list (`read-commands.json`) | Only explicitly listed read patterns match |
 | Existing hooks preserved | `_update_settings_json()` in sync.py | Additive merge, never overwrites |
-| Dedup prevents duplicate entries | `_has_hook_entry()` in sync.py | Checks for existing command path before appending |
+| Dedup prevents duplicate entries | All IDE handlers | Claude: checks command path; Gemini: content comparison; Windsurf: set difference |
+| Flag-based patterns skipped for prefix IDEs | `_patterns_to_windsurf_prefixes()` | Windsurf skips dual-mode flag patterns that can't be safely prefix-matched |
 
 ---
 
@@ -153,9 +162,10 @@ Gemini CLI has the cleanest story after Claude Code: drop a `.gemini/policies/re
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| Read pattern matches a write command | Critical | Comprehensive test suite (174 tests); patterns use script names + subcommands, not just prefixes |
-| Shell injection bypasses hook | High | Pre-match rejection of all shell operators; full-string anchored regex matching |
-| settings.json corruption during merge | Medium | JSON read → modify → write (atomic); dedup prevents bloat |
+| Read pattern matches a write command | Critical | 338-test suite covering all skills, flag orders, interpreters, injection attempts; patterns use script names + subcommands, not just prefixes |
+| Shell injection bypasses hook | High | Pre-match rejection of all shell operators + newlines; full-string anchored regex matching |
+| settings.json corruption during merge | Medium | JSON read → modify → write; dedup prevents bloat; corrupt JSON handled gracefully |
+| Dual-mode conflict (read+write flags) | Medium | Script-level flag validation rejects conflicting args; prefix IDEs skip flag-based patterns entirely |
 | New skill adds commands not in registry | Low | Tests validate consistency between JSON and whitelist MD; new skills need explicit registry updates |
 | Hook script missing `jq` dependency | Low | `jq` is pre-installed on most dev machines; hook exits 1 (falls through to manual approval) if missing |
 
@@ -170,4 +180,4 @@ Gemini CLI has the cleanest story after Claude Code: drop a `.gemini/policies/re
 
 ## Status
 
-**Stable (v1.0)** — Sync script validated across 6 IDE targets. Claude Code hook tested with 174 approval/rejection test cases covering all 12 skills, flag ordering variations, path variants, and injection attacks. Windsurf whitelist doc generated from the same pattern registry.
+**Stable (v2.0)** — Sync script with auto-approval for 3 IDEs (Claude Code, Gemini CLI, Windsurf) plus guidance for 2 more (Cursor, Codex). 338 tests covering all 12 skills: read/write classification, flag ordering variations, interpreter variants, path variants, injection attacks (shell operators, newlines, backticks, subshells), dual-mode conflict scenarios, substring false positives, and IDE-specific integration (TOML generation, settings merge, idempotency).

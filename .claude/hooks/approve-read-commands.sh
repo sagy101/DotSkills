@@ -23,8 +23,14 @@ COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 # Bail if the patterns file is missing
 [ -f "$PATTERNS_FILE" ] || exit 1
 
-# --- Safety: reject commands with shell operators ---
+# --- Safety: reject commands with shell operators or newlines ---
 # These could chain a whitelisted read command with a dangerous write command.
+# Newlines are checked first: a multi-line command could match on just the first line.
+case "$COMMAND" in
+    *$'\n'*)
+        exit 1
+        ;;
+esac
 if echo "$COMMAND" | grep -qE ';|\|\||&&|\||\$\(|`'; then
     exit 1
 fi
