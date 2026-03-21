@@ -231,7 +231,7 @@ Combines direct and transitive artifact lists, checks each workspace repo with u
 ## Key Design Decisions
 
 1. **Three-command agent interface** — `sbt_build.sh`, `sbt_status.sh`, and `sbt_refresh.sh` wrap internal scripts to reduce cognitive load for the agent while preserving full functionality.
-2. **Isolated Ivy home** — `~/.sbt-build-cache/` keeps local publishes out of `~/.ivy2/`, so normal `sbt` is never contaminated.
+2. **Fully isolated caches** — `~/.sbt-build-cache/` isolates Ivy home, Coursier cache, SBT boot, and SBT global base via `-D` system properties. Normal `sbt` is never contaminated, and parallel worktree builds are safe when each worktree uses a separate `SBT_BUILD_CACHE_ROOT`.
 3. **Batched SBT evaluation** — `discover_deps.sh` runs all four SBT show/tree commands in a single session to avoid repeated startup overhead.
 4. **Hybrid discovery** — `ProjectRef` and workspace topology stay in shell/grep, while SBT provides authoritative evaluated dependency and version data.
 5. **Workspace artifact filtering** — both direct and transitive results are intersected with artifacts produced by local workspace repos.

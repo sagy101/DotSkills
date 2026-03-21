@@ -146,7 +146,12 @@ if [ "$NEEDS_TEST_LOCK" = true ]; then
   } > "$LOCK_FILE"
 fi
 
-SBT_CMD=(sbt "${SBT_HEAP_ARGS[@]}" "-Dsbt.ivy.home=$SBT_BUILD_CACHE_ROOT")
+SBT_CMD=(sbt "${SBT_HEAP_ARGS[@]}"
+  "-Dsbt.ivy.home=$SBT_BUILD_CACHE_ROOT"
+  "-Dsbt.coursier.home=$(coursier_cache_root)"
+  "-Dsbt.boot.directory=$(sbt_boot_dir)"
+  "-Dsbt.global.base=$(sbt_global_base)"
+)
 # Use --batch for test commands to force a fresh SBT process (avoids stale incremental state from SBT server)
 if [ "$FORCE_BATCH" = true ] || [ "$NEEDS_TEST_LOCK" = true ]; then
   SBT_CMD+=(--batch)

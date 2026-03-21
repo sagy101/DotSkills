@@ -68,6 +68,20 @@ platform-commons=/Users/me/dev/platform-commons
 service-a=/Users/me/dev/service-a
 ```
 
+## Environment variables
+
+### `SBT_BUILD_CACHE_ROOT`
+
+- **Type**: directory path
+- **Default**: `~/.sbt-build-cache`
+- **Purpose**: Root directory for all isolated SBT caches (Ivy home, Coursier, SBT boot, SBT global, logs, locks). Set different values per shell/worktree for parallel builds.
+
+Example:
+
+```bash
+export SBT_BUILD_CACHE_ROOT=~/.sbt-build-cache/wt-feature-x
+```
+
 ## Resolution order
 
 1. Auto-scan direct workspace children containing `build.sbt`

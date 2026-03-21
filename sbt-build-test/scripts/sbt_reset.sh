@@ -72,10 +72,13 @@ if [ "$LOCAL_ONLY" = true ]; then
   echo "Will delete: $TARGET/"
 else
   echo "Will delete:"
-  echo "  $SBT_BUILD_CACHE_ROOT/local/   (local publishes)"
-  echo "  $SBT_BUILD_CACHE_ROOT/cache/   (downloaded artifacts)"
-  echo "  $SBT_BUILD_CACHE_ROOT/logs/    (build logs)"
-  echo "  $SBT_BUILD_CACHE_ROOT/locks/   (lock files)"
+  echo "  $SBT_BUILD_CACHE_ROOT/local/      (local publishes)"
+  echo "  $SBT_BUILD_CACHE_ROOT/cache/      (downloaded artifacts)"
+  echo "  $SBT_BUILD_CACHE_ROOT/coursier/   (Coursier cache)"
+  echo "  $SBT_BUILD_CACHE_ROOT/boot/       (SBT boot)"
+  echo "  $SBT_BUILD_CACHE_ROOT/global/     (SBT global settings)"
+  echo "  $SBT_BUILD_CACHE_ROOT/logs/       (build logs)"
+  echo "  $SBT_BUILD_CACHE_ROOT/locks/      (lock files)"
 fi
 
 echo ""

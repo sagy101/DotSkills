@@ -20,7 +20,9 @@ resolve_java_home_for_version() {
 }
 
 ensure_sbt_skill_dirs() {
-  mkdir -p "$SBT_BUILD_CACHE_ROOT" "$SBT_BUILD_CACHE_ROOT/locks" "$SBT_BUILD_LOG_ROOT"
+  mkdir -p "$SBT_BUILD_CACHE_ROOT" "$SBT_BUILD_CACHE_ROOT/locks" \
+    "$SBT_BUILD_CACHE_ROOT/coursier" "$SBT_BUILD_CACHE_ROOT/boot" \
+    "$SBT_BUILD_CACHE_ROOT/global" "$SBT_BUILD_LOG_ROOT"
 }
 
 sanitize_skill_key() {
@@ -125,7 +127,15 @@ isolated_local_artifact_dir() {
 }
 
 coursier_cache_root() {
-  echo "$HOME/Library/Caches/Coursier"
+  echo "$SBT_BUILD_CACHE_ROOT/coursier"
+}
+
+sbt_boot_dir() {
+  echo "$SBT_BUILD_CACHE_ROOT/boot"
+}
+
+sbt_global_base() {
+  echo "$SBT_BUILD_CACHE_ROOT/global"
 }
 
 test_activity_lock_file() {

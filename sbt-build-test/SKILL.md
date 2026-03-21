@@ -222,10 +222,30 @@ bash <skill_dir>/scripts/sbt_reset.sh --dry-run
 ## Important rules
 
 1. **Use `sbt_build.sh` for all compile, test, and publishLocal flows.** It preserves full logs, auto-checks deps, and auto-parses test reports.
-2. **All skill-driven SBT runs use the isolated cache** at `~/.sbt-build-cache` to avoid contaminating `~/.ivy2`.
+2. **All skill-driven SBT runs use the isolated cache** at `~/.sbt-build-cache` (Ivy, Coursier, SBT boot, SBT global) to avoid contaminating system caches.
 3. **Use `sbt_status.sh` before guessing dependency order.** Do not guess publish order.
 4. **Show the dry-run plan before running `sbt_refresh.sh`** with `--publish-upstreams` for the first time in a session.
 5. **JUnit XML is the source of truth for test results.** Console success only means SBT finished.
+
+## Parallel worktree builds
+
+All SBT caches (Ivy, Coursier, SBT boot, SBT global) are isolated inside
+`SBT_BUILD_CACHE_ROOT` (default: `~/.sbt-build-cache`). For parallel builds
+across git worktrees, set a different cache root per worktree:
+
+```bash
+# In worktree 1
+export SBT_BUILD_CACHE_ROOT=~/.sbt-build-cache/wt-main
+
+# In worktree 2
+export SBT_BUILD_CACHE_ROOT=~/.sbt-build-cache/wt-feature-x
+```
+
+Each worktree gets its own publishLocal artifacts, Coursier downloads, and
+SBT boot files. No lock contention or cache corruption between parallel builds.
+
+> **Note:** The first build in a new cache root is slower due to cold Coursier and
+> SBT boot caches. Subsequent builds are fast.
 
 ## Error handling
 
