@@ -121,7 +121,7 @@ if [ "$NEEDS_TEST_LOCK" = true ]; then
     # Also treat locks older than 2 hours as stale regardless of PID
     if [ "$_LOCK_STALE" = false ] && [ -f "$LOCK_FILE" ]; then
       _LOCK_AGE_LIMIT=$((2 * 60 * 60))
-      _LOCK_MTIME=$(stat -f '%m' "$LOCK_FILE" 2>/dev/null || stat -c '%Y' "$LOCK_FILE" 2>/dev/null || echo 0)
+      _LOCK_MTIME=$(stat -c '%Y' "$LOCK_FILE" 2>/dev/null || stat -f '%m' "$LOCK_FILE" 2>/dev/null || echo 0)
       _NOW=$(date '+%s')
       if [ $((_NOW - _LOCK_MTIME)) -ge "$_LOCK_AGE_LIMIT" ]; then
         _LOCK_STALE=true
