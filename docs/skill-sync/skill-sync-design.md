@@ -18,7 +18,7 @@ This skill gives **any SKILL.md-compatible agent** the ability to distribute ski
 |---|---|
 | **IDE detection** | Scan the system for installed IDEs by checking parent directories |
 | **Skill discovery** | Find all skill directories (containing SKILL.md) in a source repo |
-| **Multi-IDE sync** | Copy skills to user-level and/or project-level directories for 6 IDEs |
+| **Multi-IDE sync** | Copy skills to user-level and/or project-level directories for 7 IDEs |
 | **Skillignore** | Exclude files matching `.skillignore` patterns during copy |
 | **Dry run** | Preview what would be synced without copying |
 | **Claude Code hooks** | Auto-install a PreToolUse hook that approves read-only skill commands |
@@ -74,7 +74,7 @@ docs/
 - `update_claude_hooks()` — installs PreToolUse hook and updates settings.json
 - `update_gemini_approval()` — generates TOML policy file with regex rules
 - `update_windsurf_approval()` — merges command prefixes into Windsurf settings
-- `_print_cursor_info()` / `_print_codex_info()` — guidance for unsupported IDEs
+- `_print_cursor_info()` / `_print_codex_info()` / `_print_jetbrains_info()` — guidance for unsupported IDEs
 - `main()` — CLI entry point with argparse
 
 ---

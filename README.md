@@ -135,6 +135,9 @@ auto-approved to reduce prompt fatigue during agent sessions.
   to a project. No manual setup needed.
 - **Windsurf**: `skill-sync` automatically merges command prefixes into your
   Windsurf `settings.json` when syncing to Windsurf targets.
+- **JetBrains** (IntelliJ, PyCharm, WebStorm, etc.): Skills sync to
+  `~/.jetbrains/skills/` (user) and `.idea/skills/` (project). Auto-approval
+  depends on the AI plugin used within the IDE.
 - **Other IDEs**: Manually add patterns from the
   [read command whitelist](docs/read-command-whitelist.md) to your IDE's
   allowed-commands configuration.

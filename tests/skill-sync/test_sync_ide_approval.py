@@ -1,9 +1,9 @@
 """Tests for IDE-specific auto-approval handlers in sync.py.
 
-Validates Gemini CLI, Windsurf, Cursor, and Codex auto-approval:
+Validates Gemini CLI, Windsurf, Cursor, Codex, and JetBrains auto-approval:
 - TOML policy generation and idempotent installation (Gemini)
 - Settings.json merge with dedup (Windsurf)
-- Info messages for unsupported IDEs (Cursor, Codex)
+- Info messages for unsupported IDEs (Cursor, Codex, JetBrains)
 """
 
 import json
@@ -25,6 +25,7 @@ from sync import (
     _patterns_to_windsurf_prefixes,
     _print_codex_info,
     _print_cursor_info,
+    _print_jetbrains_info,
     _update_windsurf_settings,
     update_gemini_approval,
     update_read_approvals,
@@ -494,6 +495,25 @@ class TestCodexInfo:
         assert "config.toml" in output
 
 
+class TestJetBrainsInfo:
+    def test_prints_info(self, capsys):
+        _print_jetbrains_info()
+        output = capsys.readouterr().out
+        assert "JetBrains" in output
+        assert "not yet supported" in output
+
+    def test_mentions_skill_paths(self, capsys):
+        _print_jetbrains_info()
+        output = capsys.readouterr().out
+        assert ".jetbrains/skills" in output
+        assert ".idea/skills" in output
+
+    def test_mentions_whitelist(self, capsys):
+        _print_jetbrains_info()
+        output = capsys.readouterr().out
+        assert "read-command-whitelist.md" in output
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # DISPATCHER — update_read_approvals
 # ═══════════════════════════════════════════════════════════════════════════
@@ -530,3 +550,9 @@ class TestUpdateReadApprovals:
         update_read_approvals(source_with_patterns, detected, ["codex"], dry_run=False)
         output = capsys.readouterr().out
         assert "auto-approval not supported" in output
+
+    def test_jetbrains_info_only_when_detected(self, source_with_patterns, capsys):
+        detected = {"jetbrains": {"name": "JetBrains", "user_path": Path("/tmp"), "project_path": None}}
+        update_read_approvals(source_with_patterns, detected, ["jetbrains"], dry_run=False)
+        output = capsys.readouterr().out
+        assert "JetBrains" in output

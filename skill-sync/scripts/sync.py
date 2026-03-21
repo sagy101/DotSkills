@@ -62,6 +62,11 @@ IDES = {
         "user_dir": ".gemini/antigravity/skills",
         "project_dir": ".agent/skills",
     },
+    "jetbrains": {
+        "name": "JetBrains",
+        "user_dir": ".jetbrains/skills",
+        "project_dir": ".idea/skills",
+    },
 }
 
 # Minimal always-excluded (even without .skillignore)
@@ -616,6 +621,14 @@ def _print_codex_info() -> None:
     print("    the closest equivalent.")
 
 
+def _print_jetbrains_info() -> None:
+    """Print info about JetBrains auto-approval status."""
+    print("\n  JetBrains: auto-approval not yet supported")
+    print("    Skills are synced to ~/.jetbrains/skills/ (user) and .idea/skills/ (project).")
+    print("    Auto-approval depends on the AI plugin used (Claude Code, Windsurf, etc.).")
+    print("    See docs/read-command-whitelist.md for the command list.")
+
+
 # ---------------------------------------------------------------------------
 # Read approval dispatcher
 # ---------------------------------------------------------------------------
@@ -638,6 +651,8 @@ def update_read_approvals(
         _print_cursor_info()
     if "codex" in targets and "codex" in detected_ides:
         _print_codex_info()
+    if "jetbrains" in targets and "jetbrains" in detected_ides:
+        _print_jetbrains_info()
 
 
 # ---------------------------------------------------------------------------
@@ -665,7 +680,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--targets",
         default="all",
-        help="Comma-separated IDE targets: windsurf,claude,cursor,codex or 'all' (default: all detected)",
+        help="Comma-separated IDE targets: windsurf,claude,cursor,codex,jetbrains or 'all' (default: all detected)",
     )
     parser.add_argument(
         "--dry-run",
