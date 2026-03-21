@@ -11,7 +11,8 @@ metadata:
   version: "1.0"
 compatibility: >
   Python 3.8+. Pure stdlib — no pip install required. Works with Slack incoming webhooks
-  (requires a Slack App) and Microsoft Teams Power Automate Workflows URLs (Adaptive Card format).
+  (requires a Slack App) or Microsoft Teams Power Automate Workflows URLs (Adaptive Card format),
+  or both simultaneously.
 ---
 
 # Team Notify
