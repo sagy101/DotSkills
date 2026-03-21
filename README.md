@@ -113,8 +113,11 @@ flowchart LR
 | Skill | What It Does |
 |---|---|
 | [skill-creator](./skill-creator/) | Scaffold new skills from scripts or from scratch, spec compliance verification |
-| [skill-sync](./skill-sync/) | Distribute skills to 6 IDEs, OS-agnostic, user or project level |
 | [codebase-analyzer](./codebase-analyzer/) | Line counts, language breakdown, test ratios, git churn hotspots |
+
+> **Note:** [`skill-sync`](./skill-sync/) is a standalone sync script, not a skill.
+> It distributes skills to 7 IDEs but is not itself synced to IDE skill directories.
+> See [Quick Start](#quick-start) for usage.
 
 ## Security Principles
 
@@ -125,6 +128,25 @@ flowchart LR
 - **Approval gates** — destructive operations (merge, decline, delete) require explicit user confirmation
 - **No rubber-stamping** — PR approval intentionally omitted; approval is a human-only action
 - **Log scrubbing** — Jenkins and EKS log output is redacted before reaching the agent context
+
+## Auto-Approval of Read Commands
+
+Read-only skill commands (fetching data, listing resources, checking status) can be
+auto-approved to reduce prompt fatigue during agent sessions.
+
+- **Claude Code**: `skill-sync` automatically installs a `PreToolUse` hook when syncing
+  to a project. No manual setup needed.
+- **Windsurf**: `skill-sync` automatically merges command prefixes into your
+  Windsurf `settings.json` when syncing to Windsurf targets.
+- **JetBrains** (IntelliJ, PyCharm, WebStorm, etc.): Skills sync to
+  `~/.jetbrains/skills/` (user) and `.idea/skills/` (project). Auto-approval
+  depends on the AI plugin used within the IDE.
+- **Other IDEs**: Manually add patterns from the
+  [read command whitelist](docs/read-command-whitelist.md) to your IDE's
+  allowed-commands configuration.
+
+See [`.claude/hooks/read-commands.json`](.claude/hooks/read-commands.json) for the
+full list of auto-approved command patterns and their skill mappings.
 
 ## Quick Start
 
