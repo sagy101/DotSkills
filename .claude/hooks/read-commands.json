@@ -44,5 +44,8 @@
   {"skill": "review-prompts", "pattern": "*/scripts/build-prompt.py *"},
 
   {"skill": "codex-subagent", "pattern": "*/scripts/run_codex.py --mode read-only *"},
-  {"skill": "codex-subagent", "pattern": "*/scripts/run_codex.py --status *"}
+  {"skill": "codex-subagent", "pattern": "*/scripts/run_codex.py --status *"},
+
+  {"skill": "team-notify", "pattern": "*/scripts/notify_preflight.py *"},
+  {"skill": "team-notify", "pattern": "*/scripts/notify_preflight.py"}
 ]

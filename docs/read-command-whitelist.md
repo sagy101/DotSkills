@@ -89,3 +89,10 @@ These commands only **read** data — they never create, update, or delete resou
 */scripts/run_codex.py --mode read-only *
 */scripts/run_codex.py --status *
 ```
+
+## team-notify
+
+```
+*/scripts/notify_preflight.py *
+*/scripts/notify_preflight.py
+```
