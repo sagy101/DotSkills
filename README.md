@@ -126,6 +126,20 @@ flowchart LR
 - **No rubber-stamping** — PR approval intentionally omitted; approval is a human-only action
 - **Log scrubbing** — Jenkins and EKS log output is redacted before reaching the agent context
 
+## Auto-Approval of Read Commands
+
+Read-only skill commands (fetching data, listing resources, checking status) can be
+auto-approved to reduce prompt fatigue during agent sessions.
+
+- **Claude Code**: `skill-sync` automatically installs a `PreToolUse` hook when syncing
+  to a project. No manual setup needed.
+- **Windsurf**: Manually add patterns from the
+  [read command whitelist](docs/windsurf-read-whitelist.md) to your Windsurf
+  allowed-commands configuration.
+
+See [`.claude/hooks/read-commands.json`](.claude/hooks/read-commands.json) for the
+full list of auto-approved command patterns and their skill mappings.
+
 ## Quick Start
 
 ```bash

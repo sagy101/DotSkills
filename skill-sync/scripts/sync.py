@@ -17,8 +17,10 @@ Usage:
 
 import argparse
 import fnmatch
+import json
 import platform
 import shutil
+import stat
 import sys
 from pathlib import Path
 from typing import TypedDict
@@ -225,6 +227,105 @@ def sync_skills(
 
 
 # ---------------------------------------------------------------------------
+# Claude Code PreToolUse hook — auto-approve read-only skill commands
+# ---------------------------------------------------------------------------
+
+_HOOK_SCRIPT = "approve-read-commands.sh"
+_HOOK_DATA = "read-commands.json"
+_HOOK_COMMAND = "$CLAUDE_PROJECT_DIR/.claude/hooks/" + _HOOK_SCRIPT
+
+_PRETOOL_ENTRY: dict = {
+    "matcher": "Bash",
+    "hooks": [{"type": "command", "command": _HOOK_COMMAND}],
+}
+
+
+def _has_hook_entry(entries: list[dict], command: str) -> bool:
+    """Check if a PreToolUse entry with the given command already exists."""
+    for entry in entries:
+        for hook in entry.get("hooks", []):
+            if hook.get("command") == command:
+                return True
+    return False
+
+
+def _copy_hook_files(source: Path, hooks_dir: Path, dry_run: bool) -> None:
+    """Copy the hook script and data file to the target hooks directory."""
+    src_hooks = source / ".claude" / "hooks"
+    for filename in (_HOOK_SCRIPT, _HOOK_DATA):
+        src = src_hooks / filename
+        if not src.is_file():
+            print(f"    WARNING: {src} not found, skipping")
+            continue
+        dest = hooks_dir / filename
+        if dry_run:
+            print(f"    [dry-run] {src} -> {dest}")
+            continue
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        if filename.endswith(".sh"):
+            dest.chmod(dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        print(f"    {filename} -> {dest}")
+
+
+def _update_settings_json(settings_path: Path, dry_run: bool) -> bool:
+    """Add PreToolUse hook entry to a settings.json file. Returns True if modified."""
+    data: dict = {}
+    if settings_path.is_file():
+        data = json.loads(settings_path.read_text(encoding="utf-8"))
+
+    hooks = data.setdefault("hooks", {})
+    pretool = hooks.setdefault("PreToolUse", [])
+
+    if _has_hook_entry(pretool, _HOOK_COMMAND):
+        print(f"    PreToolUse hook already present in {settings_path}")
+        return False
+
+    if dry_run:
+        print(f"    [dry-run] Would add PreToolUse hook to {settings_path}")
+        return False
+
+    pretool.append(_PRETOOL_ENTRY)
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    print(f"    Added PreToolUse hook to {settings_path}")
+    return True
+
+
+def update_claude_hooks(
+    source: Path,
+    detected_ides: dict[str, dict[str, str | Path | None]],
+    dry_run: bool = False,
+) -> None:
+    """Install read-command auto-approval hook for Claude Code.
+
+    Updates settings.json and copies hook files to every Claude Code target
+    path (user-level and/or project-level) that was detected for this sync.
+    """
+    ide = detected_ides.get("claude")
+    if not ide:
+        return
+
+    print("\n  Claude Code: installing read-command auto-approval hook")
+
+    for label in ("user", "project"):
+        target_path = ide.get(f"{label}_path")
+        if not target_path:
+            continue
+        tp = Path(target_path) if not isinstance(target_path, Path) else target_path
+
+        # tp is the skills dir (e.g. ~/.claude/skills or <project>/.claude/skills)
+        # settings.json and hooks/ live one level up from the skills dir
+        claude_dir = tp.parent  # .claude/
+        settings_path = claude_dir / "settings.json"
+        hooks_dir = claude_dir / "hooks"
+
+        print(f"\n    {label}: {claude_dir}")
+        _copy_hook_files(source, hooks_dir, dry_run)
+        _update_settings_json(settings_path, dry_run)
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -362,6 +463,10 @@ def main() -> None:
         print(f"  Project: {project}")
 
     stats = sync_skills(skills, detected, targets, patterns, dry_run=args.dry_run)
+
+    if "claude" in targets:
+        update_claude_hooks(source, detected, dry_run=args.dry_run)
+
     _print_summary(stats, len(skills), args.dry_run)
 
 
