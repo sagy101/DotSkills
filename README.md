@@ -113,8 +113,11 @@ flowchart LR
 | Skill | What It Does |
 |---|---|
 | [skill-creator](./skill-creator/) | Scaffold new skills from scripts or from scratch, spec compliance verification |
-| [skill-sync](./skill-sync/) | Distribute skills to 6 IDEs, OS-agnostic, user or project level |
 | [codebase-analyzer](./codebase-analyzer/) | Line counts, language breakdown, test ratios, git churn hotspots |
+
+> **Note:** [`skill-sync`](./skill-sync/) is a standalone sync script, not a skill.
+> It distributes skills to 7 IDEs but is not itself synced to IDE skill directories.
+> See [Quick Start](#quick-start) for usage.
 
 ## Security Principles
 

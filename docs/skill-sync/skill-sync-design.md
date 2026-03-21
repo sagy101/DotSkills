@@ -8,7 +8,7 @@
 
 Skills are developed in a central repo but consumed from IDE-specific directories (`~/.claude/skills/`, `~/.codeium/windsurf/skills/`, etc.). Without a sync tool, developers manually `cp -r` skill folders — missing files, forgetting IDEs, and losing hook configurations.
 
-This skill gives **any SKILL.md-compatible agent** the ability to distribute skills from a source repo to all installed IDEs in one command, including IDE-specific configuration (Claude Code hooks, Windsurf allowlists).
+This standalone script distributes skills from a source repo to all installed IDEs in one command, including IDE-specific configuration (Claude Code hooks, Windsurf allowlists). It is not a skill itself — it has no SKILL.md and is never synced to IDE skill directories.
 
 ---
 
@@ -52,7 +52,6 @@ This skill gives **any SKILL.md-compatible agent** the ability to distribute ski
 
 ```
 skill-sync/
-├── SKILL.md                     # Agent-facing instructions
 ├── scripts/
 │   └── sync.py                  # Main sync script (detection, copy, hooks)
 
