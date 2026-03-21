@@ -1,0 +1,48 @@
+[
+  {"skill": "jira-manager", "pattern": "*/scripts/fetch_tickets.py *"},
+  {"skill": "jira-manager", "pattern": "*/scripts/discover_fields.py *"},
+  {"skill": "jira-manager", "pattern": "*/scripts/diff_tickets.py *"},
+  {"skill": "jira-manager", "pattern": "*/scripts/validate_estimates.py *"},
+  {"skill": "jira-manager", "pattern": "*/scripts/jira_setup_env.py"},
+
+  {"skill": "bitbucket-manager", "pattern": "*/scripts/bb_preflight.py *"},
+  {"skill": "bitbucket-manager", "pattern": "*/scripts/pr_get.py *"},
+  {"skill": "bitbucket-manager", "pattern": "*/scripts/pr_list.py *"},
+  {"skill": "bitbucket-manager", "pattern": "*/scripts/pr_comments.py *"},
+  {"skill": "bitbucket-manager", "pattern": "*/scripts/pr_checks.py *"},
+  {"skill": "bitbucket-manager", "pattern": "*/scripts/build_status.py *"},
+  {"skill": "bitbucket-manager", "pattern": "*/scripts/pr_jira.py *"},
+  {"skill": "bitbucket-manager", "pattern": "*/scripts/repo_list.py *"},
+
+  {"skill": "jenkins-manager", "pattern": "*/scripts/jenkins_preflight.py *"},
+  {"skill": "jenkins-manager", "pattern": "*/scripts/get_status.py *"},
+  {"skill": "jenkins-manager", "pattern": "*/scripts/get_logs.py *"},
+  {"skill": "jenkins-manager", "pattern": "*/scripts/get_test_results.py *"},
+  {"skill": "jenkins-manager", "pattern": "*/scripts/get_changesets.py *"},
+  {"skill": "jenkins-manager", "pattern": "*/scripts/get_queue_item.py *"},
+  {"skill": "jenkins-manager", "pattern": "*/scripts/list_folders.py *"},
+  {"skill": "jenkins-manager", "pattern": "*/scripts/list_jobs.py *"},
+
+  {"skill": "eks-pod-ops", "pattern": "*/scripts/eks_preflight.py *"},
+  {"skill": "eks-pod-ops", "pattern": "*/scripts/eks_ops.py pods *"},
+  {"skill": "eks-pod-ops", "pattern": "*/scripts/eks_ops.py logs *"},
+
+  {"skill": "sbt-build-test", "pattern": "*/scripts/sbt_status.sh *"},
+
+  {"skill": "confluence-publisher", "pattern": "*/scripts/validate_manifest.py *"},
+  {"skill": "confluence-publisher", "pattern": "*/scripts/verify_hierarchy.py *"},
+  {"skill": "confluence-publisher", "pattern": "*/scripts/discover_pages.py *"},
+  {"skill": "confluence-publisher", "pattern": "*/scripts/diff_pages.py *"},
+  {"skill": "confluence-publisher", "pattern": "*/scripts/diff_versions.py *"},
+  {"skill": "confluence-publisher", "pattern": "*/scripts/page_versions.py --list *"},
+  {"skill": "confluence-publisher", "pattern": "*/scripts/page_versions.py --fetch *"},
+  {"skill": "confluence-publisher", "pattern": "*/scripts/confluence_setup_env.py"},
+
+  {"skill": "codebase-analyzer", "pattern": "*/scripts/analyze.py *"},
+  {"skill": "codebase-analyzer", "pattern": "*/scripts/analyzer_setup_env.py"},
+
+  {"skill": "review-prompts", "pattern": "*/scripts/build-prompt.py *"},
+
+  {"skill": "codex-subagent", "pattern": "*/scripts/run_codex.py --mode read-only *"},
+  {"skill": "codex-subagent", "pattern": "*/scripts/run_codex.py --status *"}
+]
