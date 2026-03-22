@@ -74,32 +74,21 @@ Model routing guidance (when `balanced`):
 
 ## Pre-flight checks
 
-Run these checks before the first delegation in a session. If a check fails, offer to fix it (with user confirmation):
+Run once before the first delegation in a session:
+
+```bash
+python3 <skill_dir>/scripts/codex_preflight.py
+```
+
+Read the output. If any `[FAIL]` line appears, follow the hint printed next to it before delegating.
+`[WARN]` lines are informational — they do not block use.
 
 ```
-1. Check codex is installed:
-   Run: which codex
-   If missing → Ask user: "Codex CLI not found. Install with: npm i -g @openai/codex"
+# Skip the git repo check (mirrors the wrapper's own flag):
+python3 <skill_dir>/scripts/codex_preflight.py --skip-git-repo-check
 
-2. Check version (minimum v0.106.0):
-   Run: codex --version
-   If below minimum → Ask user: "Codex v{X} found, but v0.106.0+ is needed. Upgrade: npm i -g @openai/codex"
-
-3. Check authentication:
-   Run: codex login status
-   If not logged in → Ask user: "Codex not authenticated. Run 'codex login' to authenticate."
-
-4. Check git repo:
-   Run: git rev-parse --git-dir 2>/dev/null
-   If not in repo → Warn user, offer --skip-git-repo-check flag
-
-5. Check wrapper script:
-   Run: test -f <skill_dir>/scripts/run_codex.py
-   If missing → The skill may not be installed correctly. Check the skill directory structure.
-
-6. Check model strictness (optional):
-   Run: echo $CODEX_SUBAGENT_MODEL_STRICTNESS
-   If not set → Default to 'balanced'. Options: conservative, balanced, aggressive.
+# Skip auth check in CI / no-TTY environments:
+python3 <skill_dir>/scripts/codex_preflight.py --skip-auth
 ```
 
 ## Workflow
