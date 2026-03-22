@@ -239,12 +239,24 @@ def sync_skills(
 
 _HOOK_SCRIPT = "approve-read-commands.sh"
 _HOOK_DATA = "read-commands.json"
-_HOOK_COMMAND = "$CLAUDE_PROJECT_DIR/.claude/hooks/" + _HOOK_SCRIPT
+_HOOK_COMMAND_PROJECT = "$CLAUDE_PROJECT_DIR/.claude/hooks/" + _HOOK_SCRIPT
+_HOOK_COMMAND_USER = "$HOME/.claude/hooks/" + _HOOK_SCRIPT
 
-_PRETOOL_ENTRY: dict = {
-    "matcher": "Bash",
-    "hooks": [{"type": "command", "command": _HOOK_COMMAND}],
-}
+# Both variants for detection (so we can find and replace stale entries)
+_HOOK_COMMANDS = {_HOOK_COMMAND_PROJECT, _HOOK_COMMAND_USER}
+
+
+def _hook_command_for_level(label: str) -> str:
+    """Return the correct hook command path for user vs project level."""
+    return _HOOK_COMMAND_USER if label == "user" else _HOOK_COMMAND_PROJECT
+
+
+def _make_pretool_entry(command: str) -> dict:
+    """Build a PreToolUse hook entry for the given command."""
+    return {
+        "matcher": "Bash",
+        "hooks": [{"type": "command", "command": command}],
+    }
 
 
 def _has_hook_entry(entries: list[dict], command: str) -> bool:
@@ -254,6 +266,16 @@ def _has_hook_entry(entries: list[dict], command: str) -> bool:
             if hook.get("command") == command:
                 return True
     return False
+
+
+def _has_any_hook_entry(entries: list[dict]) -> str | None:
+    """Check if any approve-read-commands hook variant exists. Returns the command if found."""
+    for entry in entries:
+        for hook in entry.get("hooks", []):
+            cmd: str = hook.get("command", "")
+            if cmd in _HOOK_COMMANDS:
+                return cmd
+    return None
 
 
 def _copy_hook_files(source: Path, hooks_dir: Path, dry_run: bool) -> None:
@@ -275,7 +297,7 @@ def _copy_hook_files(source: Path, hooks_dir: Path, dry_run: bool) -> None:
         print(f"    {filename} -> {dest}")
 
 
-def _update_settings_json(settings_path: Path, dry_run: bool) -> bool:
+def _update_settings_json(settings_path: Path, label: str, dry_run: bool) -> bool:
     """Add PreToolUse hook entry to a settings.json file. Returns True if modified."""
     data: dict = {}
     if settings_path.is_file():
@@ -284,15 +306,32 @@ def _update_settings_json(settings_path: Path, dry_run: bool) -> bool:
     hooks = data.setdefault("hooks", {})
     pretool = hooks.setdefault("PreToolUse", [])
 
-    if _has_hook_entry(pretool, _HOOK_COMMAND):
+    correct_command = _hook_command_for_level(label)
+
+    # Check if the correct entry already exists
+    if _has_hook_entry(pretool, correct_command):
         print(f"    PreToolUse hook already present in {settings_path}")
         return False
+
+    # Check if a stale entry with the wrong path variant exists and replace it
+    stale_command = _has_any_hook_entry(pretool)
+    if stale_command and stale_command != correct_command:
+        for entry in pretool:
+            for hook in entry.get("hooks", []):
+                if hook.get("command") == stale_command:
+                    if dry_run:
+                        print(f"    [dry-run] Would update hook path in {settings_path}")
+                        return False
+                    hook["command"] = correct_command
+                    settings_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+                    print(f"    Updated hook path in {settings_path}")
+                    return True
 
     if dry_run:
         print(f"    [dry-run] Would add PreToolUse hook to {settings_path}")
         return False
 
-    pretool.append(_PRETOOL_ENTRY)
+    pretool.append(_make_pretool_entry(correct_command))
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     print(f"    Added PreToolUse hook to {settings_path}")
@@ -324,7 +363,7 @@ def update_claude_hooks(
 
         print(f"\n    {label}: {claude_dir}")
         _copy_hook_files(source, hooks_dir, dry_run)
-        _update_settings_json(settings_path, dry_run)
+        _update_settings_json(settings_path, label, dry_run)
 
 
 # ---------------------------------------------------------------------------
@@ -338,7 +377,7 @@ def _load_read_patterns(source: Path) -> list[dict]:
     if not patterns_file.is_file():
         print(f"  WARNING: {patterns_file} not found, skipping auto-approval setup")
         return []
-    return json.loads(patterns_file.read_text(encoding="utf-8"))
+    return json.loads(patterns_file.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
 
 
 def _iter_ide_paths(
@@ -402,10 +441,9 @@ def _pattern_to_gemini_regex(pattern: str) -> str:
         # Flag-based: match flag anywhere after script
         flag_re = re.sub(r"([.+?{}()|\\[\]^$])", r"\\\1", middle_str)
         return f".*/{script_re}\\s.*{flag_re}(\\s|$)"
-    else:
-        # Subcommand: match subcommand right after script
-        sub_re = re.sub(r"([.+?{}()|\\[\]^$])", r"\\\1", middle_str)
-        return f".*/{script_re}\\s+{sub_re}(\\s|$)"
+    # Subcommand: match subcommand right after script
+    sub_re = re.sub(r"([.+?{}()|\\[\]^$])", r"\\\1", middle_str)
+    return f".*/{script_re}\\s+{sub_re}(\\s|$)"
 
 
 def _generate_gemini_policy(patterns: list[dict]) -> str:
@@ -481,11 +519,11 @@ def _windsurf_user_settings_path() -> Path:
     home = Path.home()
     if system == "Darwin":
         return home / "Library" / "Application Support" / "Windsurf" / "User" / "settings.json"
-    elif system == "Windows":
+    if system == "Windows":
         appdata = Path(os.environ.get("APPDATA", str(home / "AppData" / "Roaming")))
         return appdata / "Windsurf" / "User" / "settings.json"
-    else:  # Linux
-        return home / ".config" / "Windsurf" / "User" / "settings.json"
+    # Linux
+    return home / ".config" / "Windsurf" / "User" / "settings.json"
 
 
 def _patterns_to_windsurf_prefixes(
@@ -528,9 +566,7 @@ def _patterns_to_windsurf_prefixes(
     return prefixes, skipped
 
 
-def _update_windsurf_settings(
-    settings_path: Path, prefixes: set[str], dry_run: bool
-) -> bool:
+def _update_windsurf_settings(settings_path: Path, prefixes: set[str], dry_run: bool) -> bool:
     """Merge command prefixes into Windsurf settings.json. Returns True if modified."""
     data: dict = {}
     if settings_path.is_file():
@@ -581,7 +617,7 @@ def update_windsurf_approval(
     all_prefixes: set[str] = set()
     all_skipped: list[str] = []
 
-    for label, sp in _iter_ide_paths(ide):
+    for _label, sp in _iter_ide_paths(ide):
         prefixes, skipped = _patterns_to_windsurf_prefixes(read_patterns, sp)
         all_prefixes.update(prefixes)
         if not all_skipped:
@@ -616,7 +652,7 @@ def _print_codex_info() -> None:
     """Print info about Codex auto-approval limitations."""
     print("\n  Codex CLI: auto-approval not supported")
     print("    Codex uses a coarse-grained approval_policy in config.toml")
-    print('    (on-request | never) with no per-command allowlist.')
+    print("    (on-request | never) with no per-command allowlist.")
     print('    Set approval_policy = "on-request" in ~/.codex/config.toml for')
     print("    the closest equivalent.")
 
