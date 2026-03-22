@@ -962,6 +962,13 @@ class TestParseArgsWithPassthrough:
 # ========== Parallel Agent Tracking ==========
 
 import run_codex as _mod  # noqa: E402
+from run_codex import (
+    _report_exit_error,
+    _validate_args,
+    _validate_prompt,
+    build_prompt_file,
+    setup_worktree,
+)
 
 
 @pytest.fixture(autouse=False)
@@ -1202,3 +1209,285 @@ class TestStatusFlag:
         assert parsed.status is True
         assert "--status" not in pt
         assert pt == ["--model", "o3"]
+
+
+# ========== _validate_args ==========
+
+
+def _make_args(**kwargs):
+    """Build a minimal valid argparse.Namespace for _validate_args."""
+    import argparse
+
+    defaults = {
+        "timeout": 600,
+        "mode": "read-only",
+        "resume": False,
+        "collision": "high",
+        "max_parallel": 6,
+    }
+    defaults.update(kwargs)
+    return argparse.Namespace(**defaults)
+
+
+class TestValidateArgs:
+    def test_valid_defaults_pass(self):
+        _validate_args(_make_args())
+
+    def test_invalid_timeout_exits(self):
+        with pytest.raises(SystemExit) as exc_info:
+            _validate_args(_make_args(timeout=999))
+        assert exc_info.value.code == 2
+
+    def test_all_valid_timeouts_pass(self):
+        for t in (300, 600, 1200, 2400):
+            _validate_args(_make_args(timeout=t))
+
+    def test_write_mode_invalid_collision_exits(self):
+        with pytest.raises(SystemExit) as exc_info:
+            _validate_args(_make_args(mode="write", collision="low"))
+        assert exc_info.value.code == 2
+
+    def test_write_mode_valid_collision_high_passes(self):
+        _validate_args(_make_args(mode="write", collision="high"))
+
+    def test_write_mode_valid_collision_medium_passes(self):
+        _validate_args(_make_args(mode="write", collision="medium"))
+
+    def test_write_mode_resume_skips_collision_check(self):
+        # --resume bypasses collision validation
+        _validate_args(_make_args(mode="write", collision="low", resume=True))
+
+    def test_max_parallel_zero_exits(self):
+        with pytest.raises(SystemExit) as exc_info:
+            _validate_args(_make_args(max_parallel=0))
+        assert exc_info.value.code == 2
+
+    def test_max_parallel_negative_exits(self):
+        with pytest.raises(SystemExit) as exc_info:
+            _validate_args(_make_args(max_parallel=-1))
+        assert exc_info.value.code == 2
+
+    def test_max_parallel_one_passes(self):
+        _validate_args(_make_args(max_parallel=1))
+
+    def test_max_parallel_above_default_warns_but_continues(
+        self, capsys: pytest.CaptureFixture[str]
+    ):
+        _validate_args(_make_args(max_parallel=10))
+        captured = capsys.readouterr()
+        assert "WARNING" in captured.err
+        assert "10" in captured.err
+
+    def test_read_only_any_collision_passes(self):
+        for col in ("high", "medium"):
+            _validate_args(_make_args(mode="read-only", collision=col))
+
+
+# ========== _validate_prompt ==========
+
+
+class TestValidatePrompt:
+    def test_empty_prompt_exits(self, tmp_path: Path):
+        empty = tmp_path / "empty.txt"
+        empty.write_text("")
+        with pytest.raises(SystemExit) as exc_info:
+            _validate_prompt(str(empty))
+        assert exc_info.value.code == 2
+
+    def test_nonempty_prompt_passes(self, tmp_path: Path):
+        f = tmp_path / "prompt.txt"
+        f.write_text("do something")
+        _validate_prompt(str(f))
+
+    def test_large_prompt_warns_but_continues(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        f = tmp_path / "big.txt"
+        f.write_text("x" * 60000)
+        _validate_prompt(str(f))  # must not raise
+        captured = capsys.readouterr()
+        assert "WARNING" in captured.err
+
+    def test_prompt_at_max_passes_without_warning(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        import run_codex as _m
+
+        f = tmp_path / "prompt.txt"
+        f.write_text("x" * _m.MAX_PROMPT_CHARS)
+        _validate_prompt(str(f))
+        captured = capsys.readouterr()
+        assert "WARNING" not in captured.err
+
+
+# ========== build_prompt_file ==========
+
+
+class TestBuildPromptFile:
+    def test_stdin_only_written(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        import io
+
+        monkeypatch.setattr(sys, "stdin", io.StringIO("hello from stdin"))
+        result = build_prompt_file(str(tmp_path), None)
+        assert Path(result).read_text() == "hello from stdin"
+
+    def test_review_prompt_prepended(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        import io
+
+        review = tmp_path / "review.md"
+        review.write_text("# Review\nDo a review.")
+        monkeypatch.setattr(sys, "stdin", io.StringIO("extra context"))
+        result = build_prompt_file(str(tmp_path), str(review))
+        content = Path(result).read_text()
+        assert content.startswith("# Review\nDo a review.")
+        assert "--- Additional context from host agent ---" in content
+        assert "extra context" in content
+
+    def test_review_prompt_separator_before_stdin(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import io
+
+        review = tmp_path / "review.md"
+        review.write_text("REVIEW_CONTENT")
+        monkeypatch.setattr(sys, "stdin", io.StringIO("STDIN_CONTENT"))
+        result = build_prompt_file(str(tmp_path), str(review))
+        content = Path(result).read_text()
+        sep_pos = content.index("--- Additional context from host agent ---")
+        stdin_pos = content.index("STDIN_CONTENT")
+        assert sep_pos < stdin_pos
+
+    def test_missing_review_prompt_exits(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        import io
+
+        monkeypatch.setattr(sys, "stdin", io.StringIO("context"))
+        with pytest.raises(SystemExit) as exc_info:
+            build_prompt_file(str(tmp_path), "/nonexistent/path/review.md")
+        assert exc_info.value.code == 2
+
+    def test_tty_stdin_skipped(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        import io
+
+        tty_stdin = io.StringIO("")
+        tty_stdin.isatty = lambda: True  # type: ignore[method-assign]
+        monkeypatch.setattr(sys, "stdin", tty_stdin)
+        result = build_prompt_file(str(tmp_path), None)
+        assert Path(result).read_text() == ""
+
+    def test_prompt_file_in_tmpdir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        import io
+
+        monkeypatch.setattr(sys, "stdin", io.StringIO("hi"))
+        result = build_prompt_file(str(tmp_path), None)
+        assert Path(result).parent == tmp_path
+        assert Path(result).name == "prompt.txt"
+
+
+# ========== setup_worktree ==========
+
+
+class TestSetupWorktree:
+    def test_read_only_returns_none(self):
+        wt_dir, wt_branch, wt_id = setup_worktree("high", "read-only")
+        assert wt_dir is None
+        assert wt_branch is None
+        assert wt_id is None
+
+    def test_write_high_returns_none(self):
+        wt_dir, wt_branch, wt_id = setup_worktree("high", "write")
+        assert wt_dir is None
+
+    def test_medium_read_only_returns_none(self):
+        wt_dir, wt_branch, wt_id = setup_worktree("medium", "read-only")
+        assert wt_dir is None
+
+    def test_medium_write_calls_git(self, monkeypatch: pytest.MonkeyPatch):
+        import subprocess as sp
+
+        fake_result = unittest.mock.MagicMock()
+        fake_result.returncode = 0
+        monkeypatch.setattr(sp, "run", lambda *a, **kw: fake_result)
+        wt_dir, wt_branch, wt_id = setup_worktree("medium", "write")
+        assert wt_dir is not None
+        assert wt_branch is not None
+        assert wt_id is not None
+        assert "codex-wt-" in wt_dir
+
+    def test_medium_write_git_failure_exits(self, monkeypatch: pytest.MonkeyPatch):
+        import subprocess as sp
+
+        fake_result = unittest.mock.MagicMock()
+        fake_result.returncode = 1
+        fake_result.stdout = ""
+        fake_result.stderr = "fatal: not a git repo"
+        monkeypatch.setattr(sp, "run", lambda *a, **kw: fake_result)
+        with pytest.raises(SystemExit) as exc_info:
+            setup_worktree("medium", "write")
+        assert exc_info.value.code == 2
+
+    def test_medium_write_branch_matches_dir(self, monkeypatch: pytest.MonkeyPatch):
+        import subprocess as sp
+
+        fake_result = unittest.mock.MagicMock()
+        fake_result.returncode = 0
+        monkeypatch.setattr(sp, "run", lambda *a, **kw: fake_result)
+        wt_dir, wt_branch, wt_id = setup_worktree("medium", "write")
+        # branch and id both come from the same uuid fragment
+        assert wt_branch == wt_id
+        assert wt_branch in wt_dir
+
+
+# ========== _report_exit_error ==========
+
+
+class TestReportExitError:
+    def test_exit_101_rust_panic(self, capsys: pytest.CaptureFixture[str]):
+        _report_exit_error(101)
+        captured = capsys.readouterr()
+        assert "101" in captured.err
+        assert "panic" in captured.err.lower() or "Rust" in captured.err
+
+    def test_exit_137_oom(self, capsys: pytest.CaptureFixture[str]):
+        _report_exit_error(137)
+        captured = capsys.readouterr()
+        assert "137" in captured.err
+        assert "OOM" in captured.err or "killed" in captured.err.lower()
+
+    def test_exit_143_sigterm(self, capsys: pytest.CaptureFixture[str]):
+        _report_exit_error(143)
+        captured = capsys.readouterr()
+        assert "143" in captured.err
+        assert "SIGTERM" in captured.err or "terminated" in captured.err.lower()
+
+    def test_exit_other_generic_message(self, capsys: pytest.CaptureFixture[str]):
+        _report_exit_error(42)
+        captured = capsys.readouterr()
+        assert "42" in captured.err
+        assert "ERROR_HANDLING" in captured.err
+
+    def test_exit_zero_no_output(self, capsys: pytest.CaptureFixture[str]):
+        # exit code 0 is not passed to _report_exit_error in practice, but it
+        # falls through to the generic branch — just ensure it doesn't crash
+        _report_exit_error(0)
+
+
+# ========== _extract_subcommand edge cases ==========
+
+
+class TestExtractSubcommandEdgeCases:
+    def test_boolean_flag_before_review_skips_review(self):
+        """Boolean passthrough flags (no '=', no value) cause skip_next=True,
+        so the next token is consumed as the flag's value and 'review' is missed."""
+        sub, sub_args, rest = _extract_subcommand(["--oss", "review"])
+        # --oss sets skip_next, so 'review' is consumed as its value → not extracted
+        assert sub is None
+
+    def test_eq_form_boolean_flag_does_not_skip(self):
+        """Flags in --flag=value form do NOT set skip_next, so review is found."""
+        sub, sub_args, rest = _extract_subcommand(["--model=gpt-4", "review"])
+        assert sub == "review"
+
+    def test_uncommitted_flag_does_not_skip_next(self):
+        """--uncommitted is explicitly exempted from skip_next, so review after it is found."""
+        sub, sub_args, rest = _extract_subcommand(["--uncommitted", "review"])
+        assert sub == "review"
