@@ -3,7 +3,7 @@
 #
 # Reads the Bash tool input JSON from stdin, extracts the command,
 # and checks it against the read-commands.json pattern list.
-# Match → approve (exit 0 with decision JSON). No match → pass through (exit 1).
+# Match → approve (exit 0 with decision JSON). No match → pass through (exit 0, no output).
 #
 # Safety: rejects commands containing shell operators (;, &&, ||, |, $(), ``)
 # to prevent injection of write commands after a whitelisted read command.
@@ -18,21 +18,21 @@ INPUT=$(cat)
 
 # Extract the command string from tool_input.command
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
-[ -z "$COMMAND" ] && exit 1
+[ -z "$COMMAND" ] && exit 0
 
 # Bail if the patterns file is missing
-[ -f "$PATTERNS_FILE" ] || exit 1
+[ -f "$PATTERNS_FILE" ] || exit 0
 
 # --- Safety: reject commands with shell operators or newlines ---
 # These could chain a whitelisted read command with a dangerous write command.
 # Newlines are checked first: a multi-line command could match on just the first line.
 case "$COMMAND" in
     *$'\n'*)
-        exit 1
+        exit 0
         ;;
 esac
 if echo "$COMMAND" | grep -qE ';|\|\||&&|\||\$\(|`'; then
-    exit 1
+    exit 0
 fi
 
 # --- Build regex list (avoid subshell so exit works) ---
@@ -83,4 +83,4 @@ while IFS= read -r pat; do
 done <<< "$PATTERNS"
 
 # No match — fall through to normal approval flow
-exit 1
+exit 0
