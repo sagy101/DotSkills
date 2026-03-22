@@ -7,7 +7,7 @@ description: >
 license: MIT
 metadata:
   author: sagy101
-  version: "1.9"
+  version: "2.0"
 compatibility: >
   Python 3.10+. Jira Cloud REST API v2 + Agile REST API v1.0.
   Requires an API token with issue read/write permissions.
@@ -79,11 +79,13 @@ $PY $S/create_ticket.py --type bug --summary "Bug title" \
   --fields '{"customfield_29823": {"value": "Dev"}, "customfield_29843": [{"value": "Production"}]}'
 ```
 
-Create flags: `--type`, `--summary`, `--description`, `--epic`, `--parent`, `--priority`, `--assignee`, `--component` (repeatable), `--fix-version` (repeatable), `--sprint`, `--labels`, `--story-points`, `--attachment` (repeatable), `--fields` (raw JSON for custom fields).
+Create flags: `--type`, `--summary`, `--description`, `--epic`, `--parent`, `--priority`, `--assignee`, `--component` (repeatable), `--fix-version` (repeatable), `--sprint`, `--labels`, `--story-points`, `--attachment` (repeatable), `--fields` (raw JSON for custom fields), `--copy-fields-from ISSUE-KEY` (copy custom fields like QBR/team from an existing issue).
+
+**`--copy-fields-from`**: Fetches all custom fields from the source issue and applies them to the new issue. Only copies `customfield_*` fields that aren't already set by other flags. Useful when your Jira project has required custom fields (e.g. QBR, QBR Theme) that vary per team/project — just point at a sibling issue instead of hunting for field IDs.
 
 **Create order**: epics → stories → subtasks. On failure, stop — do not continue with dependents.
 
-If create fails with "missing required fields", run `$PY $S/discover_fields.py --fields-for-type <type>` to see what's needed, then supply via `--fields`.
+If create fails with a 400 error, the script auto-diagnoses the missing field: it searches for matching fields, shows allowed values, and suggests the exact `--fields` JSON to fix it. You can also run `$PY $S/discover_fields.py --fields-for-type <type>` manually.
 
 ### Bulk create
 
@@ -161,7 +163,7 @@ $PY $S/validate_estimates.py --epic PROJ-100   # check sub-ticket estimate sums
 |---|---|
 | `401` | Check env vars and token permissions |
 | `404` | Check issue key and `project_key` |
-| `Missing required fields` | Run `discover_fields.py --fields-for-type <type>`, supply via `--fields` |
+| `Missing required fields` | Script auto-suggests the fix. Or use `--copy-fields-from SIBLING-KEY` to inherit fields. Or run `discover_fields.py --fields-for-type <type>` manually |
 | `No transition found` | Some statuses need intermediate steps |
 | `ModuleNotFoundError` | Run `jira_setup_env.py` |
 | Sprint not setting | Run `discover_fields.py --all --apply` |

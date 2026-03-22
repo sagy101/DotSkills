@@ -25,6 +25,16 @@ from jira_config_loader import JiraConfig, resolve_credentials
 _DEBUG = os.environ.get("JIRA_DEBUG", "").lower() in ("1", "true", "yes")
 
 
+class JiraAPIError(Exception):
+    """Wraps a Jira HTTP error with the parsed detail string and status code."""
+
+    def __init__(self, status_code: int, detail: str, original: urllib.error.HTTPError) -> None:
+        super().__init__(detail)
+        self.status_code = status_code
+        self.detail = detail
+        self.original = original
+
+
 class JiraClient:
     """Thin wrapper around Jira REST API v2."""
 
@@ -85,7 +95,7 @@ class JiraClient:
             except (json.JSONDecodeError, AttributeError):
                 detail = error_body[:500] if _DEBUG else "(set JIRA_DEBUG=1 for details)"
             print(f"ERROR {e.code} {method} {path}: {detail}", file=sys.stderr)
-            raise
+            raise JiraAPIError(e.code, detail, e) from e
         except urllib.error.URLError as e:
             if isinstance(e.reason, socket.timeout | TimeoutError):
                 print(f"ERROR: Request timed out (60s) {method} {path}", file=sys.stderr)

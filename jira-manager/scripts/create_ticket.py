@@ -13,10 +13,12 @@ Usage:
     python create_ticket.py --config .jira.json --type story --summary "S" --status "In Progress"
     python create_ticket.py --config .jira.json --type story --summary "S" --set "priority=High"
     python create_ticket.py --config .jira.json --type story --summary "S" --description-file desc.md --rewrite-links
+    python create_ticket.py --config .jira.json --type epic --summary "S" --copy-fields-from PROJ-100
 """
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -32,9 +34,134 @@ from field_resolver import (
     resolve_sprint_id,
     validate_required_fields,
 )
-from jira_client import JiraClient
+from jira_client import JiraAPIError, JiraClient
 from jira_config_loader import JiraConfig, add_config_arg, load_config, load_manifest, save_manifest
 from workflow_ops import handle_status_transition, upload_attachments
+
+# Fields that are always set by the script and should never be copied
+_SKIP_COPY_FIELDS = {
+    "project",
+    "summary",
+    "issuetype",
+    "parent",
+    "created",
+    "updated",
+    "creator",
+    "reporter",
+    "status",
+    "statuscategorychangedate",
+    "workratio",
+    "votes",
+    "watches",
+    "comment",
+    "issuelinks",
+    "subtasks",
+    "aggregateprogress",
+    "progress",
+    "timetracking",
+    "attachment",
+    "worklog",
+    "resolution",
+    "resolutiondate",
+    "lastViewed",
+    "thumbnail",
+}
+
+
+def _copy_custom_fields(
+    fields: dict[str, Any],
+    source_key: str,
+    client: JiraClient,
+) -> None:
+    """Copy custom fields from an existing issue into the fields dict.
+
+    Only copies fields that start with 'customfield_' and are not already
+    set in the fields dict. Skips None values.
+    """
+    source = client.get_issue(source_key)
+    source_fields = source.get("fields", {})
+    copied = []
+    for fid, value in source_fields.items():
+        if fid in fields or fid in _SKIP_COPY_FIELDS:
+            continue
+        if not fid.startswith("customfield_") or value is None:
+            continue
+        fields[fid] = value
+        copied.append(fid)
+    if copied:
+        print(f"  Copied {len(copied)} custom fields from {source_key}: {', '.join(copied)}")
+
+
+def _extract_field_candidates(error_detail: str) -> list[str]:
+    """Extract candidate field names from a Jira 400 error message."""
+    candidates = [
+        m.group(1).strip()
+        for m in re.finditer(r"(?i)(?:fill out|provide|set)\s+(.+?)(?:\.|$|\")", error_detail)
+    ]
+    candidates.extend(
+        m.group(1).strip()
+        for m in re.finditer(r"[\"']([^\"']+)[\"']\s+(?:is required|cannot be empty)", error_detail)
+    )
+    try:
+        parsed = json.loads(error_detail)
+        if isinstance(parsed, dict):
+            candidates.extend(parsed.keys())
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return candidates
+
+
+def _print_field_fix_hint(fid: str, client: JiraClient, issue_type_id: str | None) -> None:
+    """Print allowed values and a --fields fix hint for a single field."""
+    if not issue_type_id:
+        print(f'    Fix: add --fields \'{{"{fid}": {{"value": "<value>"}}}}\'', file=sys.stderr)
+        return
+    try:
+        type_fields = client.get_create_meta_for_type(issue_type_id)
+    except Exception:
+        return
+    for tf in type_fields:
+        tf_key = tf.get("key", tf.get("fieldId", ""))
+        if tf_key != fid:
+            continue
+        allowed = tf.get("allowedValues", [])
+        if allowed:
+            print("    Allowed values:", file=sys.stderr)
+            for v in allowed[:10]:
+                val = v.get("value") or v.get("name") or v.get("key", "")
+                print(f"      - {val}", file=sys.stderr)
+            if len(allowed) > 10:
+                print(f"      ... and {len(allowed) - 10} more", file=sys.stderr)
+        example_val = '{"value": "<pick one>"}' if allowed else '"<value>"'
+        print(f"    Fix: add --fields '{{\"{fid}\": {example_val}}}'", file=sys.stderr)
+        break
+
+
+def _suggest_fix_for_field_error(
+    error_detail: str,
+    config: JiraConfig,
+    client: JiraClient,
+    issue_type_id: str | None,
+) -> None:
+    """When create fails with a 400, try to identify the missing field and suggest a fix."""
+    candidates = _extract_field_candidates(error_detail)
+    if not candidates:
+        return
+
+    print("\n--- Auto-diagnosis ---", file=sys.stderr)
+    all_fields = client.get_fields()
+
+    for candidate in candidates:
+        candidate_lower = candidate.lower()
+        matches = [f for f in all_fields if candidate_lower in f.get("name", "").lower()]
+        if not matches:
+            print(f"  Could not find a field matching '{candidate}'.", file=sys.stderr)
+            continue
+        for mf in matches:
+            print(f"  Possible match: {mf['name']} ({mf['id']})", file=sys.stderr)
+            _print_field_fix_hint(mf["id"], client, issue_type_id)
+
+    print("---", file=sys.stderr)
 
 
 def _add_epic_link(fields: dict[str, Any], args: argparse.Namespace, config: JiraConfig) -> None:
@@ -88,6 +215,22 @@ def build_fields(args: argparse.Namespace, config: JiraConfig) -> tuple[dict[str
     return fields, status_from_set
 
 
+def _handle_post_create_sprint(
+    args: argparse.Namespace, config: JiraConfig, client: JiraClient, key: str
+) -> None:
+    """Move the newly created issue to a sprint if --sprint was provided."""
+    effective_sprint = getattr(args, "sprint", None)
+    if not effective_sprint:
+        return
+    sprint_id, sprint_name = resolve_sprint_id(config, effective_sprint)
+    if sprint_id is not None:
+        try:
+            client.move_issues_to_sprint(sprint_id, [key])
+            print(f"  Moved {key} to sprint: {sprint_name} (id={sprint_id})")
+        except Exception:
+            print(f"  WARNING: Failed to move {key} to sprint {sprint_name}", file=sys.stderr)
+
+
 def _update_manifest(config: JiraConfig, args: argparse.Namespace, key: str) -> None:
     """Update the manifest file with the newly created ticket."""
     manifest = load_manifest(config)
@@ -116,6 +259,12 @@ def main() -> None:
     parser.add_argument("--parent", help="Parent issue key (for subtasks)")
     parser.add_argument("--epic", help="Epic key to link to")
     parser.add_argument(
+        "--copy-fields-from",
+        metavar="ISSUE_KEY",
+        help="Copy custom fields (e.g. QBR, team) from an existing issue. "
+        "Only copies fields not already set via other flags.",
+    )
+    parser.add_argument(
         "--manifest-id",
         help="ID to track this ticket in the manifest (e.g. '1' for story 1, '1.1' for subtask)",
     )
@@ -137,6 +286,12 @@ def main() -> None:
         print("\nRun discover_fields.py --apply to refresh required fields.", file=sys.stderr)
         sys.exit(1)
 
+    client = JiraClient(config)
+
+    # Copy custom fields from a source issue (before dry-run so it shows in preview)
+    if args.copy_fields_from:
+        _copy_custom_fields(fields, args.copy_fields_from, client)
+
     if args.dry_run:
         print("DRY RUN — would create issue with fields:")
         print(json.dumps(fields, indent=2))
@@ -146,10 +301,13 @@ def main() -> None:
             print(f"Attachments: {', '.join(args.attachment)}")
         return
 
-    client = JiraClient(config)
-
     try:
         result = client.create_issue(fields)
+    except JiraAPIError as e:
+        if e.status_code == 400:
+            issue_type_id = fields.get("issuetype", {}).get("id")
+            _suggest_fix_for_field_error(e.detail, config, client, issue_type_id)
+        sys.exit(1)
     except Exception:
         sys.exit(1)
 
@@ -161,16 +319,7 @@ def main() -> None:
     if effective_status:
         handle_status_transition(client, key, effective_status, config, warn_only=True)
 
-    # Post-create sprint move
-    effective_sprint = getattr(args, "sprint", None)
-    if effective_sprint:
-        sprint_id, sprint_name = resolve_sprint_id(config, effective_sprint)
-        if sprint_id is not None:
-            try:
-                client.move_issues_to_sprint(sprint_id, [key])
-                print(f"  Moved {key} to sprint: {sprint_name} (id={sprint_id})")
-            except Exception:
-                print(f"  WARNING: Failed to move {key} to sprint {sprint_name}", file=sys.stderr)
+    _handle_post_create_sprint(args, config, client, key)
 
     if args.manifest_id:
         _update_manifest(config, args, key)
