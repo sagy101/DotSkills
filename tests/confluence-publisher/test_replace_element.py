@@ -303,3 +303,100 @@ class TestUnclosedTag:
         with pytest.raises(SystemExit) as exc_info:
             find_element_after_heading(html, "Test", "table")
         assert exc_info.value.code == 1
+
+
+# ---------------------------------------------------------------------------
+# Tests: HTML-entity-aware heading matching (Issue #3 fix)
+# ---------------------------------------------------------------------------
+
+from replace_element import _find_heading_match  # noqa: E402
+
+HTML_WITH_ENTITIES = """
+<h1 local-id="abc">Testing &amp; Evaluation</h1>
+<p>Content here.</p>
+<h2>Sub &ndash; Section</h2>
+<p>More content.</p>
+<h1>Next Section</h1>
+"""
+
+
+class TestHtmlEntityHeadingMatch:
+    """Verify heading matching handles HTML entities transparently."""
+
+    def test_ampersand_entity(self):
+        """User passes '&' but HTML has '&amp;'."""
+        match = _find_heading_match(HTML_WITH_ENTITIES, "Testing & Evaluation")
+        assert match is not None
+        assert "Testing" in match.group(3)
+
+    def test_ndash_entity(self):
+        """User passes '–' but HTML has '&ndash;'."""
+        match = _find_heading_match(HTML_WITH_ENTITIES, "Sub – Section")
+        assert match is not None
+
+    def test_literal_entity_still_works(self):
+        """Passing the raw entity string also works."""
+        match = _find_heading_match(HTML_WITH_ENTITIES, "Testing &amp; Evaluation")
+        assert match is not None
+
+    def test_partial_match_with_entity(self):
+        """Partial heading match works with entities."""
+        match = _find_heading_match(HTML_WITH_ENTITIES, "Testing &")
+        assert match is not None
+
+    def test_no_match_still_exits(self):
+        """Non-matching heading still exits."""
+        with pytest.raises(SystemExit) as exc_info:
+            _find_heading_match(HTML_WITH_ENTITIES, "Nonexistent & Heading")
+        assert exc_info.value.code == 1
+
+
+# ---------------------------------------------------------------------------
+# Tests: _convert_md_to_confluence_html heading adjustment
+# ---------------------------------------------------------------------------
+
+from replace_element import _convert_md_to_confluence_html  # noqa: E402
+
+
+class TestMdHeadingAdjustment:
+    """Verify markdown heading levels are adjusted to match the target section."""
+
+    def test_h2_markdown_adjusted_to_h1(self, tmp_path: Path):
+        """## headings in markdown should become <h1> when target is h1."""
+        md_file = tmp_path / "test.md"
+        md_file.write_text("## Main Title\n\nContent\n\n### Sub Title\n\nMore content\n")
+
+        # Mock the confluence connection (we only test heading adjustment, not upload)
+        class FakeConfluence:
+            def attach_file(self, *args: object, **kwargs: object) -> None:
+                pass
+
+        class FakeConfig:
+            confluence_url = "https://test.atlassian.net/wiki"
+            space_key = "TEST"
+            docs_root = tmp_path
+
+        html = _convert_md_to_confluence_html(md_file, "123", 1, FakeConfig(), FakeConfluence())
+        assert "<h1" in html
+        assert "<h2" in html
+        # Original ## → h1, ### → h2
+        assert "Main Title" in html
+        assert "Sub Title" in html
+
+    def test_h1_markdown_stays_h1(self, tmp_path: Path):
+        """# headings already at h1 stay at h1 when target is h1."""
+        md_file = tmp_path / "test.md"
+        md_file.write_text("# Title\n\nContent\n")
+
+        class FakeConfluence:
+            def attach_file(self, *args: object, **kwargs: object) -> None:
+                pass
+
+        class FakeConfig:
+            confluence_url = "https://test.atlassian.net/wiki"
+            space_key = "TEST"
+            docs_root = tmp_path
+
+        html = _convert_md_to_confluence_html(md_file, "123", 1, FakeConfig(), FakeConfluence())
+        assert "<h1" in html
+        assert "Title" in html
