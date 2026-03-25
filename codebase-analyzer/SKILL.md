@@ -6,7 +6,8 @@ description: >
   TODO/FIXME tracking, and git churn hotspots. Use when the user asks to analyze a codebase,
   get code statistics, understand project structure or size, check test coverage ratios,
   find TODOs, see language breakdown, identify large files, or review git churn.
-  Outputs in terminal (Rich), JSON, or Markdown format. Configurable via YAML.
+  Outputs in terminal (Rich), JSON, Markdown, or interactive web dashboard (Streamlit) format.
+  Configurable via YAML.
 license: MIT
 metadata:
   author: sagy101
@@ -46,7 +47,11 @@ No external services, API tokens, or credentials are required. This skill is ent
 
 Configuration is **optional**. The analyzer works out of the box with sensible defaults. To customize, create a `.codebase-analysis.yaml` file in the repository root. See [references/CONFIG.md](references/CONFIG.md) for the full schema.
 
-If no config file exists, do NOT prompt the user to create one — just proceed with defaults. Only mention the config file if the user wants to customize patterns.
+If no config file exists, **ask the user if they would like to create one before running the analysis**. To help them decide:
+1. Quickly inspect the codebase structure (top-level directories, common file types, presence of test/script/doc directories)
+2. Suggest a tailored `.codebase-analysis.yaml` based on what you find — for example, if the repo has a `src/` directory with tests in `__tests__/`, or uses non-standard script directories, reflect that in the suggestion
+3. Present the suggested config to the user and let them accept, modify, or skip it
+4. If they skip, proceed with built-in defaults
 
 To provide a starting config template, copy the default:
 
@@ -56,21 +61,27 @@ cp <skill_dir>/assets/default-config.yaml <repo_root>/.codebase-analysis.yaml
 
 ## Pre-flight checks
 
-Before running ANY script, perform these checks proactively.
-
-### Check 1 — Python environment
-
-Verify Python 3.10+ is available:
+Before running ANY operation, run the preflight script once. It validates the entire environment in a single pass and reports a clear summary.
 
 ```bash
-python3 --version
+python3 <skill_dir>/scripts/analyzer_preflight.py
 ```
 
-Check if the virtual environment already exists and has dependencies installed:
+Optionally, pass `--path` to also validate the target repository:
 
 ```bash
-<skill_dir>/.codebase-analyzer-venv/bin/python -c "import yaml, rich; print('OK')"
+python3 <skill_dir>/scripts/analyzer_preflight.py --path <repo_root>
 ```
+
+The script checks:
+1. **Python 3.10+** is available
+2. **Virtual environment** exists at `<skill_dir>/.codebase-analyzer-venv/`
+3. **Core dependencies** (PyYAML, Rich) are importable
+4. **Web dependencies** (Streamlit, pandas) are importable
+5. **git** is available (optional — always passes, reports status)
+6. **Skill scripts** are all present
+7. **Target path** exists and is a directory (only when `--path` is provided)
+8. **Config file** presence in the target repo (optional — always passes, reports status)
 
 If the venv does not exist or dependencies are missing, run the setup script:
 
@@ -78,56 +89,67 @@ If the venv does not exist or dependencies are missing, run the setup script:
 python3 <skill_dir>/scripts/analyzer_setup_env.py
 ```
 
-This creates a virtual environment at `.codebase-analyzer-venv/` and installs all dependencies. If it fails, tell the user exactly what is missing and how to install it (e.g. `brew install python3` on macOS, `apt install python3` on Linux).
-
 After setup, all subsequent script commands must use the venv Python:
 
 ```bash
 <skill_dir>/.codebase-analyzer-venv/bin/python <skill_dir>/scripts/analyze.py --path . --output terminal
 ```
 
-### Check 2 — Git availability (optional)
-
-If the user wants churn metrics, verify git is available:
-
-```bash
-git --version
-```
-
-If git is not available, the analyzer still works — it walks the directory tree instead of using `git ls-files`, and churn metrics are silently skipped.
-
 ## Workflow
 
 ### Step 1 — Run pre-flight checks
 
-Verify the Python environment is ready. Set up the venv if needed.
+Run the preflight script and read the output. If any required check fails, resolve it before proceeding.
 
-### Step 2 — Determine scope
+```bash
+python3 <skill_dir>/scripts/analyzer_preflight.py --path <repo_root>
+```
 
-Infer from the user's request:
+### Step 2 — Ask about configuration
+
+Check if a `.codebase-analysis.yaml` already exists in the repo root.
+
+- **If it exists**, inform the user and proceed with it.
+- **If it does not exist**, ask the user whether they want to create a custom config before running:
+  1. Inspect the codebase: list top-level directories, identify test directories, script directories, doc files, and any non-standard project conventions
+  2. Generate a suggested `.codebase-analysis.yaml` tailored to the codebase and present it to the user
+  3. If the user accepts (with or without edits), write the config file to `<repo_root>/.codebase-analysis.yaml`
+  4. If the user declines, proceed with built-in defaults
+
+### Step 3 — Ask about output format
+
+Ask the user which output format they prefer:
+- **terminal** — Rich-formatted tables printed to the console (best for interactive use)
+- **json** — structured JSON to stdout (best for CI pipelines or programmatic consumption)
+- **markdown** — Markdown report to stdout (best for docs, PRs, or saving to a file)
+- **web** — interactive Streamlit dashboard in the browser with charts, tables, and visual metrics
+
+Also ask:
 - **Which path** to analyze (default: current working directory)
-- **Which output format** they want: `terminal` (default), `json`, or `markdown`
-- **Which sections** to include (default: all). Available sections: `summary`, `categories`, `languages`, `file-distribution`, `large-files`, `todos`, `churn`
+- **Which sections** to include (default: all, not applicable for `web`). Available sections: `summary`, `categories`, `languages`, `file-distribution`, `large-files`, `todos`, `churn`
 
-### Step 3 — Run analysis
+### Step 4 — Run analysis
 
 ```bash
 <skill_dir>/.codebase-analyzer-venv/bin/python <skill_dir>/scripts/analyze.py \
   --path <repo_root> \
-  --output <terminal|json|markdown> \
+  --output <terminal|json|markdown|web> \
   --sections <comma-separated-list-or-all>
 ```
 
 Optional flags:
 - `--config <path>` — path to a custom config file (default: `<repo_root>/.codebase-analysis.yaml`)
 
-### Step 4 — Present results
+**Note:** When `--output web` is used, the script launches a Streamlit server and opens the dashboard in the browser. The `--sections` flag is ignored for web output (all sections are always shown). The command is **non-blocking** — the server runs until the user stops it (Ctrl+C).
+
+### Step 5 — Present results
 
 - For **terminal** output, the script renders directly to the console
 - For **json** output, capture stdout and present the structured data to the user, or pipe it to a file
 - For **markdown** output, capture stdout and present it or write to a file for documentation
+- For **web** output, the dashboard is already open in the browser — no further action needed
 
-### Step 5 — Offer follow-up actions
+### Step 6 — Offer follow-up actions
 
 After analysis, suggest relevant next steps:
 - If test:code ratio is low: suggest areas that need more tests
@@ -173,6 +195,23 @@ After analysis, suggest relevant next steps:
   --path <repo_root> --config custom-config.yaml --output terminal
 ```
 
+### Web dashboard (interactive browser UI)
+
+```bash
+<skill_dir>/.codebase-analyzer-venv/bin/python <skill_dir>/scripts/analyze.py \
+  --path <repo_root> --output web
+```
+
+This launches a Streamlit server and opens an interactive dashboard in the browser with:
+- Overview metrics (files, lines, code, comments, test:code ratio, docs:code ratio)
+- Code vs Tests comparison with charts
+- Language breakdown with tabs (All Files / Code Only)
+- File size distribution histogram
+- Large files and TODO/FIXME tracking
+- Category breakdown (code, tests, docs, scripts, plans, test data)
+
+The dashboard caches analysis results for 60 seconds. Stop the server with Ctrl+C.
+
 ## Available sections
 
 | Section | What it shows |
@@ -206,6 +245,7 @@ The scripts print descriptive error messages to stderr with fix instructions. Ex
 | `python3: command not found` | Python not installed | macOS: `brew install python3` / Linux: `apt install python3` |
 | `ERROR: PyYAML is not installed` | Dependencies not installed | Run `python3 <skill_dir>/scripts/analyzer_setup_env.py` then use the venv Python |
 | `ERROR: Rich library is not installed` | Dependencies not installed | Run `python3 <skill_dir>/scripts/analyzer_setup_env.py`, or use `--output json` / `--output markdown` which need no extra deps |
+| `ERROR: Streamlit is not installed` | Dependencies not installed | Run `python3 <skill_dir>/scripts/analyzer_setup_env.py` to install all dependencies including Streamlit |
 | `ERROR: Path does not exist` | Invalid `--path` argument | Verify the path exists |
 | `ERROR: ... is a file, not a directory` | `--path` points to a file | Provide a directory path |
 | `ERROR: Config file not found` | `--config` points to missing file | Fix the path or omit `--config` to use defaults |
@@ -215,6 +255,18 @@ The scripts print descriptive error messages to stderr with fix instructions. Ex
 | `WARNING: No files were analyzed` | All files skipped or directory empty | Check skip patterns in config; verify the directory has source files |
 | No churn data | Not a git repo or git not installed | Expected behavior — churn requires git history |
 
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `python3: command not found` | macOS: `brew install python3` / Linux: `apt install python3` |
+| Venv not found | Run `python3 <skill_dir>/scripts/analyzer_setup_env.py` to create it |
+| Missing dependencies after setup | Delete the venv directory and re-run the setup script |
+| `--output web` shows blank page | Ensure Streamlit is installed: check preflight output for web dependencies |
+| No churn data in results | Expected if not a git repo or git is not installed |
+| All files skipped / 0 files analyzed | Check `skip_dirs`, `skip_extensions`, `skip_files` in config; verify target directory has source files |
+| Config changes not reflected | The web dashboard caches results for 60 seconds; wait or restart the server |
+
 ## Future capabilities
 
 | Capability | Description |
@@ -222,4 +274,4 @@ The scripts print descriptive error messages to stderr with fix instructions. Ex
 | **Snapshot comparison** | Diff two analysis runs to track codebase evolution over time |
 | **CI integration** | Exit with non-zero code if metrics exceed configurable thresholds |
 | **Custom language mappings** | Allow users to define additional file extension → language mappings in config |
-| **Web dashboard** | Optional Streamlit-based visual dashboard for interactive exploration |
+| ~~**Web dashboard**~~ | **Implemented** — use `--output web` to launch the Streamlit dashboard |

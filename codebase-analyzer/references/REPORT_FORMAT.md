@@ -1,6 +1,6 @@
 # Report Format Reference
 
-The analyzer supports three output formats, selectable via `--output`.
+The analyzer supports four output formats, selectable via `--output`.
 
 ## Output formats
 
@@ -35,6 +35,21 @@ Example (summary section):
 ### Markdown (`--output markdown`)
 
 Markdown tables suitable for embedding in pull requests, documentation pages, or wikis.
+
+### Web Dashboard (`--output web`)
+
+Interactive Streamlit dashboard that opens in the browser. Displays all analysis sections as visual widgets with charts and tables. The dashboard includes:
+
+| Widget | Description |
+|---|---|
+| Overview metrics | Files, lines, pure code, comments, comment %, test:code ratio, docs:code ratio — each as a metric card |
+| Code vs Tests | Side-by-side comparison table, bar chart, and key ratios |
+| Language breakdown | Tabbed view (All Files / Code Only) with tables and bar charts |
+| File size distribution | Bucketed histogram with percentage table |
+| Attention needed | Large files (>500 lines) and TODO/FIXME tracking in two columns |
+| Category breakdown | Table and bar chart for code, tests, docs, scripts, plans, test data |
+
+The `--sections` flag is **not applicable** for web output — all sections are always shown. Results are cached for 60 seconds.
 
 ## Sections
 

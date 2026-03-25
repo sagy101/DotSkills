@@ -841,7 +841,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output",
-        choices=["terminal", "json", "markdown"],
+        choices=["terminal", "json", "markdown", "web"],
         default="terminal",
         help="Output format (default: terminal)",
     )
@@ -891,6 +891,10 @@ def main() -> None:
     config_path = Path(args.config).resolve() if args.config else None
     sections = resolve_sections(args.sections)
 
+    if args.output == "web":
+        _launch_web_dashboard(repo_root, config_path)
+        return
+
     try:
         result = run_analysis(repo_root, config_path, sections=sections)
     except FileNotFoundError as exc:
@@ -920,6 +924,45 @@ def main() -> None:
         from report_markdown import render_markdown
 
         render_markdown(result, sections)
+
+
+def _launch_web_dashboard(repo_root: Path, config_path: Path | None) -> None:
+    """Launch the Streamlit web dashboard."""
+    script_dir = Path(__file__).resolve().parent
+    web_script = script_dir / "report_web.py"
+
+    if not web_script.exists():
+        print(
+            f"ERROR: Web dashboard script not found at {web_script}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    try:
+        import streamlit  # noqa: F401
+    except ImportError:
+        print(
+            "ERROR: Streamlit is not installed (required for web output).\n"
+            "Fix: Run 'python3 <skill_dir>/scripts/analyzer_setup_env.py' to install dependencies,\n"
+            "or use --output terminal, --output json, or --output markdown.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "streamlit",
+        "run",
+        str(web_script),
+        "--",
+        "--path",
+        str(repo_root),
+    ]
+    if config_path:
+        cmd.extend(["--config", str(config_path)])
+
+    subprocess.run(cmd)
 
 
 if __name__ == "__main__":

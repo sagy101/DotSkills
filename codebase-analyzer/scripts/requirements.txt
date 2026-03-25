@@ -1,2 +1,4 @@
 rich
 pyyaml
+streamlit
+pandas

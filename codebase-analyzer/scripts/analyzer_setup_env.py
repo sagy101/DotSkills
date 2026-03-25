@@ -18,7 +18,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 REQUIREMENTS = SCRIPT_DIR / "requirements.txt"
 DEFAULT_VENV_DIR = SCRIPT_DIR.parent / ".codebase-analyzer-venv"
-VERIFY_IMPORTS = "import yaml, rich; print('OK')"
+VERIFY_IMPORTS = "import yaml, rich, streamlit, pandas; print('OK')"
 
 
 def parse_args() -> argparse.Namespace:
