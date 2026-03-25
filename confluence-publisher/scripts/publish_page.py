@@ -291,26 +291,71 @@ def upload_attachments(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Publish one markdown file to Confluence")
     add_config_arg(parser)
-    parser.add_argument("--file", required=True, help="Markdown file (relative to docs_dir)")
+    parser.add_argument("--file", help="Markdown file (relative to docs_dir)")
     parser.add_argument("--title", help="Confluence page title (default: auto-detect from file)")
-    parser.add_argument("--mode", required=True, choices=["create", "update"])
-    parser.add_argument("--page-id", help="Page ID (for update mode)")
+    parser.add_argument("--mode", choices=["create", "update"])
+    parser.add_argument("--page-id", help="Page ID (for update mode or --attachments-only)")
     parser.add_argument("--parent-id", help="Parent page ID (for create mode)")
     parser.add_argument(
         "--attachments",
         help="Comma-separated attachment paths (relative to docs_dir)",
     )
     parser.add_argument(
+        "--attachments-only",
+        action="store_true",
+        help="Upload attachments only — do not modify page content. Requires --page-id and --attachments.",
+    )
+    parser.add_argument(
         "--emoji",
         help="Page emoji icon: unicode codepoint (e.g. 1f399) or emoji character",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    if args.attachments_only:
+        if not args.page_id:
+            parser.error("--attachments-only requires --page-id")
+        if not args.attachments:
+            parser.error("--attachments-only requires --attachments")
+    else:
+        if not args.file:
+            parser.error("--file is required (unless --attachments-only is set)")
+        if not args.mode:
+            parser.error("--mode is required (unless --attachments-only is set)")
+
+    return args
 
 
 def main():
     args = parse_args()
 
     config = load_config(args.config)
+    confluence = connect(config)
+
+    # Test connection
+    try:
+        confluence.get_space(config.space_key)
+    except Exception as e:
+        print(f"ERROR: Cannot connect to Confluence space {config.space_key}: {e}")
+        sys.exit(1)
+
+    # --attachments-only: upload files without touching page content
+    if args.attachments_only:
+        print(f"Uploading attachments to page {args.page_id}")
+        print(f"  Target: {config.confluence_url} / {config.space_key}")
+        att_paths = [Path(p.strip()) for p in args.attachments.split(",")]
+        # Resolve relative paths against docs_root
+        resolved = []
+        for p in att_paths:
+            if not p.is_absolute():
+                p = config.docs_root / p
+            resolved.append(p)
+        upload_attachments(confluence, args.page_id, resolved)
+        page_url = f"{config.confluence_url}/pages/{args.page_id}"
+        print("\nSUCCESS")
+        print(f"PAGE_ID={args.page_id}")
+        print(f"PAGE_URL={page_url}")
+        return
+
     manifest = load_manifest(config)
 
     file_path = config.docs_root / args.file
@@ -336,15 +381,6 @@ def main():
     print(f"  Mode:   {args.mode}")
     print(f"  Target: {config.confluence_url} / {config.space_key}")
     print(f"  Manifest: {len(manifest)} pages known")
-
-    confluence = connect(config)
-
-    # Test connection
-    try:
-        confluence.get_space(config.space_key)
-    except Exception as e:
-        print(f"ERROR: Cannot connect to Confluence space {config.space_key}: {e}")
-        sys.exit(1)
 
     result_id, page_url = publish_page(
         confluence=confluence,

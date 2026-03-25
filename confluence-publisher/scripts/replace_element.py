@@ -17,16 +17,23 @@ Two modes:
 Supported --element types: table, ul, ol, div, section (heading + content until next same-or-higher-level heading).
 """
 
+from __future__ import annotations
+
 import argparse
 import re
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from atlassian import Confluence
+    from confluence_config import ConfluenceConfig
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from confluence_api import fetch_page, update_page_body  # noqa: E402
-from confluence_config import add_config_arg, load_config  # noqa: E402
+from confluence_config import add_config_arg, connect, load_config  # noqa: E402
 from html_diff import (  # noqa: E402
     format_diff_report,
     normalize_html,
@@ -68,6 +75,11 @@ def parse_args() -> argparse.Namespace:
     apply_grp = parser.add_argument_group("apply mode")
     apply_grp.add_argument("--old", help="Path to the original extracted HTML file")
     apply_grp.add_argument("--new", help="Path to the modified HTML file")
+    apply_grp.add_argument(
+        "--new-md",
+        help="Path to a markdown file to convert and use as the replacement "
+        "(auto-converts to Confluence HTML, renders mermaid diagrams, adjusts heading levels)",
+    )
 
     # Shared
     parser.add_argument(
@@ -86,12 +98,18 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
 
     # Determine mode
-    if args.old and args.new:
+    if args.old and (args.new or args.new_md):
         args.mode = "apply"
+    elif args.heading and args.new_md and args.element == "section":
+        # --heading + --new-md: extract old section, convert md, replace in one step
+        args.mode = "apply-md"
     elif args.heading:
         args.mode = "extract"
     else:
-        parser.error("Specify --heading for extract mode, or --old + --new for apply mode")
+        parser.error(
+            "Specify --heading for extract mode, --old + --new for apply mode, "
+            "or --heading + --new-md + --element section for markdown replacement"
+        )
 
     # Validate --nth
     if hasattr(args, "nth") and args.nth is not None and args.nth < 1:
@@ -100,18 +118,27 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def _find_heading_match(html: str, heading_text: str) -> re.Match:
+def _find_heading_match(html_content: str, heading_text: str) -> re.Match:
     """Find the first heading whose text content contains *heading_text* (case-insensitive).
+
+    Handles HTML entities transparently: ``"Testing & Evaluation"`` matches
+    ``<h1>Testing &amp; Evaluation</h1>`` because the inner text is decoded
+    before comparison.
 
     Returns the regex Match object, or exits with an error if no heading matches.
     """
+    import html as html_mod
+
     heading_pattern = re.compile(
         r"<(h[1-6])([^>]*)>(.*?)</\1>",
         re.IGNORECASE | re.DOTALL,
     )
-    for m in heading_pattern.finditer(html):
-        inner_text = re.sub(r"<[^>]+>", "", m.group(3))
-        if heading_text.lower() in inner_text.lower():
+    needle = heading_text.lower()
+    for m in heading_pattern.finditer(html_content):
+        raw_inner = re.sub(r"<[^>]+>", "", m.group(3))
+        # Decode HTML entities (e.g. &amp; → &, &ndash; → –) before matching
+        decoded_inner = html_mod.unescape(raw_inner).lower()
+        if needle in decoded_inner or needle in raw_inner.lower():
             return m
     print(f"ERROR: Heading containing '{heading_text}' not found in page HTML")
     sys.exit(1)
@@ -320,10 +347,156 @@ def apply_mode(args: argparse.Namespace) -> None:
     print(f"  {config.confluence_url}/pages/{page_id}")
 
 
+def _convert_md_to_confluence_html(
+    md_path: Path,
+    page_id: str,
+    target_heading_level: int,
+    config: ConfluenceConfig,
+    confluence: Confluence,
+) -> str:
+    """Convert a markdown file to Confluence HTML with mermaid rendering and heading adjustment.
+
+    Args:
+        md_path: Path to the markdown file.
+        page_id: Confluence page ID (for uploading mermaid PNGs).
+        target_heading_level: The heading level (1-6) of the top-level heading in the old section.
+        config: ConfluenceConfig instance.
+        confluence: Confluence API connection.
+
+    Returns:
+        Confluence storage HTML ready for insertion.
+    """
+    import tempfile
+
+    from transforms import (
+        MERMAID_BLOCK_RE,
+        inject_image_macros,
+        markdown_to_confluence_storage,
+        render_mermaid_blocks,
+    )
+
+    md_content = md_path.read_text(encoding="utf-8")
+
+    # Detect the heading level used in the markdown (first heading)
+    md_heading_match = re.match(r"^(#+)\s", md_content, re.MULTILINE)
+    md_level = len(md_heading_match.group(1)) if md_heading_match else target_heading_level
+
+    # Shift headings in markdown to match target level
+    level_shift = target_heading_level - md_level
+    if level_shift != 0:
+        lines = md_content.split("\n")
+        adjusted = []
+        for line in lines:
+            hm = re.match(r"^(#+)(\s)", line)
+            if hm:
+                current = len(hm.group(1))
+                new_level = max(1, min(6, current + level_shift))
+                line = "#" * new_level + line[current:]
+            adjusted.append(line)
+        md_content = "\n".join(adjusted)
+
+    # Render mermaid diagrams
+    png_files: list[Path] = []
+    if MERMAID_BLOCK_RE.search(md_content):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            md_content, png_files = render_mermaid_blocks(md_content, Path(tmp_dir))
+            html = markdown_to_confluence_storage(md_content)
+            html = inject_image_macros(html)
+            # Upload mermaid PNGs as attachments
+            for png in png_files:
+                if png.exists():
+                    try:
+                        confluence.attach_file(str(png), name=png.name, page_id=page_id)
+                        print(f"  Uploaded mermaid diagram: {png.name}")
+                    except Exception as e:
+                        print(f"  WARNING: Failed to upload {png.name}: {e}")
+    else:
+        html = markdown_to_confluence_storage(md_content)
+
+    return html
+
+
+def apply_md_mode(args: argparse.Namespace) -> None:
+    """Extract a section by heading and replace it with converted markdown content."""
+    config = load_config(args.config)
+    page_id = extract_page_id(args.page)
+    confluence = connect(config)
+
+    md_path = Path(args.new_md)
+    if not md_path.is_file():
+        print(f"ERROR: Markdown file not found: {md_path}")
+        sys.exit(1)
+
+    print(f"Fetching page {page_id}...")
+    snapshot = fetch_page(config, page_id)
+    print(f"  Title:   {snapshot.title}")
+    print(f"  Version: {snapshot.version}")
+    print(f"  Size:    {len(snapshot.html)} chars")
+
+    # Find the old section
+    heading_match = _find_heading_match(snapshot.html, args.heading)
+    start, end = _extract_section_range(snapshot.html, heading_match)
+    old_html = snapshot.html[start:end]
+
+    # Detect heading level in old section
+    tag_match = re.match(r"<(h[1-6])", old_html, re.IGNORECASE)
+    target_level = int(tag_match.group(1)[1]) if tag_match else 1
+
+    print(f"  Old section: {len(old_html)} chars (heading level h{target_level})")
+    print(f"  Converting {md_path.name} to Confluence HTML...")
+
+    new_html = _convert_md_to_confluence_html(md_path, page_id, target_level, config, confluence)
+    print(f"  New section: {len(new_html)} chars")
+
+    modified_html = snapshot.html[:start] + new_html + snapshot.html[end:]
+
+    # Diff report
+    old_normalized = normalize_html(snapshot.html)
+    new_normalized = normalize_html(modified_html)
+    changes = semantic_diff(old_normalized, new_normalized)
+    integrity = section_integrity_check(snapshot.html, modified_html)
+    report = format_diff_report(changes, integrity)
+
+    if args.output:
+        Path(args.output).write_text(report, encoding="utf-8")
+        print(f"Diff report saved to {args.output}")
+    else:
+        # Truncate to avoid flooding terminal
+        if len(report) > 3000:
+            print(report[:3000])
+            print(
+                f"\n... (truncated, {len(report)} chars total — use --output to save full report)"
+            )
+        else:
+            print(report)
+
+    print(
+        f"HTML size: {len(snapshot.html)} -> {len(modified_html)} "
+        f"({len(modified_html) - len(snapshot.html):+d} chars)"
+    )
+
+    if args.dry_run:
+        print("\n[DRY RUN] No changes pushed to Confluence.")
+        sys.exit(0)
+
+    version_msg = args.message or f"Replace section '{args.heading}' from {md_path.name}"
+    new_version = update_page_body(
+        config,
+        page_id,
+        snapshot.title,
+        modified_html,
+        message=version_msg,
+    )
+    print(f"\nPage updated to version {new_version}")
+    print(f"  {config.confluence_url}/pages/{page_id}")
+
+
 def main():
     args = parse_args()
     if args.mode == "extract":
         extract_mode(args)
+    elif args.mode == "apply-md":
+        apply_md_mode(args)
     else:
         apply_mode(args)
 

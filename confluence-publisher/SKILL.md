@@ -309,6 +309,17 @@ The publish script supports uploading file attachments alongside a page:
     --attachments "docs/images/diagram.png,docs/files/schema.pdf"
 ```
 
+To upload attachments **without modifying page content**, use `--attachments-only`:
+
+```bash
+# Upload files to a page without touching its content
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/publish_page.py \
+    --attachments-only --page-id 123456 \
+    --attachments "images/diagram.png,images/chart.png"
+```
+
+**Never use `--file /dev/null` to upload attachments** — it will wipe the page content. Always use `--attachments-only` instead.
+
 Attachment paths are relative to `docs_dir`. Multiple files are comma-separated. If an attachment file is not found, a warning is printed but the page publish still succeeds.
 
 Mermaid diagram PNGs are uploaded automatically — no need to list them in `--attachments`.
@@ -445,6 +456,49 @@ For complex edits like adding a table column or restructuring a section, use `re
 ```
 
 Supported `--element` types: `table`, `ul`, `ol`, `div`, `section` (heading + content until next same-level heading). Use `--nth 2` for the 2nd occurrence after the heading. Preserve existing `ac:local-id` attributes on unchanged elements; new elements don't need them.
+
+**Heading matching** handles HTML entities automatically: `--heading "Testing & Evaluation"` matches `Testing &amp; Evaluation` in the page HTML. No need to escape `&` or other special characters.
+
+#### Replace a section from markdown (--new-md)
+
+To replace an entire section directly from a markdown file (with automatic mermaid rendering, heading level adjustment, and attachment upload):
+
+```bash
+# Replace the "Testing & Evaluation" section from a local markdown file
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/replace_element.py \
+    --page 1079706804 --heading "Testing & Evaluation" --element section \
+    --new-md /tmp/new-testing-section.md --dry-run
+
+# Apply after review
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/replace_element.py \
+    --page 1079706804 --heading "Testing & Evaluation" --element section \
+    --new-md /tmp/new-testing-section.md --message "Updated Testing section"
+```
+
+The `--new-md` flag automatically:
+- Converts markdown to Confluence storage HTML
+- Renders mermaid diagrams to PNG and uploads them as page attachments
+- Adjusts heading levels to match the existing section (e.g., if the old section starts with `<h1>`, the markdown `##` headings are shifted to `<h1>`)
+
+#### Render mermaid code blocks to images
+
+If a page has mermaid code blocks that render as raw text (because they were inserted without PNG rendering), convert them to images:
+
+```bash
+# Preview which blocks would be rendered
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/render_mermaid.py \
+    --page 1079706804 --dry-run
+
+# Render all mermaid blocks to PNG and replace
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/render_mermaid.py \
+    --page 1079706804
+
+# Custom image width
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/render_mermaid.py \
+    --page 1079706804 --width 1000
+```
+
+The script finds all `<ac:structured-macro ac:name="code">` blocks with language "mermaid", renders each to PNG via `mmdc`, uploads them as page attachments, and replaces the code blocks with `<ac:image>` macros.
 
 ### Diff page versions
 
