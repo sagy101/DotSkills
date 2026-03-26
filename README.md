@@ -3,7 +3,42 @@
 **Production-grade Agent Skills that close the developer loop — from Jira ticket to merged PR.**
 
 A curated collection of 14 self-contained skills following the [Agent Skills Open Standard](https://agentskills.io/specification).
-Works with **Claude Code**, **Windsurf**, **Cursor**, **Codex**, **Gemini CLI**, and **Antigravity**.
+Works with **Claude Code**, **Windsurf**, **Cursor**, **Codex**, **Gemini CLI**, and [40+ other IDEs](https://skills.sh/).
+
+## Quick Start
+
+**With Node.js** (recommended — supports [42 IDEs](https://skills.sh/) automatically):
+
+```bash
+# Install all skills
+npx skills add sagy101/DotSkills
+
+# Install specific skills
+npx skills add sagy101/DotSkills --skill jira-manager --skill eks-pod-ops
+
+# Install globally (user-level, available in all projects)
+npx skills add sagy101/DotSkills -g
+```
+
+**Without Node.js** (auto-detects installed IDEs, copies skills):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sagy101/DotSkills/main/install.sh | bash
+
+# Install specific skills only
+curl -fsSL https://raw.githubusercontent.com/sagy101/DotSkills/main/install.sh | bash -s -- --skill jira-manager
+
+# Install globally (user-level)
+curl -fsSL https://raw.githubusercontent.com/sagy101/DotSkills/main/install.sh | bash -s -- --global
+```
+
+**Manual** (copy to any IDE's skills directory):
+
+```bash
+git clone --depth 1 https://github.com/sagy101/DotSkills.git /tmp/dotskills
+cp -r /tmp/dotskills/<skill-name> ~/.claude/skills/   # or your IDE's skills path
+rm -rf /tmp/dotskills
+```
 
 ## The Developer Loop
 
@@ -115,10 +150,6 @@ flowchart LR
 | [skill-creator](./skill-creator/) | Scaffold new skills from scripts or from scratch, spec compliance verification |
 | [codebase-analyzer](./codebase-analyzer/) | Line counts, language breakdown, test ratios, git churn hotspots |
 
-> **Note:** [`skill-sync`](./skill-sync/) is a standalone sync script, not a skill.
-> It distributes skills to 7 IDEs but is not itself synced to IDE skill directories.
-> See [Quick Start](#quick-start) for usage.
-
 ## Security Principles
 
 - **Credentials via env var names only** — config stores `"token_env": "JIRA_TOKEN"`, never the token itself
@@ -134,58 +165,29 @@ flowchart LR
 Read-only skill commands (fetching data, listing resources, checking status) can be
 auto-approved to reduce prompt fatigue during agent sessions.
 
-- **Claude Code**: `skill-sync` automatically installs a `PreToolUse` hook when syncing
-  to a project. No manual setup needed.
-- **Windsurf**: `skill-sync` automatically merges command prefixes into your
-  Windsurf `settings.json` when syncing to Windsurf targets.
-- **JetBrains** (IntelliJ, PyCharm, WebStorm, etc.): Skills sync to
-  `~/.jetbrains/skills/` (user) and `.idea/skills/` (project). Auto-approval
-  depends on the AI plugin used within the IDE.
-- **Other IDEs**: Manually add patterns from the
+- **Claude Code**: Add a `PreToolUse` hook referencing the patterns in
+  [`.claude/hooks/read-commands.json`](.claude/hooks/read-commands.json).
+  See the [Claude Code hooks documentation](https://docs.anthropic.com/en/docs/claude-code/hooks)
+  for setup instructions.
+- **Windsurf**: Add command prefixes from the
+  [read command whitelist](docs/read-command-whitelist.md) to your
+  `settings.json` allowed commands.
+- **Other IDEs**: Add patterns from the
   [read command whitelist](docs/read-command-whitelist.md) to your IDE's
   allowed-commands configuration.
 
-See [`.claude/hooks/read-commands.json`](.claude/hooks/read-commands.json) for the
-full list of auto-approved command patterns and their skill mappings.
-
-## Quick Start
-
-```bash
-# Clone
-git clone https://github.com/sagy101/DotSkills.git
-cd DotSkills
-
-# Detect installed IDEs
-python3 skill-sync/scripts/sync.py --source . --level both --detect
-
-# Sync all skills (preview first)
-python3 skill-sync/scripts/sync.py --source . --level user --dry-run
-
-# Sync for real
-python3 skill-sync/scripts/sync.py --source . --level user --targets all
-
-# Or sync to a specific project
-python3 skill-sync/scripts/sync.py --source . --level project --project /path/to/project
-```
-
-Or copy manually:
-
-```bash
-cp -r <skill-name> /path/to/your-project/<ide-skills-dir>/
-```
-
-Skills are automatically discovered by supported AI tools when placed in the correct directory.
-
 ## Compatibility
 
-Skills follow the [Agent Skills Open Standard](https://agentskills.io/specification) and work with:
+Skills follow the [Agent Skills Open Standard](https://agentskills.io/specification).
+`npx skills add` supports [42 IDEs and AI tools](https://skills.sh/). Popular targets include:
 
-- **Windsurf** (`.windsurf/skills/`)
 - **Claude Code** (`.claude/skills/`)
+- **Windsurf** (`.windsurf/skills/`)
 - **Cursor** (`.cursor/skills/`)
 - **OpenAI Codex** (`.codex/skills/`)
 - **Gemini CLI** (`.gemini/skills/`)
-- **Antigravity** (`.agent/skills/`)
+- **Junie / JetBrains** (`.junie/skills/`)
+- **GitHub Copilot**, **Roo Code**, **Cline**, and many more
 
 ## Structure
 
@@ -203,7 +205,7 @@ Design documents for each skill live in [`docs/`](./docs/).
 
 ## Tests
 
-330+ tests across the repo, organized by skill in `tests/`:
+820+ tests across the repo, organized by skill in `tests/`:
 
 ```
 tests/
