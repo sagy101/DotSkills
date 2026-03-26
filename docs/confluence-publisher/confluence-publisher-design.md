@@ -63,7 +63,7 @@ Every destructive or externally-visible action requires explicit user approval:
 
 | Action | Approval Required | Mechanism |
 |---|---|---|
-| **Publish (create/update)** | Yes | Publish plan table shown first |
+| **Publish (create/update)** | Yes | Publish plan table shown first; `--dry-run` available |
 | **Delete pages** | Yes | Page list (title + ID) shown first |
 | **Export (overwrite local)** | Yes | File list shown first |
 | **Surgical edit (push)** | Yes | `--dry-run` diff shown first |

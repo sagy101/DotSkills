@@ -89,29 +89,30 @@ Full single-file example:
 
 ## Pre-flight checks
 
-Before running ANY script, perform these checks proactively. Do not wait for a script to fail.
-
-### Check 1 — Python environment
-
-Verify Python 3.10+ is available:
+Run the preflight script before any other operation:
 
 ```bash
-python3 --version
+python3 <skill_dir>/scripts/confluence_preflight.py
 ```
 
-Check if the shared virtual environment already exists and has dependencies installed:
+It validates the entire environment in a single pass:
+1. **Python 3.10+** is available
+2. **Virtual environment** exists and dependencies are installed (`atlassian-python-api`, `markdown`)
+3. **Config file** (`.confluence.json`) is found and has required fields (`confluence_url`, `space_key`, `root_page_id`)
+4. **Credentials** — env vars are set (never prints values)
+5. **Connectivity** — API is reachable, space and root page exist
 
-```bash
-<skill_dir>/.venv/bin/python -c "import atlassian, markdown; print('OK')"
-```
-
-If the venv does not exist or dependencies are missing, run the setup script:
+If the venv or dependencies are missing, the preflight tells you to run the setup script:
 
 ```bash
 python3 <skill_dir>/scripts/confluence_setup_env.py
 ```
 
-This creates a shared virtual environment at `<skill_dir>/.venv/` (one venv for all projects). If it fails, tell the user exactly what is missing and how to install it (e.g. `brew install python3` on macOS, `apt install python3` on Linux).
+To skip the connectivity check (e.g. on repeated calls):
+
+```bash
+python3 <skill_dir>/scripts/confluence_preflight.py --skip-connectivity
+```
 
 After setup, all subsequent script commands must use the venv Python:
 
@@ -119,36 +120,7 @@ After setup, all subsequent script commands must use the venv Python:
 <skill_dir>/.venv/bin/python <skill_dir>/scripts/publish_page.py ...
 ```
 
-### Check 2 — Configuration file
-
-Scripts auto-discover config by searching CWD upward, then `~/.confluence.json`. No `--config` flag needed.
-
 If no config is found anywhere, do NOT proceed — instead help the user create one. For users with one Atlassian instance, suggest a global `~/.confluence.json` with shared settings (URL, credentials) and a per-project `.confluence.json` with just `space_key` and `root_page_id`.
-
-Write the file(s) and confirm with the user before proceeding.
-
-### Check 3 — Credentials
-
-Confirm the credential environment variables are set. Run:
-
-```bash
-python3 -c "import os; print('email:', 'SET' if os.environ.get('CONFLUENCE_EMAIL') else 'MISSING'); print('token:', 'SET' if os.environ.get('CONFLUENCE_TOKEN') else 'MISSING')"
-```
-
-Substitute the actual env var names from `.confluence.json`. Never print values. If missing, advise the user to set them globally in their shell profile (recommended):
-- **zsh** (macOS default): `echo 'export CONFLUENCE_TOKEN="<value>"' >> ~/.zshrc && source ~/.zshrc`
-- **bash**: `echo 'export CONFLUENCE_TOKEN="<value>"' >> ~/.bashrc && source ~/.bashrc`
-- **fish**: `set -Ux CONFLUENCE_TOKEN '<value>'`
-
-### Check 4 — Connectivity (optional)
-
-If this is the first publish or the user reports auth issues, test the connection:
-
-```bash
-<skill_dir>/.venv/bin/python <skill_dir>/scripts/validate_manifest.py
-```
-
-A `401` means bad credentials. A `404` on the root page means wrong `root_page_id`.
 
 ## Workflow
 
@@ -156,7 +128,7 @@ Always follow this sequence. Never skip the pre-flight checks or the publish pla
 
 ### Step 1 — Validate configuration
 
-Run pre-flight checks above. Confirm all required fields are present. Confirm the credential environment variables are set (do NOT print their values).
+Run the pre-flight checks above. If any check fails, resolve it before proceeding.
 
 ### Step 2 — Determine scope
 
@@ -212,6 +184,20 @@ The script automatically:
 - Converts `attachment:` links to Confluence attachment macros
 - Sets the page emoji icon (if `--emoji` is provided)
 - Updates the manifest with the resulting page ID
+
+Use `--dry-run` to preview what would be published without making any changes:
+
+```bash
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/publish_page.py \
+  --file <relative_path> \
+  --title "<title>" \
+  --mode <create|update> \
+  [--page-id <id>] \
+  [--parent-id <id>] \
+  --dry-run
+```
+
+Dry run still renders markdown transformations (mermaid counts, link rewrites, body size) but does not create/update pages, upload attachments, set emoji, or update the manifest.
 
 ### Step 5 — Verify (optional but recommended)
 
@@ -372,7 +358,7 @@ Remove Confluence pages and their manifest entries. Supports deletion by manifes
 
 ## Important rules
 
-1. **Never publish or delete without showing the plan first and getting explicit user approval.** Deletion is destructive and irreversible (except via Confluence trash recovery).
+1. **Never publish or delete without showing the plan first and getting explicit user approval.** Deletion is destructive and irreversible (except via Confluence trash recovery). When in doubt, use `--dry-run` on `publish_page.py` to preview changes before committing.
 2. **Never print or log credentials.** Only confirm that the environment variables are set.
 3. **Publish parents before children** so that parent IDs are available for child creation.
 4. The manifest file (`.confluence-manifest.json`) is auto-maintained by scripts. Do not edit it manually.

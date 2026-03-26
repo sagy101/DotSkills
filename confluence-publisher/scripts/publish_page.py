@@ -309,6 +309,11 @@ def parse_args() -> argparse.Namespace:
         "--emoji",
         help="Page emoji icon: unicode codepoint (e.g. 1f399) or emoji character",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be published without creating or updating pages",
+    )
     args = parser.parse_args()
 
     if args.attachments_only:
@@ -325,37 +330,40 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def main():
-    args = parse_args()
-
-    config = load_config(args.config)
-    confluence = connect(config)
-
-    # Test connection
-    try:
-        confluence.get_space(config.space_key)
-    except Exception as e:
-        print(f"ERROR: Cannot connect to Confluence space {config.space_key}: {e}")
-        sys.exit(1)
-
-    # --attachments-only: upload files without touching page content
-    if args.attachments_only:
-        print(f"Uploading attachments to page {args.page_id}")
+def _handle_attachments_only(
+    args: argparse.Namespace, config: ConfluenceConfig, confluence: Confluence
+) -> None:
+    """Handle --attachments-only mode (with dry-run support)."""
+    if args.dry_run:
+        print(f"[DRY RUN] Would upload attachments to page {args.page_id}")
         print(f"  Target: {config.confluence_url} / {config.space_key}")
         att_paths = [Path(p.strip()) for p in args.attachments.split(",")]
-        # Resolve relative paths against docs_root
-        resolved = []
         for p in att_paths:
-            if not p.is_absolute():
-                p = config.docs_root / p
-            resolved.append(p)
-        upload_attachments(confluence, args.page_id, resolved)
-        page_url = f"{config.confluence_url}/pages/{args.page_id}"
-        print("\nSUCCESS")
-        print(f"PAGE_ID={args.page_id}")
-        print(f"PAGE_URL={page_url}")
+            full = p if p.is_absolute() else config.docs_root / p
+            exists = "exists" if full.exists() else "MISSING"
+            print(f"  Would upload: {p} ({exists})")
+        print("\n[DRY RUN] No changes made.")
         return
 
+    print(f"Uploading attachments to page {args.page_id}")
+    print(f"  Target: {config.confluence_url} / {config.space_key}")
+    att_paths = [Path(p.strip()) for p in args.attachments.split(",")]
+    resolved = []
+    for p in att_paths:
+        if not p.is_absolute():
+            p = config.docs_root / p
+        resolved.append(p)
+    upload_attachments(confluence, args.page_id, resolved)
+    page_url = f"{config.confluence_url}/pages/{args.page_id}"
+    print("\nSUCCESS")
+    print(f"PAGE_ID={args.page_id}")
+    print(f"PAGE_URL={page_url}")
+
+
+def _handle_publish(
+    args: argparse.Namespace, config: ConfluenceConfig, confluence: Confluence
+) -> None:
+    """Handle page publish mode (with dry-run support)."""
     manifest = load_manifest(config)
 
     file_path = config.docs_root / args.file
@@ -363,7 +371,6 @@ def main():
         print(f"ERROR: File not found: {file_path}")
         sys.exit(1)
 
-    # Resolve title
     md_content = file_path.read_text(encoding="utf-8")
     title = args.title or resolve_title(args.file, md_content, config)
 
@@ -371,16 +378,24 @@ def main():
         print("ERROR: --page-id is required for update mode")
         sys.exit(1)
 
-    # Resolve parent_id for creates
     parent_id = args.parent_id
     if args.mode == "create" and not parent_id:
         parent_id = config.root_page_id
 
-    print(f"Publishing: {args.file}")
+    dry_prefix = "[DRY RUN] " if args.dry_run else ""
+    print(f"{dry_prefix}Publishing: {args.file}")
     print(f"  Title:  {title}")
     print(f"  Mode:   {args.mode}")
     print(f"  Target: {config.confluence_url} / {config.space_key}")
+    if args.mode == "create":
+        print(f"  Parent: {parent_id}")
+    else:
+        print(f"  Page:   {args.page_id}")
     print(f"  Manifest: {len(manifest)} pages known")
+
+    if args.dry_run:
+        _print_dry_run_summary(args, config, md_content, manifest)
+        return
 
     result_id, page_url = publish_page(
         confluence=confluence,
@@ -401,7 +416,6 @@ def main():
     if args.emoji:
         set_page_emoji(config, result_id, args.emoji)
 
-    # Update manifest
     manifest[args.file] = {
         "id": str(result_id),
         "title": title,
@@ -413,6 +427,53 @@ def main():
     print("\nSUCCESS")
     print(f"PAGE_ID={result_id}")
     print(f"PAGE_URL={page_url}")
+
+
+def _print_dry_run_summary(
+    args: argparse.Namespace,
+    config: ConfluenceConfig,
+    md_content: str,
+    manifest: dict[str, Any],
+) -> None:
+    """Render body and print dry-run summary without publishing."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        body, png_files = _render_and_prepare_body(
+            md_content,
+            Path(tmp_dir),
+            args.file,
+            manifest,
+            config.space_key,
+        )
+    print(f"  Body size: {len(body):,} chars")
+    if png_files:
+        print(f"  Mermaid PNGs: {len(png_files)}")
+    if args.attachments:
+        att_paths = [config.docs_root / p.strip() for p in args.attachments.split(",")]
+        for p in att_paths:
+            exists = "exists" if p.exists() else "MISSING"
+            print(f"  Would attach: {p.name} ({exists})")
+    if args.emoji:
+        print(f"  Would set emoji: {args.emoji}")
+    print("\n[DRY RUN] No changes made.")
+
+
+def main():
+    args = parse_args()
+
+    config = load_config(args.config)
+    confluence = connect(config)
+
+    # Test connection
+    try:
+        confluence.get_space(config.space_key)
+    except Exception as e:
+        print(f"ERROR: Cannot connect to Confluence space {config.space_key}: {e}")
+        sys.exit(1)
+
+    if args.attachments_only:
+        _handle_attachments_only(args, config, confluence)
+    else:
+        _handle_publish(args, config, confluence)
 
 
 if __name__ == "__main__":
