@@ -10,25 +10,20 @@ Works with **Claude Code**, **Windsurf**, **Cursor**, **Codex**, **Gemini CLI**,
 **With Node.js** (recommended — supports [42 IDEs](https://skills.sh/) automatically):
 
 ```bash
+# Install specific skills globally (recommended)
+npx skills add sagy101/DotSkills --skill jira-manager --skill eks-pod-ops -g
+
 # Install all skills
-npx skills add sagy101/DotSkills
-
-# Install specific skills
-npx skills add sagy101/DotSkills --skill jira-manager --skill eks-pod-ops
-
-# Install globally (user-level, available in all projects)
 npx skills add sagy101/DotSkills -g
 ```
 
 **Without Node.js** (auto-detects installed IDEs, copies skills):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sagy101/DotSkills/main/install.sh | bash
+# Install specific skills globally
+curl -fsSL https://raw.githubusercontent.com/sagy101/DotSkills/main/install.sh | bash -s -- --skill jira-manager --global
 
-# Install specific skills only
-curl -fsSL https://raw.githubusercontent.com/sagy101/DotSkills/main/install.sh | bash -s -- --skill jira-manager
-
-# Install globally (user-level)
+# Install all skills
 curl -fsSL https://raw.githubusercontent.com/sagy101/DotSkills/main/install.sh | bash -s -- --global
 ```
 
@@ -39,6 +34,8 @@ git clone --depth 1 https://github.com/sagy101/DotSkills.git /tmp/dotskills
 cp -r /tmp/dotskills/<skill-name> ~/.claude/skills/   # or your IDE's skills path
 rm -rf /tmp/dotskills
 ```
+
+> **Note:** The `codex-subagent` skill requires [OpenAI Codex CLI](https://github.com/openai/codex) to be installed separately.
 
 ## The Developer Loop
 
