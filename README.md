@@ -11,11 +11,13 @@ Works with **Claude Code**, **Windsurf**, **Cursor**, **Codex**, **Gemini CLI**,
 
 ```bash
 # Install specific skills globally (recommended)
-npx skills add sagy101/DotSkills --skill jira-manager --skill eks-pod-ops -g
+npx skills add sagy101/DotSkills --skill jira-manager --skill eks-pod-ops -g -y
 
 # Install all skills
-npx skills add sagy101/DotSkills -g
+npx skills add sagy101/DotSkills -g -y
 ```
+
+> The `-y` flag skips the interactive agent selection prompt and installs to all detected agents. Without it, you'll be asked to select which agents to install to.
 
 **Without Node.js** (auto-detects installed IDEs, copies skills):
 
