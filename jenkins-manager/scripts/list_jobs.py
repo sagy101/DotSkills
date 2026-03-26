@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from jenkins_client import JenkinsClient, color_to_status
-from jenkins_config import load_config
+from jenkins_config import load_config, resolve_instance
 
 
 def _collect_jobs(client: JenkinsClient, folder: str | None) -> list[dict]:
@@ -54,6 +54,7 @@ def _filter_by_name(jobs: list[dict], name_pattern: str) -> list[dict]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="List Jenkins jobs")
     parser.add_argument("--config", help="Path to .jenkins.json (omit to auto-discover)")
+    parser.add_argument("--instance", help="Named Jenkins instance (omit to use default)")
     parser.add_argument("--folder", help="Folder name (omit to search all folders)")
     parser.add_argument("--name", help="Filter jobs by name pattern (substring or regex)")
     parser.add_argument(
@@ -62,7 +63,8 @@ def main() -> None:
     args = parser.parse_args()
 
     config = load_config(args.config)
-    client = JenkinsClient(config)
+    instance = resolve_instance(config, args.instance)
+    client = JenkinsClient(instance)
     all_jobs = _collect_jobs(client, args.folder)
 
     if args.name:

@@ -9,19 +9,21 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from jenkins_client import JenkinsClient, color_to_status
-from jenkins_config import load_config
+from jenkins_config import load_config, resolve_instance
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="List top-level Jenkins folders and jobs")
     parser.add_argument("--config", help="Path to .jenkins.json (omit to auto-discover)")
+    parser.add_argument("--instance", help="Named Jenkins instance (omit to use default)")
     parser.add_argument(
         "--format", choices=["table", "json"], default="table", help="Output format"
     )
     args = parser.parse_args()
 
     config = load_config(args.config)
-    client = JenkinsClient(config)
+    instance = resolve_instance(config, args.instance)
+    client = JenkinsClient(instance)
     items = client.list_top_level_jobs()
 
     if args.format == "json":

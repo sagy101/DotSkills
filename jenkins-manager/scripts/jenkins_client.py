@@ -15,7 +15,7 @@ import urllib.parse
 import urllib.request
 from typing import Any, cast
 
-from jenkins_config import JenkinsConfig, resolve_credentials, url_encode_branch
+from jenkins_config import InstanceConfig, resolve_credentials, url_encode_branch
 
 _DEBUG = os.environ.get("JENKINS_DEBUG", "").lower() in ("1", "true", "yes")
 
@@ -61,10 +61,10 @@ def color_to_status(color: str | None) -> str:
 class JenkinsClient:
     """Thin wrapper around Jenkins REST API."""
 
-    def __init__(self, config: JenkinsConfig) -> None:
-        self.config = config
-        self.base_url = config.base_url
-        username, token = resolve_credentials(config)
+    def __init__(self, instance: InstanceConfig) -> None:
+        self.instance = instance
+        self.base_url = instance.base_url
+        username, token = resolve_credentials(instance)
         creds = base64.b64encode(f"{username}:{token}".encode()).decode()
         self._headers = {
             "Authorization": f"Basic {creds}",
@@ -74,7 +74,7 @@ class JenkinsClient:
 
     def _build_ssl_context(self) -> ssl.SSLContext | None:
         """Build SSL context based on config."""
-        if not self.config.ssl_verify:
+        if not self.instance.ssl_verify:
             ctx = ssl.create_default_context()
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE

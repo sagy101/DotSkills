@@ -10,7 +10,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from jenkins_client import JenkinsClient
-from jenkins_config import add_common_args, load_config, resolve_branch, resolve_job_path
+from jenkins_config import (
+    add_common_args,
+    load_config,
+    resolve_branch,
+    resolve_instance,
+    resolve_job_path,
+)
 
 
 def _format_timestamp(ts: int) -> str:
@@ -75,15 +81,16 @@ def main() -> None:
     args = parser.parse_args()
 
     config = load_config(args.config)
-    client = JenkinsClient(config)
+    instance = resolve_instance(config, args.instance)
+    client = JenkinsClient(instance)
 
-    folder, job = resolve_job_path(config, args.folder, args.job)
+    folder, job = resolve_job_path(instance, args.folder, args.job)
     if not job:
         print("ERROR: Could not determine job name.")
         print("Provide --job <name> or set job_cache in .jenkins.json")
         sys.exit(1)
 
-    branch = resolve_branch(config, args.branch)
+    branch = resolve_branch(instance, args.branch)
 
     # If no folder, try to discover it
     if not folder and job:

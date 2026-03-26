@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Pre-flight checks for jenkins-manager skill.
 
-Verifies Python version, config file, credentials, connectivity, and job discovery.
+Verifies Python version, config file, credentials, and connectivity for all instances.
 Run this before any other script. Exits 0 if all checks pass, 1 if any fail.
 """
 
@@ -39,7 +39,7 @@ def _check_python() -> bool:
 
 
 def _check_config() -> tuple[bool, dict, Path | None]:
-    """Check config file exists and is valid JSON with required fields.
+    """Check config file exists and is valid JSON with instances.
     Returns (ok, merged_raw, project_root)."""
     project_cfg = _find_project_config()
     global_cfg = _find_global_config()
@@ -51,11 +51,16 @@ def _check_config() -> tuple[bool, dict, Path | None]:
         print(
             json.dumps(
                 {
-                    "base_url": "https://your-jenkins-instance.example.com",
-                    "credentials": {
-                        "username_env": "JENKINS_USER",
-                        "token_env": "JENKINS_TOKEN",
+                    "instances": {
+                        "ci": {
+                            "base_url": "https://your-jenkins-ci.example.com",
+                            "credentials": {
+                                "username_env": "JENKINS_USER",
+                                "token_env": "JENKINS_TOKEN",
+                            },
+                        }
                     },
+                    "default_instance": "ci",
                 },
                 indent=2,
             )
@@ -68,7 +73,6 @@ def _check_config() -> tuple[bool, dict, Path | None]:
     if project_cfg:
         sources.append(f"project: {project_cfg}")
 
-    # Parse and merge
     try:
         global_raw = json.loads(global_cfg.read_text(encoding="utf-8")) if global_cfg else {}
         project_raw = json.loads(project_cfg.read_text(encoding="utf-8")) if project_cfg else {}
@@ -79,28 +83,29 @@ def _check_config() -> tuple[bool, dict, Path | None]:
     raw = _deep_merge(global_raw, project_raw)
     project_root = project_cfg.parent if project_cfg else Path.cwd()
 
-    # Check required field
-    if "base_url" not in raw or not raw["base_url"].strip():
-        print(f"{_FAIL} Config — missing required field 'base_url'")
-        if not project_cfg:
-            print(
-                f"  Hint: create a project-level {CONFIG_FILENAME} or add base_url to ~/.jenkins.json"
-            )
+    if "instances" not in raw or not isinstance(raw["instances"], dict):
+        print(f"{_FAIL} Config — missing required field 'instances'")
         return False, raw, project_root
 
-    print(f"{_PASS} Config — base_url: {raw['base_url']} ({', '.join(sources)})")
+    instance_names = list(raw["instances"].keys())
+    default = raw.get("default_instance", instance_names[0] if len(instance_names) == 1 else None)
+    default_str = f", default: {default}" if default else ""
+    print(
+        f"{_PASS} Config — {len(instance_names)} instance(s): {', '.join(instance_names)}{default_str} ({', '.join(sources)})"
+    )
     return True, raw, project_root
 
 
-def _check_credentials(raw: dict, project_root: Path | None) -> bool:
-    """Check credential env vars are set. Never prints values."""
-    creds = raw.get("credentials", {})
+def _check_instance_credentials(
+    name: str, inst_raw: dict, top_env_file: str | None, project_root: Path | None
+) -> bool:
+    """Check credentials for a single instance."""
+    creds = inst_raw.get("credentials", {})
     username_env = creds.get("username_env", "JENKINS_USER")
     token_env = creds.get("token_env", "JENKINS_TOKEN")
 
-    # Load .env file if configured
     env_vars: dict[str, str] = {}
-    env_file = raw.get("env_file")
+    env_file = inst_raw.get("env_file") or creds.get("env_file") or top_env_file
     if env_file:
         raw_path = Path(env_file)
         if raw_path.is_absolute():
@@ -112,63 +117,69 @@ def _check_credentials(raw: dict, project_root: Path | None) -> bool:
                 not str(env_path).startswith(str(root_resolved) + os.sep)
                 and env_path != root_resolved
             ):
-                env_path = None  # skip — relative path escapes project root
+                env_path = None
         else:
             env_path = None
         if env_path and env_path.exists():
             env_vars = load_env_file(env_path)
-        elif env_path and not env_path.exists():
-            print(f"{_WARN} env_file not found: {env_path}")
 
     username = env_vars.get(username_env) or os.environ.get(username_env)
     token = env_vars.get(token_env) or os.environ.get(token_env)
 
     ok = True
     if username:
-        print(f"{_PASS} Credentials — {username_env}: SET")
+        print(f"  {_PASS} {username_env}: SET")
     else:
-        print(f"{_FAIL} Credentials — {username_env}: MISSING")
-        print(_credential_hint(username_env))
+        print(f"  {_FAIL} {username_env}: MISSING")
+        print(f"    {_credential_hint(username_env)}")
         ok = False
 
     if token:
-        print(f"{_PASS} Credentials — {token_env}: SET")
+        print(f"  {_PASS} {token_env}: SET")
     else:
-        print(f"{_FAIL} Credentials — {token_env}: MISSING")
-        print(_credential_hint(token_env))
+        print(f"  {_FAIL} {token_env}: MISSING")
+        print(f"    {_credential_hint(token_env)}")
         ok = False
 
     return ok
 
 
-def _check_connectivity(raw: dict, env_vars_ok: bool) -> bool:
-    """Optional connectivity check — only if credentials are available."""
-    if not env_vars_ok:
-        print(f"{_WARN} Connectivity — skipped (credentials missing)")
-        return True
-
+def _check_instance_connectivity(
+    name: str, inst_raw: dict, top_env_file: str | None, project_root: Path | None
+) -> bool:
+    """Check connectivity for a single instance."""
     try:
-        from jenkins_client import JenkinsClient
-        from jenkins_config import load_config
+        from jenkins_config import InstanceConfig
 
-        config = load_config()
-        client = JenkinsClient(config)
+        creds = inst_raw.get("credentials", {})
+        env_file = inst_raw.get("env_file") or creds.get("env_file") or top_env_file
+        instance = InstanceConfig(
+            name=name,
+            base_url=inst_raw["base_url"].rstrip("/"),
+            username_env=creds.get("username_env", "JENKINS_USER"),
+            token_env=creds.get("token_env", "JENKINS_TOKEN"),
+            env_file=env_file,
+            project_root=project_root or Path.cwd(),
+        )
+
+        from jenkins_client import JenkinsClient
+
+        client = JenkinsClient(instance)
         if client.test_connection():
-            print(f"{_PASS} Connectivity — API reachable, credentials valid")
+            print(f"  {_PASS} Connectivity — API reachable")
             return True
-        print(f"{_FAIL} Connectivity — API returned error (check credentials and base_url)")
+        print(f"  {_FAIL} Connectivity — API returned error")
         return False
     except SystemExit:
-        print(f"{_FAIL} Connectivity — config/credential resolution failed")
+        print(f"  {_FAIL} Connectivity — credential resolution failed")
         return False
     except Exception as e:
-        print(f"{_FAIL} Connectivity — {e}")
+        print(f"  {_FAIL} Connectivity — {e}")
         return False
 
 
 def _check_repo_detection() -> tuple[bool, str | None]:
-    """Check if repo name can be auto-detected from git remote.
-    Returns (ok, repo_name)."""
+    """Check if repo name can be auto-detected from git remote."""
     try:
         result = subprocess.run(
             ["git", "remote", "get-url", "origin"],
@@ -177,7 +188,7 @@ def _check_repo_detection() -> tuple[bool, str | None]:
         )
         if result.returncode != 0:
             print(f"{_WARN} Repo detection — no git remote 'origin' found (use --job flag)")
-            return True, None  # warn, not fail
+            return True, None
 
         url = result.stdout.strip()
         repo_name = _parse_repo_name(url)
@@ -185,50 +196,11 @@ def _check_repo_detection() -> tuple[bool, str | None]:
             print(f"{_PASS} Repo detection — {repo_name} (from origin)")
             return True, repo_name
         print(f"{_WARN} Repo detection — could not parse repo name from: {url}")
-        print("  Use --job <name> when running scripts")
-        return True, None  # warn, not fail
+        return True, None
 
     except FileNotFoundError:
         print(f"{_WARN} Repo detection — git not found (use --job flag)")
-        return True, None  # warn, not fail
-
-
-def _check_job_discovery(raw: dict, repo_name: str | None, creds_ok: bool) -> bool:
-    """Search Jenkins API for a job matching the repo name."""
-    if not repo_name:
-        print(f"{_WARN} Job discovery — skipped (no repo name detected)")
-        return True
-    if not creds_ok:
-        print(f"{_WARN} Job discovery — skipped (credentials missing)")
-        return True
-
-    # Check job_cache first
-    job_cache = raw.get("job_cache", {})
-    if repo_name in job_cache:
-        print(f"{_PASS} Job discovery — {repo_name} -> {job_cache[repo_name]} (from job_cache)")
-        return True
-
-    # Search API
-    try:
-        from jenkins_client import JenkinsClient
-        from jenkins_config import load_config
-
-        config = load_config()
-        client = JenkinsClient(config)
-        result = client.find_job(repo_name)
-        if result:
-            folder, job = result
-            path = f"{folder}/{job}" if folder else job
-            print(f"{_PASS} Job discovery — found {repo_name} at {path}")
-            print(f"  Tip: add to job_cache in {CONFIG_FILENAME} for faster lookups:")
-            print(f'    "job_cache": {{ "{repo_name}": "{path}" }}')
-            return True
-        print(f"{_WARN} Job discovery — no job named '{repo_name}' found in Jenkins")
-        print("  Use --folder and --job flags explicitly, or add to job_cache")
-        return True  # warn, not fail
-    except Exception as e:
-        print(f"{_WARN} Job discovery — search failed: {e}")
-        return True  # warn, not fail
+        return True, None
 
 
 def main() -> None:
@@ -238,7 +210,7 @@ def main() -> None:
     parser.add_argument(
         "--skip-connectivity",
         action="store_true",
-        help="Skip API connectivity and discovery checks",
+        help="Skip API connectivity checks",
     )
     args = parser.parse_args()
 
@@ -255,25 +227,30 @@ def main() -> None:
     config_ok, raw, project_root = _check_config()
     results.append(config_ok)
 
-    # 3. Credentials
-    if config_ok:
-        creds_ok = _check_credentials(raw, project_root)
+    if not config_ok:
+        print()
+        print("=" * 40)
+        print("Config check failed. Fix the issues above.")
+        sys.exit(1)
+
+    # 3. Per-instance checks
+    top_env_file = raw.get("env_file")
+    for name, inst_raw in raw["instances"].items():
+        base_url = inst_raw.get("base_url", "?")
+        desc = inst_raw.get("description", "")
+        desc_str = f" — {desc}" if desc else ""
+        print(f"\nInstance: {name} ({base_url}){desc_str}")
+
+        creds_ok = _check_instance_credentials(name, inst_raw, top_env_file, project_root)
         results.append(creds_ok)
-    else:
-        creds_ok = False
-        results.append(False)
 
-    # 4. Connectivity (optional)
-    if not args.skip_connectivity and config_ok:
-        results.append(_check_connectivity(raw, creds_ok))
+        if not args.skip_connectivity and creds_ok:
+            results.append(_check_instance_connectivity(name, inst_raw, top_env_file, project_root))
 
-    # 5. Repo detection
+    # 4. Repo detection
+    print()
     repo_ok, repo_name = _check_repo_detection()
     results.append(repo_ok)
-
-    # 6. Job discovery (optional)
-    if not args.skip_connectivity and config_ok:
-        results.append(_check_job_discovery(raw, repo_name, creds_ok))
 
     # Summary
     passed = sum(results)

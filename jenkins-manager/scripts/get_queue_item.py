@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from jenkins_client import JenkinsClient
-from jenkins_config import load_config
+from jenkins_config import load_config, resolve_instance
 
 
 def _format_timestamp(ts: int) -> str:
@@ -22,6 +22,7 @@ def _format_timestamp(ts: int) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Check status of a queued Jenkins build")
     parser.add_argument("--config", help="Path to .jenkins.json (omit to auto-discover)")
+    parser.add_argument("--instance", help="Named Jenkins instance (omit to use default)")
     parser.add_argument("--queue-id", type=int, required=True, help="Queue item ID")
     parser.add_argument(
         "--format", choices=["table", "json"], default="table", help="Output format"
@@ -29,7 +30,8 @@ def main() -> None:
     args = parser.parse_args()
 
     config = load_config(args.config)
-    client = JenkinsClient(config)
+    instance = resolve_instance(config, args.instance)
+    client = JenkinsClient(instance)
 
     item = client.get_queue_item(args.queue_id)
     if not item:

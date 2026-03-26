@@ -1,5 +1,6 @@
 """Tests for jenkins-manager config loading, repo detection, and branch encoding."""
 
+import json
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -9,10 +10,13 @@ sys.path.insert(
 )
 
 from jenkins_config import (
+    InstanceConfig,
     JenkinsConfig,
     _deep_merge,
     _parse_repo_name,
+    load_config,
     resolve_branch,
+    resolve_instance,
     resolve_job_path,
     url_encode_branch,
 )
@@ -105,48 +109,172 @@ class TestDeepMerge:
         assert result == {"a": 1}
 
 
+# ─── Instance Resolution ────────────────────────────────────────────────────
+
+
+def _make_instance(
+    name: str = "ci",
+    base_url: str = "https://jenkins.example.com",
+    description: str = "",
+    job_cache: dict[str, str] | None = None,
+    default_branch: str | None = None,
+    project_root: Path | None = None,
+) -> InstanceConfig:
+    return InstanceConfig(
+        name=name,
+        base_url=base_url,
+        description=description,
+        job_cache=job_cache or {},
+        default_branch=default_branch,
+        project_root=project_root or Path("/tmp"),
+    )
+
+
+def _make_config(instances: dict[str, InstanceConfig], default: str | None = None) -> JenkinsConfig:
+    return JenkinsConfig(instances=instances, default_instance=default)
+
+
+class TestResolveInstance:
+    def test_cli_flag_selects_instance(self):
+        ci = _make_instance("ci")
+        cd = _make_instance("cd")
+        config = _make_config({"ci": ci, "cd": cd}, default="ci")
+        assert resolve_instance(config, "cd") is cd
+
+    def test_default_instance_used(self):
+        ci = _make_instance("ci")
+        cd = _make_instance("cd")
+        config = _make_config({"ci": ci, "cd": cd}, default="ci")
+        assert resolve_instance(config, None) is ci
+
+    def test_single_instance_auto_selected(self):
+        ci = _make_instance("ci")
+        config = _make_config({"ci": ci})
+        assert resolve_instance(config, None) is ci
+
+    def test_env_var_selects_instance(self):
+        ci = _make_instance("ci")
+        cd = _make_instance("cd")
+        config = _make_config({"ci": ci, "cd": cd})
+        with patch.dict("os.environ", {"JENKINS_INSTANCE": "cd"}):
+            assert resolve_instance(config, None) is cd
+
+    def test_missing_instance_exits(self):
+        ci = _make_instance("ci")
+        config = _make_config({"ci": ci})
+        try:
+            resolve_instance(config, "nonexistent")
+            raise AssertionError("Should have exited")
+        except SystemExit as e:
+            assert e.code == 2
+
+    def test_no_default_multiple_exits(self):
+        ci = _make_instance("ci")
+        cd = _make_instance("cd")
+        config = _make_config({"ci": ci, "cd": cd})
+        try:
+            resolve_instance(config, None)
+            raise AssertionError("Should have exited")
+        except SystemExit as e:
+            assert e.code == 2
+
+
+# ─── Config Loading ─────────────────────────────────────────────────────────
+
+
+class TestLoadConfig:
+    def test_load_instances_config(self, tmp_path: Path) -> None:
+        config_data = {
+            "instances": {
+                "ci": {
+                    "base_url": "https://ci.example.com",
+                    "description": "CI server",
+                    "credentials": {
+                        "username_env": "CI_USER",
+                        "token_env": "CI_TOKEN",
+                    },
+                },
+                "cd": {
+                    "base_url": "https://cd.example.com",
+                    "credentials": {
+                        "token_env": "CD_TOKEN",
+                    },
+                },
+            },
+            "default_instance": "ci",
+            "env_file": "/tmp/.env",
+        }
+        config_file = tmp_path / ".jenkins.json"
+        config_file.write_text(json.dumps(config_data))
+
+        config = load_config(str(config_file))
+        assert len(config.instances) == 2
+        assert config.default_instance == "ci"
+        assert config.instances["ci"].base_url == "https://ci.example.com"
+        assert config.instances["ci"].description == "CI server"
+        assert config.instances["ci"].username_env == "CI_USER"
+        assert config.instances["ci"].token_env == "CI_TOKEN"
+        assert config.instances["cd"].base_url == "https://cd.example.com"
+        assert config.instances["cd"].token_env == "CD_TOKEN"
+        assert config.instances["cd"].env_file == "/tmp/.env"  # inherited from top-level
+
+    def test_missing_instances_exits(self, tmp_path: Path) -> None:
+        config_file = tmp_path / ".jenkins.json"
+        config_file.write_text(json.dumps({"base_url": "https://old.example.com"}))
+        try:
+            load_config(str(config_file))
+            raise AssertionError("Should have exited")
+        except SystemExit as e:
+            assert e.code == 2
+
+    def test_missing_base_url_in_instance_exits(self, tmp_path: Path) -> None:
+        config_file = tmp_path / ".jenkins.json"
+        config_file.write_text(json.dumps({"instances": {"ci": {"description": "no url"}}}))
+        try:
+            load_config(str(config_file))
+            raise AssertionError("Should have exited")
+        except SystemExit as e:
+            assert e.code == 2
+
+
 # ─── Job Path Resolution ────────────────────────────────────────────────────
 
 
 class TestResolveJobPath:
-    def _config(self, job_cache: dict[str, str] | None = None) -> JenkinsConfig:
-        return JenkinsConfig(
-            base_url="https://jenkins.example.com",
-            job_cache=job_cache or {},
-            project_root=Path("/tmp"),
-        )
+    def _instance(self, job_cache: dict[str, str] | None = None) -> InstanceConfig:
+        return _make_instance("ci", job_cache=job_cache or {})
 
     def test_cli_flags_override(self):
-        config = self._config({"my-repo": "Cached/my-repo"})
-        folder, job = resolve_job_path(config, "CLI-Folder", "cli-job")
+        instance = self._instance({"my-repo": "Cached/my-repo"})
+        folder, job = resolve_job_path(instance, "CLI-Folder", "cli-job")
         assert folder == "CLI-Folder"
         assert job == "cli-job"
 
     def test_job_cache_hit(self):
-        config = self._config({"my-repo": "API/my-repo"})
+        instance = self._instance({"my-repo": "API/my-repo"})
         with patch("jenkins_config.detect_repo_name", return_value="my-repo"):
-            folder, job = resolve_job_path(config, None, None)
+            folder, job = resolve_job_path(instance, None, None)
         assert folder == "API"
         assert job == "my-repo"
 
     def test_job_cache_miss_returns_repo_name(self):
-        config = self._config({})
+        instance = self._instance({})
         with patch("jenkins_config.detect_repo_name", return_value="unknown-repo"):
-            folder, job = resolve_job_path(config, None, None)
+            folder, job = resolve_job_path(instance, None, None)
         assert folder is None
         assert job == "unknown-repo"
 
     def test_cli_folder_with_cache_job(self):
-        config = self._config({"my-repo": "Cached/my-repo"})
+        instance = self._instance({"my-repo": "Cached/my-repo"})
         with patch("jenkins_config.detect_repo_name", return_value="my-repo"):
-            folder, job = resolve_job_path(config, "Override", None)
+            folder, job = resolve_job_path(instance, "Override", None)
         assert folder == "Override"
         assert job == "my-repo"
 
     def test_no_repo_detected(self):
-        config = self._config({})
+        instance = self._instance({})
         with patch("jenkins_config.detect_repo_name", return_value=None):
-            folder, job = resolve_job_path(config, None, None)
+            folder, job = resolve_job_path(instance, None, None)
         assert folder is None
         assert job is None
 
@@ -155,28 +283,24 @@ class TestResolveJobPath:
 
 
 class TestResolveBranch:
-    def _config(self, default_branch: str | None = None) -> JenkinsConfig:
-        return JenkinsConfig(
-            base_url="https://jenkins.example.com",
-            default_branch=default_branch,
-            project_root=Path("/tmp"),
-        )
+    def _instance(self, default_branch: str | None = None) -> InstanceConfig:
+        return _make_instance("ci", default_branch=default_branch)
 
     def test_cli_flag_wins(self):
-        config = self._config("main")
-        assert resolve_branch(config, "feature/x") == "feature/x"
+        instance = self._instance("main")
+        assert resolve_branch(instance, "feature/x") == "feature/x"
 
     def test_git_branch_detected(self):
-        config = self._config("main")
+        instance = self._instance("main")
         with patch("jenkins_config.detect_current_branch", return_value="develop"):
-            assert resolve_branch(config, None) == "develop"
+            assert resolve_branch(instance, None) == "develop"
 
     def test_config_default_fallback(self):
-        config = self._config("main")
+        instance = self._instance("main")
         with patch("jenkins_config.detect_current_branch", return_value=None):
-            assert resolve_branch(config, None) == "main"
+            assert resolve_branch(instance, None) == "main"
 
     def test_no_branch_anywhere(self):
-        config = self._config(None)
+        instance = self._instance(None)
         with patch("jenkins_config.detect_current_branch", return_value=None):
-            assert resolve_branch(config, None) is None
+            assert resolve_branch(instance, None) is None

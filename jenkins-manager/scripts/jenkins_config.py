@@ -23,8 +23,12 @@ CONFIG_FILENAME = ".jenkins.json"
 
 
 @dataclass
-class JenkinsConfig:
+class InstanceConfig:
+    """Configuration for a single Jenkins instance."""
+
+    name: str
     base_url: str
+    description: str = ""
     username_env: str = "JENKINS_USER"
     token_env: str = "JENKINS_TOKEN"
     env_file: str | None = None
@@ -32,8 +36,16 @@ class JenkinsConfig:
     default_branch: str | None = None
     default_username: str | None = None
     ssl_verify: bool = True
+    project_root: Path = field(default_factory=lambda: Path.cwd())
 
-    # Resolved at runtime
+
+@dataclass
+class JenkinsConfig:
+    """Top-level config holding all named instances."""
+
+    instances: dict[str, InstanceConfig] = field(default_factory=dict)
+    default_instance: str | None = None
+    env_file: str | None = None
     project_root: Path = field(default_factory=lambda: Path.cwd())
 
 
@@ -108,10 +120,14 @@ def url_encode_branch(branch: str) -> str:
 
 
 def add_common_args(parser: argparse.ArgumentParser) -> None:
-    """Add standard --config, --folder, --job, and --branch arguments."""
+    """Add standard --config, --instance, --folder, --job, and --branch arguments."""
     parser.add_argument(
         "--config",
         help="Path to .jenkins.json (omit to auto-discover)",
+    )
+    parser.add_argument(
+        "--instance",
+        help="Named Jenkins instance (omit to use default_instance or JENKINS_INSTANCE env var)",
     )
     parser.add_argument(
         "--folder",
@@ -254,7 +270,7 @@ def load_env_file(env_path: Path) -> dict[str, str]:
 
 
 def load_config(config_path: str | None = None) -> JenkinsConfig:
-    """Load and validate .jenkins.json.
+    """Load and validate .jenkins.json with named instances.
 
     Resolution order:
     1. If config_path is given explicitly, use it.
@@ -279,11 +295,16 @@ def load_config(config_path: str | None = None) -> JenkinsConfig:
             print(
                 json.dumps(
                     {
-                        "base_url": "https://your-jenkins-instance.example.com",
-                        "credentials": {
-                            "username_env": "JENKINS_USER",
-                            "token_env": "JENKINS_TOKEN",
+                        "instances": {
+                            "ci": {
+                                "base_url": "https://your-jenkins-ci.example.com",
+                                "credentials": {
+                                    "username_env": "JENKINS_USER",
+                                    "token_env": "JENKINS_TOKEN",
+                                },
+                            }
                         },
+                        "default_instance": "ci",
                     },
                     indent=2,
                 )
@@ -297,56 +318,113 @@ def load_config(config_path: str | None = None) -> JenkinsConfig:
         raw = _deep_merge(global_raw, project_raw)
         project_root = project_cfg.parent if project_cfg else Path.cwd()
 
-    if "base_url" not in raw:
-        print("ERROR: Missing required field 'base_url' in merged config")
+    if "instances" not in raw or not isinstance(raw["instances"], dict):
+        print("ERROR: Missing required field 'instances' in config.")
+        print("Config must contain named instances. See references/CONFIG.md for the schema.")
         sys.exit(2)
-    if not isinstance(raw["base_url"], str) or not raw["base_url"].strip():
-        print(
-            f"ERROR: 'base_url' must be a non-empty string (got {type(raw['base_url']).__name__})"
+
+    top_env_file = raw.get("env_file")
+    instances: dict[str, InstanceConfig] = {}
+
+    for name, inst_raw in raw["instances"].items():
+        if not isinstance(inst_raw, dict):
+            print(f"ERROR: Instance '{name}' must be an object")
+            sys.exit(2)
+        if "base_url" not in inst_raw:
+            print(f"ERROR: Instance '{name}' missing required field 'base_url'")
+            sys.exit(2)
+
+        creds = inst_raw.get("credentials", {})
+        inst_env_file = inst_raw.get("env_file") or creds.get("env_file") or top_env_file
+
+        instances[name] = InstanceConfig(
+            name=name,
+            base_url=inst_raw["base_url"].rstrip("/"),
+            description=inst_raw.get("description", ""),
+            username_env=creds.get("username_env", "JENKINS_USER"),
+            token_env=creds.get("token_env", "JENKINS_TOKEN"),
+            env_file=inst_env_file,
+            job_cache=inst_raw.get("job_cache", {}),
+            default_branch=inst_raw.get("default_branch"),
+            default_username=inst_raw.get("default_username"),
+            ssl_verify=inst_raw.get("ssl_verify", True),
+            project_root=project_root,
         )
-        sys.exit(2)
-
-    creds = raw.get("credentials", {})
-    if not isinstance(creds, dict):
-        print(f"ERROR: 'credentials' must be an object (got {type(creds).__name__})")
-        sys.exit(2)
-
-    # Strip trailing slash from base_url
-    base_url = raw["base_url"].rstrip("/")
-
-    # env_file can be at top level or under credentials (check both)
-    env_file = raw.get("env_file") or creds.get("env_file")
 
     return JenkinsConfig(
-        base_url=base_url,
-        username_env=creds.get("username_env", "JENKINS_USER"),
-        token_env=creds.get("token_env", "JENKINS_TOKEN"),
-        env_file=env_file,
-        job_cache=raw.get("job_cache", {}),
-        default_branch=raw.get("default_branch"),
-        default_username=raw.get("default_username"),
-        ssl_verify=raw.get("ssl_verify", True),
+        instances=instances,
+        default_instance=raw.get("default_instance"),
+        env_file=top_env_file,
         project_root=project_root,
     )
 
 
-def resolve_credentials(config: JenkinsConfig) -> tuple[str, str]:
+def _print_available_instances(config: JenkinsConfig) -> None:
+    """Print available instances with descriptions."""
+    print("Available instances:")
+    for name, inst in config.instances.items():
+        desc = f" — {inst.description}" if inst.description else ""
+        default_marker = " (default)" if name == config.default_instance else ""
+        print(f"  {name}{default_marker}: {inst.base_url}{desc}")
+
+
+def resolve_instance(config: JenkinsConfig, cli_instance: str | None = None) -> InstanceConfig:
+    """Resolve which Jenkins instance to use.
+
+    Priority:
+    1. --instance flag (explicit)
+    2. JENKINS_INSTANCE env var
+    3. default_instance from config
+    4. If only one instance exists, use it
+    5. Error with list of available instances
+    """
+    available = list(config.instances.keys())
+
+    # 1. CLI flag
+    name = cli_instance
+    # 2. Env var
+    if not name:
+        name = os.environ.get("JENKINS_INSTANCE")
+    # 3. Config default
+    if not name:
+        name = config.default_instance
+    # 4. Single instance
+    if not name and len(available) == 1:
+        name = available[0]
+
+    if not name:
+        print("ERROR: Multiple Jenkins instances configured but no instance selected.")
+        _print_available_instances(config)
+        print(
+            "Use --instance <name>, set JENKINS_INSTANCE env var, or set default_instance in config."
+        )
+        sys.exit(2)
+
+    if name not in config.instances:
+        print(f"ERROR: Instance '{name}' not found in config.")
+        _print_available_instances(config)
+        sys.exit(2)
+
+    return config.instances[name]
+
+
+def resolve_credentials(instance: InstanceConfig) -> tuple[str, str]:
     """Resolve username and API token from env file or environment variables.
     Returns (username, token). Exits on failure with shell-specific advice."""
     env_vars: dict[str, str] = {}
 
-    if config.env_file:
-        raw_path = Path(config.env_file)
+    if instance.env_file:
+        raw_path = Path(instance.env_file)
         if raw_path.is_absolute():
             env_path = raw_path
         else:
-            env_path = (config.project_root / config.env_file).resolve()
-            root_resolved = config.project_root.resolve()
+            env_path = (instance.project_root / instance.env_file).resolve()
+            root_resolved = instance.project_root.resolve()
             if (
                 not str(env_path).startswith(str(root_resolved) + os.sep)
                 and env_path != root_resolved
             ):
-                print(f"ERROR: env_file escapes project root: {config.env_file}")
+                print(f"ERROR: env_file escapes project root: {instance.env_file}")
                 print(
                     "Use an absolute path in global config, or a relative path in project config."
                 )
@@ -356,28 +434,28 @@ def resolve_credentials(config: JenkinsConfig) -> tuple[str, str]:
             sys.exit(2)
         env_vars = load_env_file(env_path)
 
-    username = env_vars.get(config.username_env) or os.environ.get(config.username_env)
-    if not username and config.default_username:
-        username = config.default_username
-    token = env_vars.get(config.token_env) or os.environ.get(config.token_env)
+    username = env_vars.get(instance.username_env) or os.environ.get(instance.username_env)
+    if not username and instance.default_username:
+        username = instance.default_username
+    token = env_vars.get(instance.token_env) or os.environ.get(instance.token_env)
 
     if not username:
-        print(f"ERROR: Credential not found: {config.username_env}")
+        print(f"ERROR: Credential not found: {instance.username_env} (instance: {instance.name})")
         print("Set it globally in your shell profile (recommended):")
-        print(_credential_hint(config.username_env))
-        print("Or set 'default_username' in .jenkins.json as a fallback.")
+        print(_credential_hint(instance.username_env))
+        print("Or set 'default_username' in the instance config as a fallback.")
         sys.exit(2)
     if not token:
-        print(f"ERROR: Credential not found: {config.token_env}")
+        print(f"ERROR: Credential not found: {instance.token_env} (instance: {instance.name})")
         print("Set it globally in your shell profile (recommended):")
-        print(_credential_hint(config.token_env))
+        print(_credential_hint(instance.token_env))
         sys.exit(2)
 
     return username, token
 
 
 def resolve_job_path(
-    config: JenkinsConfig,
+    instance: InstanceConfig,
     cli_folder: str | None = None,
     cli_job: str | None = None,
 ) -> tuple[str | None, str | None]:
@@ -389,9 +467,9 @@ def resolve_job_path(
         return cli_folder, cli_job
 
     # Try job_cache using auto-detected repo name
-    repo_name = cli_job or detect_repo_name(config.project_root)
-    if repo_name and repo_name in config.job_cache:
-        cached = config.job_cache[repo_name]
+    repo_name = cli_job or detect_repo_name(instance.project_root)
+    if repo_name and repo_name in instance.job_cache:
+        cached = instance.job_cache[repo_name]
         parts = cached.split("/", 1)
         if len(parts) == 2:
             folder = cli_folder or parts[0]
@@ -406,7 +484,7 @@ def resolve_job_path(
 
 
 def resolve_full_job_path(
-    config: JenkinsConfig,
+    instance: InstanceConfig,
     client: Any,
     cli_folder: str | None = None,
     cli_job: str | None = None,
@@ -416,7 +494,7 @@ def resolve_full_job_path(
     Priority: CLI flags > job_cache > API search via find_job().
     Prints a hint to add to job_cache on first API discovery.
     """
-    folder, job = resolve_job_path(config, cli_folder, cli_job)
+    folder, job = resolve_job_path(instance, cli_folder, cli_job)
 
     if not job:
         return folder, job
@@ -445,13 +523,13 @@ def resolve_full_job_path(
 
 
 def resolve_branch(
-    config: JenkinsConfig,
+    instance: InstanceConfig,
     cli_branch: str | None = None,
 ) -> str | None:
     """Resolve branch name: CLI flag > current git branch > config default."""
     if cli_branch:
         return cli_branch
-    detected = detect_current_branch(config.project_root)
+    detected = detect_current_branch(instance.project_root)
     if detected:
         return detected
-    return config.default_branch
+    return instance.default_branch

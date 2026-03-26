@@ -1,8 +1,8 @@
 # Configuration Reference
 
-The `.jenkins.json` file configures the jenkins-manager skill. It can live in:
+The `.jenkins.json` file configures the jenkins-manager skill with named Jenkins instances. It can live in:
 - **Project root** — project-specific settings (e.g. `job_cache`, `default_branch`)
-- **Home directory** (`~/.jenkins.json`) — global defaults (e.g. `base_url`, `credentials`)
+- **Home directory** (`~/.jenkins.json`) — global defaults (e.g. instances, credentials)
 
 If both exist, they are **deep-merged** (project-level wins on conflicts).
 
@@ -10,39 +10,71 @@ If both exist, they are **deep-merged** (project-level wins on conflicts).
 
 ```json
 {
-  "base_url": "https://your-jenkins-instance.example.com",
-  "credentials": {
-    "username_env": "JENKINS_USER",
-    "token_env": "JENKINS_TOKEN"
+  "instances": {
+    "ci": {
+      "base_url": "https://jenkins-ci.us1.example.com",
+      "description": "CI builds for all services",
+      "credentials": {
+        "username_env": "JENKINS_USER",
+        "token_env": "JENKINS_TOKEN"
+      },
+      "job_cache": {
+        "my-repo": "API/my-repo"
+      },
+      "default_branch": "master",
+      "ssl_verify": true
+    },
+    "cd-stg": {
+      "base_url": "https://jenkins-cd.stg.example.com",
+      "description": "CD deployments to staging",
+      "credentials": {
+        "username_env": "JENKINS_USER",
+        "token_env": "JENKINS_CD_TOKEN"
+      }
+    }
   },
-  "env_file": "/absolute/path/to/.env",
-  "job_cache": {
-    "my-repo": "MyFolder/my-repo",
-    "another-repo": "AnotherFolder/another-repo"
-  },
-  "default_branch": "main",
-  "ssl_verify": true
+  "default_instance": "ci",
+  "env_file": "/absolute/path/to/.env"
 }
 ```
 
-## Field descriptions
+## Top-level fields
+
+| Field | Required | Default | Description |
+|---|---|---|---|
+| `instances` | Yes | — | Map of named Jenkins instances (see below) |
+| `default_instance` | No | Auto (if only 1) | Name of the default instance to use when `--instance` is not provided |
+| `env_file` | No | `null` | Shared `.env` file path for all instances (can be overridden per-instance) |
+
+## Instance fields
+
+Each instance under `instances` supports:
 
 | Field | Required | Default | Description |
 |---|---|---|---|
 | `base_url` | Yes | — | Jenkins server URL (no trailing slash) |
-| `credentials.username_env` | No | `"JENKINS_USER"` | Environment variable name for the Jenkins username |
-| `credentials.token_env` | No | `"JENKINS_TOKEN"` | Environment variable name for the Jenkins API token |
-| `env_file` | No | `null` | Optional path to a `.env` file. Can be at top level or under `credentials`. Absolute paths are used as-is (useful in global config). Relative paths resolve against project root (traversal-protected). |
-| `job_cache` | No | `{}` | Map of repo name → `folder/job` path for fast pipeline lookups. Avoids API search on every run. |
-| `default_branch` | No | `null` | Default branch for status lookups when not in a git repo. Auto-detects from current git branch if not set. |
-| `default_username` | No | `null` | Fallback username when `JENKINS_USER` env var is not set. Useful for shared configs where the username is the same for all users. |
-| `ssl_verify` | No | `true` | Set `false` for self-signed certificates or on-prem instances with custom CAs. |
+| `description` | No | `""` | Human-readable description (shown in preflight, error messages, and agent context) |
+| `credentials.username_env` | No | `"JENKINS_USER"` | Env var name for Jenkins username |
+| `credentials.token_env` | No | `"JENKINS_TOKEN"` | Env var name for Jenkins API token |
+| `env_file` | No | Top-level `env_file` | Optional `.env` file path. Overrides top-level `env_file` for this instance. |
+| `job_cache` | No | `{}` | Map of repo name to `folder/job` path for fast lookups |
+| `default_branch` | No | `null` | Default branch when not in a git repo |
+| `default_username` | No | `null` | Fallback username when env var is not set |
+| `ssl_verify` | No | `true` | Set `false` for self-signed certificates |
+
+## Instance selection priority
+
+1. `--instance` CLI flag
+2. `JENKINS_INSTANCE` environment variable
+3. `default_instance` from config
+4. If only one instance exists, it is used automatically
+5. If multiple instances and no default, error with available list
 
 ## Config resolution order
 
 1. Walk up from CWD looking for `.jenkins.json` (project-level)
 2. Check `~/.jenkins.json` (global defaults)
-3. If both exist, deep-merge them (project-level wins)
+3. If both exist, deep-merge them (project-level wins, per-instance)
 4. If neither exists, error with copy-pastable JSON template
 
 ## Global + per-project split (recommended)
@@ -50,27 +82,46 @@ If both exist, they are **deep-merged** (project-level wins on conflicts).
 Put shared settings in `~/.jenkins.json`:
 ```json
 {
-  "base_url": "https://your-jenkins-instance.example.com",
-  "credentials": {
-    "username_env": "JENKINS_USER",
-    "token_env": "JENKINS_TOKEN"
-  }
+  "instances": {
+    "ci": {
+      "base_url": "https://jenkins-ci.us1.example.com",
+      "description": "CI builds",
+      "credentials": {
+        "username_env": "JENKINS_USER",
+        "token_env": "JENKINS_TOKEN"
+      }
+    },
+    "cd-stg": {
+      "base_url": "https://jenkins-cd.stg.example.com",
+      "description": "STG deployments",
+      "credentials": {
+        "username_env": "JENKINS_USER",
+        "token_env": "JENKINS_CD_TOKEN"
+      }
+    }
+  },
+  "default_instance": "ci",
+  "env_file": "/path/to/.env"
 }
 ```
 
 Then each project only needs optional overrides in `.jenkins.json`:
 ```json
 {
-  "job_cache": {
-    "my-service": "API/my-service"
-  },
-  "default_branch": "develop"
+  "instances": {
+    "ci": {
+      "job_cache": {
+        "my-service": "API/my-service"
+      },
+      "default_branch": "develop"
+    }
+  }
 }
 ```
 
 ## Credential resolution order
 
-1. If `env_file` is set, load variables from that file first
+1. If `env_file` is set (instance-level or top-level), load variables from that file first
 2. Then check OS environment variables
 3. The variable names are taken from `credentials.username_env` and `credentials.token_env`
 
@@ -96,5 +147,5 @@ The `job_cache` maps repository names to their Jenkins folder/job paths. This av
 ## SSL verification
 
 For on-premises Jenkins instances with self-signed certificates:
-1. Set `"ssl_verify": false` in config (quick fix)
+1. Set `"ssl_verify": false` in the instance config (quick fix)
 2. Or set the `SSL_CERT_FILE` environment variable to your CA bundle path (recommended)

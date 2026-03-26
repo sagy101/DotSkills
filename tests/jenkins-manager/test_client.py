@@ -71,16 +71,17 @@ class TestBuildJobPath:
         """Create a JenkinsClient with mocked credentials."""
         # Import here to avoid side effects at module level
         from jenkins_client import JenkinsClient
-        from jenkins_config import JenkinsConfig
+        from jenkins_config import InstanceConfig
 
-        config = JenkinsConfig(
+        instance = InstanceConfig(
+            name="ci",
             base_url="https://jenkins.example.com",
             project_root=Path("/tmp"),
         )
         # Bypass __init__ credential resolution
         client = object.__new__(JenkinsClient)
-        client.config = config
-        client.base_url = config.base_url
+        client.instance = instance
+        client.base_url = instance.base_url
         return client
 
     def test_folder_job_branch(self):

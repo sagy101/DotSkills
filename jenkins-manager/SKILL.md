@@ -9,7 +9,7 @@ description: >
 license: MIT
 metadata:
   author: sagy101
-  version: "2.0"
+  version: "3.0"
 compatibility: >
   Python 3.10+. Jenkins REST API with API token authentication.
   Works with any Jenkins 2.x+ deployment (Freestyle, Pipeline, MultiBranch, OrganizationFolder).
@@ -34,29 +34,48 @@ Use when the user wants to:
 ## Prerequisites
 
 1. **Config**: `.jenkins.json` in project root and/or `~/.jenkins.json` for global defaults (see [CONFIG.md](references/CONFIG.md))
-2. **Credentials**: `JENKINS_USER` and `JENKINS_TOKEN` (API token) exported in shell profile or in a `.env` file
+2. **Credentials**: Per-instance env vars (e.g. `JENKINS_USER`/`JENKINS_TOKEN` for CI, `JENKINS_CD_TOKEN` for CD) exported in shell profile or in a `.env` file
 
 No pip install or venv needed — all scripts use Python stdlib only.
 
 Config is auto-discovered — scripts search CWD upward, then `~/.jenkins.json`. If both exist, they are deep-merged (project-level wins). No `--config` flag needed.
 
-If no config is found anywhere, help the user create one. For users with one Jenkins instance, a global `~/.jenkins.json` covers the shared settings:
+Config uses **named instances** — each instance has its own base_url, credentials, and job_cache:
 
 ```json
 {
-  "base_url": "https://your-jenkins-instance.example.com",
-  "credentials": {
-    "username_env": "JENKINS_USER",
-    "token_env": "JENKINS_TOKEN"
-  }
+  "instances": {
+    "ci": {
+      "base_url": "https://jenkins-ci.us1.example.com",
+      "description": "CI builds for all services",
+      "credentials": {
+        "username_env": "JENKINS_USER",
+        "token_env": "JENKINS_TOKEN"
+      }
+    },
+    "cd-stg": {
+      "base_url": "https://jenkins-cd.stg.example.com",
+      "description": "CD deployments to staging",
+      "credentials": {
+        "username_env": "JENKINS_USER",
+        "token_env": "JENKINS_CD_TOKEN"
+      }
+    }
+  },
+  "default_instance": "ci",
+  "env_file": "/path/to/.env"
 }
 ```
 
 Then a minimal per-project `.jenkins.json` only needs optional overrides:
 ```json
 {
-  "job_cache": {
-    "my-service": "API/my-service"
+  "instances": {
+    "ci": {
+      "job_cache": {
+        "my-service": "API/my-service"
+      }
+    }
   }
 }
 ```
@@ -79,13 +98,40 @@ python3 <skill_dir>/scripts/jenkins_preflight.py --skip-connectivity
 
 If any check fails, fix the issue and re-run before proceeding.
 
+## Config setup flow
+
+When no config exists, or the user asks to add a Jenkins instance:
+
+1. Ask the user how many Jenkins instances they have and collect for each: name, base URL, description, username env var, token env var
+2. Ask which instance should be the default
+3. **Before writing the config**, show a summary table for approval:
+
+```
+| Instance | URL                                     | Description           | User Env       | Token Env          |
+|----------|-----------------------------------------|-----------------------|----------------|--------------------|
+| ci       | https://jenkins-ci.us1.example.com      | CI builds             | JENKINS_USER   | JENKINS_TOKEN      |
+| cd-stg   | https://jenkins-cd.stg.example.com      | STG deployments       | JENKINS_USER   | JENKINS_CD_TOKEN   |
+
+Default instance: ci
+```
+
+4. After user approval, write `~/.jenkins.json`
+5. Run preflight to verify connectivity to all instances
+
+When adding a new instance to an existing config: read the current config, ask for the new instance details, show the updated table, and write after approval.
+
+## Instance awareness
+
+When the config is loaded, the agent should be aware of which Jenkins instances are available and their descriptions. The `--instance` flag selects which instance to use. If the user mentions a specific Jenkins (e.g. "check the CD build on stg"), match it to the right instance by description.
+
 ## Workflow
 
 1. **Pre-flight** — run checks above
-2. **Determine operation** — status / logs / trigger / list
-3. **Plan** — for trigger: show plan with `--dry-run` and **wait for user approval**
-4. **Execute** — run the appropriate script
-5. **Verify** — offer to check status or view logs after trigger operations
+2. **Select instance** — use `--instance <name>` if the user specifies one, otherwise the default is used
+3. **Determine operation** — status / logs / trigger / list
+4. **Plan** — for trigger: show plan with `--dry-run` and **wait for user approval**
+5. **Execute** — run the appropriate script
+6. **Verify** — offer to check status or view logs after trigger operations
 
 ## Operations
 
@@ -93,6 +139,7 @@ If any check fails, fix the issue and re-run before proceeding.
 
 ```bash
 python3 <skill_dir>/scripts/get_status.py
+python3 <skill_dir>/scripts/get_status.py --instance cd-stg
 python3 <skill_dir>/scripts/get_status.py --build 1094
 python3 <skill_dir>/scripts/get_status.py --folder MyFolder --job my-service --branch main
 python3 <skill_dir>/scripts/get_status.py --format json
@@ -181,7 +228,7 @@ Flags: `--folder` (search specific folder), `--name PATTERN` (regex/substring fi
 
 ### Common flags (all scripts)
 
-All scripts accept `--job <name>` (auto-detected from git remote if omitted), `--folder <name>` (auto-discovered if omitted), `--branch <name>` (auto-detected from current git branch if omitted), and `--config <path>` (auto-discovered if omitted).
+All scripts accept `--instance <name>` (selects Jenkins instance), `--job <name>` (auto-detected from git remote if omitted), `--folder <name>` (auto-discovered if omitted), `--branch <name>` (auto-detected from current git branch if omitted), and `--config <path>` (auto-discovered if omitted).
 
 ## Important rules
 
@@ -201,8 +248,9 @@ All scripts accept `--job <name>` (auto-detected from git remote if omitted), `-
 | `404 Not Found` | Wrong folder, job, or branch name | Verify with `list_folders.py` and `list_jobs.py`. Branch names are URL-encoded automatically |
 | `500 Internal Server Error` | Jenkins server error | Check Jenkins server health. Retry after a moment |
 | `SSL certificate verification failed` | Self-signed cert or custom CA | Set `ssl_verify: false` in config, or set `SSL_CERT_FILE` env var |
-| Config not found | No `.jenkins.json` anywhere | Create `~/.jenkins.json` with `base_url` and credentials |
-| Job not found | Auto-discovery failed | Add `job_cache` entry in `.jenkins.json`, or use `--folder` + `--job` |
+| Config not found | No `.jenkins.json` anywhere | Create `~/.jenkins.json` with `instances` — see config setup flow |
+| Instance not found | Wrong `--instance` name | Check available instances in config or run preflight |
+| Job not found | Auto-discovery failed | Add `job_cache` entry to the instance in `.jenkins.json`, or use `--folder` + `--job` |
 | `env_file escapes project root` | Relative `env_file` in global config | Use an absolute path for `env_file` in global `~/.jenkins.json` |
 | `env_file not found` | Path in config doesn't exist | Check the `env_file` path in config; use absolute path in global config |
 
