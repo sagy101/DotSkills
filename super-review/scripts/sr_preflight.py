@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Pre-flight checks for super-review skill.
 
-Verifies that the dependency stack is in place: review-prompts skill,
-sub-agent backend (codex-subagent), and Codex CLI login status.
+Verifies that the dependency stack is in place: review-prompts skill and
+sub-agent capability. Detects the running agent and checks accordingly:
+- Windsurf/Cascade: no built-in sub-agents, so codex-subagent skill + CLI required
+- Claude Code, Codex CLI, Cursor, Antigravity: have built-in sub-agents
 
 Exits 0 if all checks pass, 1 if any fail.
 
@@ -10,6 +12,7 @@ Usage:
     python3 sr_preflight.py
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -24,6 +27,11 @@ REPO_DIR = SKILL_DIR.parent
 
 REVIEW_PROMPTS_DIR = REPO_DIR / "review-prompts"
 CODEX_SUBAGENT_DIR = REPO_DIR / "codex-subagent"
+
+
+def _is_cascade() -> bool:
+    """Detect if running inside Windsurf Cascade."""
+    return os.environ.get("WINDSURF_CASCADE_TERMINAL") == "1"
 
 
 # ---------------------------------------------------------------------------
@@ -80,33 +88,27 @@ def _check_build_prompt() -> bool:
         return False
 
 
-def _check_subagent_backend() -> bool:
-    """Check if codex-subagent skill is installed as a sibling directory."""
-    preflight = CODEX_SUBAGENT_DIR / "scripts" / "codex_preflight.py"
+def _check_subagent_capability() -> bool:
+    """Check sub-agent capability based on the detected agent.
 
-    if not CODEX_SUBAGENT_DIR.exists():
-        print(f"{_WARN} Sub-agent backend — codex-subagent not found at {CODEX_SUBAGENT_DIR}")
-        print("  Ensure you have a sub-agent backend (e.g., Claude Code Agent tool)")
-        return True  # warn only — other backends work
-
-    if not preflight.exists():
-        print(
-            f"{_WARN} Sub-agent backend — codex-subagent found but"
-            " scripts/codex_preflight.py missing"
-        )
+    - Windsurf/Cascade: no built-in sub-agents → require codex-subagent skill + CLI
+    - All other agents (Claude Code, Codex, Cursor, Antigravity): have built-in sub-agents
+    """
+    if not _is_cascade():
+        print(f"{_PASS} Sub-agent capability — agent has built-in sub-agents")
         return True
 
-    print(f"{_PASS} Sub-agent backend — codex-subagent found at {CODEX_SUBAGENT_DIR}")
-    return True
-
-
-def _check_codex_preflight() -> bool:
-    """Run the codex-subagent preflight to check CLI, version, and login."""
+    # Running in Windsurf Cascade — needs codex-subagent skill
+    print("  Detected: Windsurf Cascade (no built-in sub-agents)")
     preflight = CODEX_SUBAGENT_DIR / "scripts" / "codex_preflight.py"
-    if not preflight.exists():
-        print(f"{_WARN} Codex preflight — skipped (codex-subagent not found)")
-        return True
 
+    if not CODEX_SUBAGENT_DIR.exists() or not preflight.exists():
+        print(f"{_FAIL} Sub-agent capability — codex-subagent skill not found")
+        print("  Windsurf Cascade requires the codex-subagent skill for parallel reviews")
+        print(f"  Expected at: {CODEX_SUBAGENT_DIR}")
+        return False
+
+    # Run codex preflight to check CLI + version + login
     try:
         result = subprocess.run(
             [sys.executable, str(preflight)],
@@ -114,22 +116,21 @@ def _check_codex_preflight() -> bool:
             text=True,
             timeout=30,
         )
-        # Relay key lines from codex preflight output
         for line in result.stdout.splitlines():
             stripped = line.strip()
             if stripped.startswith(("[PASS]", "[FAIL]", "[WARN]")):
                 print(f"  {stripped}")
 
         if result.returncode == 0:
-            print(f"{_PASS} Codex preflight — all checks passed")
+            print(f"{_PASS} Sub-agent capability — codex-subagent ready")
             return True
-        print(f"{_FAIL} Codex preflight — some checks failed (see above)")
+        print(f"{_FAIL} Sub-agent capability — codex preflight failed (see above)")
         return False
     except subprocess.TimeoutExpired:
-        print(f"{_WARN} Codex preflight — timed out")
+        print(f"{_WARN} Sub-agent capability — codex preflight timed out")
         return True
     except Exception as e:
-        print(f"{_FAIL} Codex preflight — {e}")
+        print(f"{_FAIL} Sub-agent capability — {e}")
         return False
 
 
@@ -151,11 +152,8 @@ def main() -> None:
     # 2. build-prompt.py test
     results.append(_check_build_prompt())
 
-    # 3. Sub-agent backend
-    results.append(_check_subagent_backend())
-
-    # 4. Codex preflight (CLI, version, login)
-    results.append(_check_codex_preflight())
+    # 3. Sub-agent capability (agent-aware)
+    results.append(_check_subagent_capability())
 
     # Summary
     passed = sum(results)

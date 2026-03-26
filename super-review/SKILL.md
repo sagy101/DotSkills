@@ -47,8 +47,9 @@ python3 <skill_dir>/scripts/sr_preflight.py
 It validates the dependency stack in a single pass:
 1. **review-prompts skill** — SKILL.md and `build-prompt.py` are present
 2. **build-prompt.py** — runs successfully and lists available review types
-3. **Sub-agent backend** — `codex-subagent` or equivalent is available
-4. **Codex preflight** — runs the codex-subagent preflight (checks CLI, version, login status)
+3. **Sub-agent capability** — detects the running agent:
+   - Claude Code, Codex CLI, Cursor, Antigravity: have built-in sub-agents (auto-pass)
+   - Windsurf/Cascade: no built-in sub-agents — checks codex-subagent skill, CLI, and login
 
 If the review-prompts skill is missing, install it as a sibling directory to super-review.
 
