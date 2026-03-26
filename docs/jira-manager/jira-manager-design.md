@@ -67,6 +67,8 @@ This skill gives **any SKILL.md-compatible agent** reliable Jira CRUD by combini
 
 **16. Module structure** — `jira_config_loader.py` handles configuration loading, credential resolution, shell detection, and manifest I/O. All scripts share the same `--config` argument definition via `add_config_arg()` for consistency.
 
+**17. Preflight script** — `jira_preflight.py` validates the full environment (Python version, venv, config, credentials, API connectivity, field discovery status) in a single call. The SKILL.md delegates all pre-session validation to this script rather than listing inline checks, matching the pattern used by bitbucket-manager, confluence-publisher, and jenkins-manager.
+
 ---
 
 ## Approval Gates

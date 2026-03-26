@@ -36,6 +36,22 @@ Prefer the `review-prompts` skill standalone when:
 2. The `review-prompts` skill installed (for review prompt files), or custom prompts available
 3. Target artifact (code, plan, doc) accessible to sub-agents
 
+## Pre-flight checks
+
+Run the preflight script before launching a super-review:
+
+```bash
+python3 <skill_dir>/scripts/sr_preflight.py
+```
+
+It validates the dependency stack in a single pass:
+1. **review-prompts skill** — SKILL.md and `build-prompt.py` are present
+2. **build-prompt.py** — runs successfully and lists available review types
+3. **Sub-agent backend** — `codex-subagent` or equivalent is available
+4. **Codex preflight** — runs the codex-subagent preflight (checks CLI, version, login status)
+
+If the review-prompts skill is missing, install it as a sibling directory to super-review.
+
 ## Workflow
 
 ### Step 1: Run your own review

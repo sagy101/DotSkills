@@ -19,17 +19,31 @@ compatibility: >
 
 ## Pre-flight (run once per session)
 
-1. **Venv** — `$PY -c "import markdown; print('OK')"`. If missing: `python3 $S/jira_setup_env.py`
-2. **Config** — `.jira.json` in project root or `~/.jira.json` (auto-discovered, deep-merged). If missing, create:
-   ```json
-   { "jira_url": "https://company.atlassian.net", "project_key": "PROJ",
-     "credentials": { "username_env": "JIRA_EMAIL", "token_env": "JIRA_TOKEN" } }
-   ```
-3. **Credentials** — confirm `JIRA_EMAIL` and `JIRA_TOKEN` env vars are set. Never print values.
-4. **Field discovery** — if `field_mappings` or `issue_types` are empty in config:
-   ```bash
-   $PY $S/discover_fields.py --all --apply
-   ```
+Run the preflight script before any other operation:
+
+```bash
+python3 <skill_dir>/scripts/jira_preflight.py
+```
+
+It validates the entire environment in a single pass:
+1. **Python 3.10+** is available
+2. **Virtual environment** exists and dependencies are installed (`markdown`, `markdownify`)
+3. **Config file** (`.jira.json`) is found and has required fields (`jira_url`, `project_key`)
+4. **Credentials** — env vars are set (never prints values)
+5. **Connectivity** — API is reachable, credentials are valid
+6. **Field discovery** — warns if `field_mappings` or `issue_types` are empty
+
+If the venv or dependencies are missing, the preflight tells you to run:
+
+```bash
+python3 <skill_dir>/scripts/jira_setup_env.py
+```
+
+To skip the connectivity check (e.g. on repeated calls):
+
+```bash
+python3 <skill_dir>/scripts/jira_preflight.py --skip-connectivity
+```
 
 ## Fetch tickets
 

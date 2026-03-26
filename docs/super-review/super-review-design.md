@@ -93,6 +93,8 @@ The host agent connects the layers:
 
 **7. Partial failure resilience** — If some sub-agents fail, the review continues with available results. Failed dimensions are marked "Not Reviewed" so the user knows coverage gaps. This is better than failing the entire review because one perspective timed out.
 
+**8. Preflight script** — `sr_preflight.py` validates that the dependency stack (review-prompts skill, sub-agent backend, Codex CLI login status) is in place before any review is launched. Since super-review has no config, credentials, or venv of its own, the preflight focuses on dependency presence checks and delegates Codex validation to the codex-subagent's own preflight script.
+
 ---
 
 ## Output Template
