@@ -466,6 +466,37 @@ The `--new-md` flag automatically:
 - Renders mermaid diagrams to PNG and uploads them as page attachments
 - Adjusts heading levels to match the existing section (e.g., if the old section starts with `<h1>`, the markdown `##` headings are shifted to `<h1>`)
 
+#### Append a new section to a page
+
+To add new content to a page without replacing any existing section, use `--append-after` or `--append-end`:
+
+```bash
+# Append a new section after "Detailed Plan Documents" (dry run first)
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/replace_element.py \
+    --page 1079706804 --heading "Detailed Plan Documents" \
+    --append-after --new-md /tmp/new-section.md --dry-run
+
+# Append at the very end of the page (no --heading needed)
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/replace_element.py \
+    --page 1079706804 --append-end \
+    --new-md /tmp/new-section.md --dry-run
+
+# Apply after reviewing the dry run
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/replace_element.py \
+    --page 1079706804 --heading "Detailed Plan Documents" \
+    --append-after --new-md /tmp/new-section.md \
+    --message "Added Future Vision section"
+```
+
+Both flags require `--new-md` and automatically:
+- Convert markdown to Confluence storage HTML
+- Render mermaid diagrams to PNG and upload as attachments
+- Adjust heading levels to match the surrounding content
+
+Use `--append-after` when you know which section the new content should follow. Use `--append-end` when the content goes at the very end of the page.
+
+**Always use `--dry-run` first** and check the section integrity report to confirm no existing content was affected.
+
 #### Render mermaid code blocks to images
 
 If a page has mermaid code blocks that render as raw text (because they were inserted without PNG rendering), convert them to images:

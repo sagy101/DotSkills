@@ -22,7 +22,7 @@ Manage Jira tickets end-to-end: create, update, fetch, delete, transition, comme
 
 ## Confluence Publisher
 
-Publish, sync, diff, delete, discover, and export markdown documentation to/from Confluence Cloud. Handles page creation, updates, deletion, cross-page link rewriting, Mermaid diagram rendering, hierarchy verification, and reverse export to markdown. Also supports surgical HTML edits, version comparison, and page revert.
+Publish, sync, diff, delete, discover, and export markdown documentation to/from Confluence Cloud. Handles page creation, updates, deletion, cross-page link rewriting, Mermaid diagram rendering, hierarchy verification, and reverse export to markdown. Also supports surgical HTML edits, section append (insert new content after a heading or at end of page), version comparison, and page revert.
 
 > Full details: [docs/confluence-publisher/confluence-publisher-design.md](docs/confluence-publisher/confluence-publisher-design.md)
 

@@ -23,6 +23,7 @@ This skill gives **any SKILL.md-compatible agent** the ability to publish, sync,
 | **Discover** | Walk an existing Confluence page tree and build a local manifest |
 | **Export** | Pull Confluence pages back to local markdown (single page, manifest, or full tree) |
 | **Surgical edit** | Targeted find/replace on Confluence storage HTML without overwriting the full page |
+| **Append section** | Insert new markdown-rendered content after a named section or at the end of a page, without replacing existing content |
 | **Version diff** | Compare two versions of the same Confluence page |
 | **Version history** | Browse page versions, fetch content from a specific version |
 | **Revert** | Restore a page to a previous version (non-destructive, creates new version) |

@@ -6,7 +6,7 @@ without requiring a live Confluence connection.
 
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -355,28 +355,117 @@ class TestHtmlEntityHeadingMatch:
 # Tests: _convert_md_to_confluence_html heading adjustment
 # ---------------------------------------------------------------------------
 
+from confluence_config import ConfluenceConfig  # noqa: E402
 from replace_element import _convert_md_to_confluence_html  # noqa: E402
+
+# ---------------------------------------------------------------------------
+# Tests: append mode argument parsing
+# ---------------------------------------------------------------------------
+
+
+class TestAppendModeParsing:
+    """Verify --append-after and --append-end argument parsing."""
+
+    def test_append_after_requires_heading(self):
+        with (
+            patch(
+                "sys.argv",
+                ["prog", "--page", "123", "--append-after", "--new-md", "test.md"],
+            ),
+            pytest.raises(SystemExit),
+        ):
+            from replace_element import parse_args
+
+            parse_args()
+
+    def test_append_after_requires_new_md(self):
+        with (
+            patch(
+                "sys.argv",
+                ["prog", "--page", "123", "--heading", "Test", "--append-after"],
+            ),
+            pytest.raises(SystemExit),
+        ):
+            from replace_element import parse_args
+
+            parse_args()
+
+    def test_append_end_requires_new_md(self):
+        with (
+            patch("sys.argv", ["prog", "--page", "123", "--append-end"]),
+            pytest.raises(SystemExit),
+        ):
+            from replace_element import parse_args
+
+            parse_args()
+
+    def test_append_after_sets_mode(self):
+        with patch(
+            "sys.argv",
+            [
+                "prog",
+                "--page",
+                "123",
+                "--heading",
+                "Test",
+                "--append-after",
+                "--new-md",
+                "test.md",
+            ],
+        ):
+            from replace_element import parse_args
+
+            args = parse_args()
+            assert args.mode == "append"
+            assert args.append_after is True
+            assert args.append_end is False
+
+    def test_append_end_sets_mode(self):
+        with patch(
+            "sys.argv",
+            ["prog", "--page", "123", "--append-end", "--new-md", "test.md"],
+        ):
+            from replace_element import parse_args
+
+            args = parse_args()
+            assert args.mode == "append"
+            assert args.append_end is True
+            assert args.append_after is False
+
+
+# ---------------------------------------------------------------------------
+# Tests: _convert_md_to_confluence_html heading adjustment
+# ---------------------------------------------------------------------------
 
 
 class TestMdHeadingAdjustment:
     """Verify markdown heading levels are adjusted to match the target section."""
+
+    @staticmethod
+    def _make_fake_config(tmp_path: Path) -> ConfluenceConfig:
+        return ConfluenceConfig(
+            confluence_url="https://test.atlassian.net/wiki",
+            space_key="TEST",
+            root_page_id="0",
+            project_root=tmp_path,
+        )
+
+    @staticmethod
+    def _make_fake_confluence() -> MagicMock:
+        return MagicMock(spec=["attach_file"])
 
     def test_h2_markdown_adjusted_to_h1(self, tmp_path: Path):
         """## headings in markdown should become <h1> when target is h1."""
         md_file = tmp_path / "test.md"
         md_file.write_text("## Main Title\n\nContent\n\n### Sub Title\n\nMore content\n")
 
-        # Mock the confluence connection (we only test heading adjustment, not upload)
-        class FakeConfluence:
-            def attach_file(self, *args: object, **kwargs: object) -> None:
-                pass
-
-        class FakeConfig:
-            confluence_url = "https://test.atlassian.net/wiki"
-            space_key = "TEST"
-            docs_root = tmp_path
-
-        html = _convert_md_to_confluence_html(md_file, "123", 1, FakeConfig(), FakeConfluence())
+        html = _convert_md_to_confluence_html(
+            md_file,
+            "123",
+            1,
+            self._make_fake_config(tmp_path),
+            self._make_fake_confluence(),
+        )
         assert "<h1" in html
         assert "<h2" in html
         # Original ## → h1, ### → h2
@@ -388,15 +477,12 @@ class TestMdHeadingAdjustment:
         md_file = tmp_path / "test.md"
         md_file.write_text("# Title\n\nContent\n")
 
-        class FakeConfluence:
-            def attach_file(self, *args: object, **kwargs: object) -> None:
-                pass
-
-        class FakeConfig:
-            confluence_url = "https://test.atlassian.net/wiki"
-            space_key = "TEST"
-            docs_root = tmp_path
-
-        html = _convert_md_to_confluence_html(md_file, "123", 1, FakeConfig(), FakeConfluence())
+        html = _convert_md_to_confluence_html(
+            md_file,
+            "123",
+            1,
+            self._make_fake_config(tmp_path),
+            self._make_fake_confluence(),
+        )
         assert "<h1" in html
         assert "Title" in html

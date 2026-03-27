@@ -81,6 +81,20 @@ def parse_args() -> argparse.Namespace:
         "(auto-converts to Confluence HTML, renders mermaid diagrams, adjusts heading levels)",
     )
 
+    # Append mode
+    append_grp = parser.add_argument_group("append mode")
+    append_grp.add_argument(
+        "--append-after",
+        action="store_true",
+        help="Insert --new-md content after the section identified by --heading "
+        "(does not replace the existing section)",
+    )
+    append_grp.add_argument(
+        "--append-end",
+        action="store_true",
+        help="Append --new-md content at the very end of the page (no --heading needed)",
+    )
+
     # Shared
     parser.add_argument(
         "-o", "--output", help="Output file path (extract: save element, apply: save report)"
@@ -98,7 +112,15 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
 
     # Determine mode
-    if args.old and (args.new or args.new_md):
+    if args.append_end and args.new_md or args.append_after and args.heading and args.new_md:
+        args.mode = "append"
+    elif args.append_after and not args.heading:
+        parser.error("--append-after requires --heading")
+    elif args.append_after and not args.new_md:
+        parser.error("--append-after requires --new-md")
+    elif args.append_end and not args.new_md:
+        parser.error("--append-end requires --new-md")
+    elif args.old and (args.new or args.new_md):
         args.mode = "apply"
     elif args.heading and args.new_md and args.element == "section":
         # --heading + --new-md: extract old section, convert md, replace in one step
@@ -108,7 +130,8 @@ def parse_args() -> argparse.Namespace:
     else:
         parser.error(
             "Specify --heading for extract mode, --old + --new for apply mode, "
-            "or --heading + --new-md + --element section for markdown replacement"
+            "--heading + --new-md + --element section for markdown replacement, "
+            "or --append-after/--append-end + --new-md to insert new content"
         )
 
     # Validate --nth
@@ -491,10 +514,99 @@ def apply_md_mode(args: argparse.Namespace) -> None:
     print(f"  {config.confluence_url}/pages/{page_id}")
 
 
+def append_mode(args: argparse.Namespace) -> None:
+    """Append markdown content after a heading's section or at the end of the page."""
+    config = load_config(args.config)
+    page_id = extract_page_id(args.page)
+    confluence = connect(config)
+
+    md_path = Path(args.new_md)
+    if not md_path.is_file():
+        print(f"ERROR: Markdown file not found: {md_path}")
+        sys.exit(1)
+
+    print(f"Fetching page {page_id}...")
+    snapshot = fetch_page(config, page_id)
+    print(f"  Title:   {snapshot.title}")
+    print(f"  Version: {snapshot.version}")
+    print(f"  Size:    {len(snapshot.html)} chars")
+
+    if args.append_end:
+        # Append at the very end of the page
+        insert_pos = len(snapshot.html)
+        # Detect heading level from the last heading on the page
+        last_heading = None
+        for m in re.finditer(r"<(h[1-6])[^>]*>", snapshot.html, re.IGNORECASE):
+            last_heading = m
+        target_level = int(last_heading.group(1)[1]) if last_heading else 1
+        label = "end of page"
+    else:
+        # Append after the section identified by --heading
+        heading_match = _find_heading_match(snapshot.html, args.heading)
+        _start, insert_pos = _extract_section_range(snapshot.html, heading_match)
+        tag_match = re.match(r"<(h[1-6])", snapshot.html[_start:], re.IGNORECASE)
+        target_level = int(tag_match.group(1)[1]) if tag_match else 1
+        label = f"section '{args.heading}'"
+
+    print(f"  Insert point: after {label} (heading level h{target_level})")
+    print(f"  Converting {md_path.name} to Confluence HTML...")
+
+    new_html = _convert_md_to_confluence_html(md_path, page_id, target_level, config, confluence)
+    print(f"  New content: {len(new_html)} chars")
+
+    modified_html = snapshot.html[:insert_pos] + new_html + snapshot.html[insert_pos:]
+
+    # Diff report
+    old_normalized = normalize_html(snapshot.html)
+    new_normalized = normalize_html(modified_html)
+    changes = semantic_diff(old_normalized, new_normalized)
+    integrity = section_integrity_check(snapshot.html, modified_html)
+    report = format_diff_report(changes, integrity)
+
+    if args.output:
+        Path(args.output).write_text(report, encoding="utf-8")
+        print(f"Diff report saved to {args.output}")
+    else:
+        if len(report) > 3000:
+            print(report[:3000])
+            print(
+                f"\n... (truncated, {len(report)} chars total — use --output to save full report)"
+            )
+        else:
+            print(report)
+
+    print(
+        f"HTML size: {len(snapshot.html)} -> {len(modified_html)} "
+        f"({len(modified_html) - len(snapshot.html):+d} chars)"
+    )
+
+    if args.dry_run:
+        print("\n[DRY RUN] No changes pushed to Confluence.")
+        sys.exit(0)
+
+    default_msg = (
+        f"Append after '{args.heading}'"
+        if not args.append_end
+        else f"Append at end from {md_path.name}"
+    )
+    version_msg = args.message or default_msg
+    new_version = update_page_body(
+        config,
+        page_id,
+        snapshot.title,
+        modified_html,
+        message=version_msg,
+    )
+    print(f"\nPage updated to version {new_version}")
+    print(f"  {config.confluence_url}/pages/{page_id}")
+
+
 def main():
     args = parse_args()
     if args.mode == "extract":
         extract_mode(args)
+    elif args.mode == "append":
+        append_mode(args)
     elif args.mode == "apply-md":
         apply_md_mode(args)
     else:
