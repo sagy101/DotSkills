@@ -19,6 +19,13 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+.codeium/
+.codex/
+.cursor/
+.gemini/
+.junie/
+.roo/
+.claude/
 
 # Confluence runtime artifacts
 .confluence-manifest.json
