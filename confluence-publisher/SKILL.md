@@ -11,7 +11,7 @@ description: >
 license: MIT
 metadata:
   author: sagy101
-  version: "3.0"
+  version: "3.1"
 compatibility: >
   Requires Python 3.10+. Optional: Node.js + npx for Mermaid diagram rendering.
   Works with Confluence Cloud (Atlassian). Requires API token with page read/write permissions.

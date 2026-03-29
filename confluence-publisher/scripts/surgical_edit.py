@@ -150,8 +150,68 @@ def load_replacements(args: argparse.Namespace) -> list[dict[str, Any]]:
     return replacements
 
 
+def _encode_unicode_to_html_entities(text: str) -> str:
+    """Encode common Unicode characters to their HTML entity equivalents.
+
+    Handles characters that Confluence stores as named/numeric HTML entities
+    but that agents/humans typically type as Unicode (e.g. → vs &rarr;).
+    """
+    _UNICODE_TO_ENTITY = {
+        "\u2192": "&rarr;",  # →
+        "\u2190": "&larr;",  # ←
+        "\u2194": "&harr;",  # ↔
+        "\u2014": "&mdash;",  # —
+        "\u2013": "&ndash;",  # –
+        "\u2265": "&ge;",  # ≥
+        "\u2264": "&le;",  # ≤
+        "\u00a0": "&nbsp;",  # non-breaking space
+        "\u2026": "&hellip;",  # …
+        "\u00d7": "&times;",  # ×
+        "\u2018": "&lsquo;",  # '
+        "\u2019": "&rsquo;",  # '
+        "\u201c": "&ldquo;",  # "
+        "\u201d": "&rdquo;",  # "
+    }
+    result = text
+    for char, entity in _UNICODE_TO_ENTITY.items():
+        result = result.replace(char, entity)
+    return result
+
+
+def _decode_html_entities(text: str) -> str:
+    """Decode HTML entities to Unicode (e.g. &rarr; → →)."""
+    import html as html_module
+
+    return html_module.unescape(text)
+
+
+def _try_entity_normalization(html_content: str, find: str) -> tuple[str, str] | None:
+    """Try to match find string by normalizing HTML entities.
+
+    Returns (normalized_find, strategy_name) if a match is found, None otherwise.
+    """
+    # Strategy 1: encode Unicode in find → HTML entities (most common case:
+    # agent typed → but page has &rarr;)
+    encoded = _encode_unicode_to_html_entities(find)
+    if encoded != find and html_content.count(encoded) > 0:
+        return encoded, "Unicode→entity"
+
+    # Strategy 2: decode HTML entities in find → Unicode (less common:
+    # agent copied &rarr; but page has →)
+    decoded = _decode_html_entities(find)
+    if decoded != find and html_content.count(decoded) > 0:
+        return decoded, "entity→Unicode"
+
+    return None
+
+
 def apply_replacements(html: str, replacements: list[dict[str, Any]]) -> tuple[str, list[str]]:
-    """Apply replacements to HTML. Returns (modified_html, log_messages)."""
+    """Apply replacements to HTML. Returns (modified_html, log_messages).
+
+    Automatically normalizes HTML entities when a find string doesn't match.
+    For example, if the find string contains → (Unicode) but the page HTML
+    uses &rarr; (entity), the script detects this and matches correctly.
+    """
     log = []
     for i, r in enumerate(replacements, 1):
         find = r["find"]
@@ -164,8 +224,24 @@ def apply_replacements(html: str, replacements: list[dict[str, Any]]) -> tuple[s
 
         count = html.count(find)
         if count == 0:
-            log.append(f"  #{i} NOT FOUND: {find[:80]}...")
-            continue
+            # Try entity normalization before giving up
+            normalized = _try_entity_normalization(html, find)
+            if normalized:
+                norm_find, strategy = normalized
+                # Also normalize the replace string the same way
+                if strategy == "Unicode→entity":
+                    norm_replace = _encode_unicode_to_html_entities(replace)
+                else:
+                    norm_replace = _decode_html_entities(replace)
+                count = html.count(norm_find)
+                log.append(
+                    f"  #{i} Auto-normalized ({strategy}): '{find[:40]}...' → '{norm_find[:40]}...'"
+                )
+                find = norm_find
+                replace = norm_replace
+            else:
+                log.append(f"  #{i} NOT FOUND: {find[:80]}...")
+                continue
 
         if replace_all:
             html = html.replace(find, replace)
