@@ -2,17 +2,28 @@
 # run_sbt.sh — Shared wrapper for SBT commands used by this skill
 #
 # Usage:
-#   run_sbt.sh <project-dir> [--workspace-dir <workspace-dir>] [--artifact-version <version>] [--sbt-env <value>] -- <sbt-arg>...
+#   run_sbt.sh <project-dir> [options] -- <sbt-arg>...
+#
+# Options:
+#   --workspace-dir <dir>      Override workspace directory
+#   --artifact-version <ver>   Set ARTIFACT_VERSION for publishLocal
+#   --sbt-env <value>          Pass -Dsbt_env=<value> to SBT
+#   --batch                    Force --batch mode
+#   --coverage                 Run with scoverage: forces local recompile,
+#                              wraps commands in "; coverage ; <cmd> ; coverageReport"
+#   --no-remote-cache          Disable remote-cache pulls for this run and
+#                              delete local target/scala-* dirs first
 #
 # Examples:
 #   run_sbt.sh /path/to/service -- compile
 #   run_sbt.sh /path/to/multi-project-root -- "core / test"
 #   run_sbt.sh /path/to/library -- --error publishLocal
+#   run_sbt.sh /path/to/service --coverage -- "aws / testOnly com.example.MyTest"
 
 set -euo pipefail
 
 usage() {
-  echo "Usage: run_sbt.sh <project-dir> [--workspace-dir <workspace-dir>] [--artifact-version <version>] [--sbt-env <value>] -- <sbt-arg>..." >&2
+  echo "Usage: run_sbt.sh <project-dir> [--workspace-dir <workspace-dir>] [--artifact-version <version>] [--sbt-env <value>] [--batch] [--coverage] [--no-remote-cache] -- <sbt-arg>..." >&2
   exit 2
 }
 
@@ -27,9 +38,35 @@ WORKSPACE_DIR=""
 ARTIFACT_VERSION_VALUE="${ARTIFACT_VERSION:-}"
 SBT_ENV_VALUE="${SBT_ENV:-}"
 FORCE_BATCH=false
+COVERAGE_MODE=false
+NO_REMOTE_CACHE=false
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 source "$SCRIPT_DIR/common.sh"
+
+join_sbt_commands() {
+  local _joined="" _segment
+  for _segment in "$@"; do
+    [ -n "$_segment" ] || continue
+    if [ -n "$_joined" ]; then
+      _joined="$_joined ; $_segment"
+    else
+      _joined="$_segment"
+    fi
+  done
+  printf '%s' "$_joined"
+}
+
+detect_scoped_project() {
+  local _arg
+  for _arg in "$@"; do
+    if [[ "$_arg" == *" / "* ]]; then
+      printf '%s' "${_arg%% / *}"
+      return 0
+    fi
+  done
+  return 1
+}
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -50,6 +87,15 @@ while [ "$#" -gt 0 ]; do
       ;;
     --batch)
       FORCE_BATCH=true
+      shift
+      ;;
+    --coverage)
+      COVERAGE_MODE=true
+      NO_REMOTE_CACHE=true  # coverage requires local compilation
+      shift
+      ;;
+    --no-remote-cache)
+      NO_REMOTE_CACHE=true
       shift
       ;;
     --)
@@ -146,6 +192,12 @@ if [ "$NEEDS_TEST_LOCK" = true ]; then
   } > "$LOCK_FILE"
 fi
 
+# ── No-remote-cache: delete scala target dirs to force local compilation ─────
+# Removes nested target/scala-* directories anywhere under the project root.
+if [ "$NO_REMOTE_CACHE" = true ]; then
+  find "$PROJECT_DIR" -type d -path '*/target/scala-*' -prune -exec rm -rf {} +
+fi
+
 SBT_CMD=(sbt "${SBT_HEAP_ARGS[@]}"
   "-Dsbt.ivy.home=$SBT_BUILD_CACHE_ROOT"
   "-Dsbt.coursier.home=$(coursier_cache_root)"
@@ -159,9 +211,55 @@ fi
 if [ -n "$SBT_ENV_VALUE" ]; then
   SBT_CMD+=("-Dsbt_env=$SBT_ENV_VALUE")
 fi
-for sbt_arg in "$@"; do
-  SBT_CMD+=("$sbt_arg")
-done
+
+# ── Coverage / no-remote-cache mode: wrap commands in a single SBT session ───
+if [ "$COVERAGE_MODE" = true ] || [ "$NO_REMOTE_CACHE" = true ]; then
+  _session_project="$(detect_scoped_project "$@" || true)"
+  _prefix_segments=()
+
+  # CAP's remote cache hooks compile/test through maybePullRemoteCache.
+  # Overriding that task is what actually stops cached class restoration.
+  if [ -n "$_session_project" ]; then
+    _prefix_segments+=("set $_session_project / Compile / maybePullRemoteCache := None")
+    _prefix_segments+=("set $_session_project / Test / maybePullRemoteCache := None")
+  else
+    _prefix_segments+=("set every Compile / maybePullRemoteCache := None")
+    _prefix_segments+=("set every Test / maybePullRemoteCache := None")
+  fi
+
+  if [ "$COVERAGE_MODE" = true ]; then
+    if [ -n "$_session_project" ]; then
+      _prefix_segments+=("$_session_project / clean")
+      _prefix_segments+=("coverage")
+      _prefix_segments+=("set $_session_project / Test / fork := false")
+    else
+      _prefix_segments+=("clean")
+      _prefix_segments+=("coverage")
+      _prefix_segments+=("set every Test / fork := false")
+    fi
+  fi
+
+  _prefix_cmd="$(join_sbt_commands "${_prefix_segments[@]}")"
+  if [ -n "$_prefix_cmd" ]; then
+    SBT_CMD+=("; $_prefix_cmd")
+  fi
+
+  for sbt_arg in "$@"; do
+    SBT_CMD+=("$sbt_arg")
+  done
+
+  if [ "$COVERAGE_MODE" = true ]; then
+    if [ -n "$_session_project" ]; then
+      SBT_CMD+=("; $_session_project / coverageReport")
+    else
+      SBT_CMD+=("; coverageReport")
+    fi
+  fi
+else
+  for sbt_arg in "$@"; do
+    SBT_CMD+=("$sbt_arg")
+  done
+fi
 
 cd "$PROJECT_DIR"
 if [ -n "$ARTIFACT_VERSION_VALUE" ]; then

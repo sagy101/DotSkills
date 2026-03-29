@@ -1,10 +1,10 @@
 ---
 name: sbt-build-test
 description: >
-  Use for ANY SBT operation: compile, test, publishLocal, dependency discovery, cross-repo builds. Handles multi-repo dependency chains automatically — detects upstream repos, publishes them in correct order, clears caches, and rebuilds. Uses an isolated build cache so normal sbt is never affected.
+  Use for ANY SBT operation: compile, test, coverage, publishLocal, dependency discovery, cross-repo builds. Handles multi-repo dependency chains automatically — detects upstream repos, publishes them in correct order, clears caches, and rebuilds. Uses an isolated build cache so normal sbt is never affected.
 metadata:
   author: sagy101
-  version: "11.0"
+  version: "11.1"
 ---
 
 # SBT Multi-Repo Build & Test
@@ -15,6 +15,7 @@ Four commands for all SBT operations: build, status, refresh, reset.
 
 Use this skill when you need to:
 - **Compile or test** any SBT project (single or multi-project)
+- **Collect scoped coverage** while bypassing stale remote-cache pulls
 - **Publish local artifacts** for downstream validation
 - **Understand dependencies** between workspace repos
 - **Fix stale state** after upstream changes
@@ -60,6 +61,8 @@ bash <skill_dir>/scripts/sbt_build.sh --all [options] -- <sbt-commands>
 | `--auto-publish-deps` | Auto-publishLocal missing AND stale workspace deps before building |
 | `--continue-on-error` | Keep going when a project fails (useful with `--all`) |
 | `--fresh` | Force fresh SBT process (no server reuse) — use when SBT returns stale results |
+| `--coverage` | Enable scoverage for the requested command, disable remote-cache pulls for the scoped project, and emit `coverageReport` |
+| `--no-remote-cache` | Disable remote-cache pulls for this run and clear local `target/scala-*` directories first |
 | `--skip-preflight` | Skip Java/cache pre-check (for repeated calls) |
 
 **Examples:**
@@ -73,6 +76,9 @@ bash <skill_dir>/scripts/sbt_build.sh /path/to/service -- test
 
 # Test a specific subproject
 bash <skill_dir>/scripts/sbt_build.sh /path/to/service -- "core / test"
+
+# Collect coverage for a specific subproject test
+bash <skill_dir>/scripts/sbt_build.sh /path/to/service --coverage -- "aws / testOnly com.example.AwsUserPaginationTest"
 
 # Compile with auto-publish of missing upstream deps
 bash <skill_dir>/scripts/sbt_build.sh /path/to/service --auto-publish-deps -- compile
@@ -93,6 +99,8 @@ bash <skill_dir>/scripts/sbt_build.sh /path/to/library --artifact-version 0.532.
 Use the exact scoped project ID reported by `sbt_status.sh` for subproject names. In multi-project builds the ID may differ from the published artifact name (e.g. `myModule` vs `my-module`).
 
 **rootPaths auto-detection**: When `--sbt-env dev` is requested but the project has `rootPaths`/`remoteCache` settings AND external `ProjectRef` entries, the skill auto-falls back to non-dev mode. No manual intervention needed.
+
+**Coverage mode**: `--coverage` keeps the user command as a normal SBT argument, but wraps it with setup/teardown commands in the same session: it disables `maybePullRemoteCache`, clears `target/scala-*`, scopes `clean`/`coverageReport` when a subproject is specified, and forces `Test / fork := false` so scoverage measurements are written in-process.
 
 ### `sbt_status.sh` — Discover dependencies and workspace state
 
@@ -195,6 +203,7 @@ bash <skill_dir>/scripts/sbt_reset.sh --dry-run
 | Edit target service code, compile | `sbt_build.sh <target> -- compile` |
 | Edit target service code, test | `sbt_build.sh <target> -- test` |
 | Test a specific subproject | `sbt_build.sh <target> -- "<subproject> / test"` |
+| Collect coverage for a specific subproject test | `sbt_build.sh <target> --coverage -- "<subproject> / testOnly <suite>"` |
 | Check what this project depends on | `sbt_status.sh <target>` |
 | Check full workspace state | `sbt_status.sh <target> --workspace` |
 | Upstream library changed, rebuild downstream | `sbt_refresh.sh <downstream> --publish-upstreams --clean-target --rebuild` |

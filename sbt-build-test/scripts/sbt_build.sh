@@ -33,6 +33,8 @@ usage() {
   echo "  --tail <lines>               Lines of log tail to show (default: 60)" >&2
   echo "  --auto-publish-deps          Auto-publishLocal missing/stale workspace deps" >&2
   echo "  --continue-on-error          Keep going when a project fails (for --all)" >&2
+  echo "  --coverage                   Run scoverage for the requested SBT command" >&2
+  echo "  --no-remote-cache            Disable remote-cache pulls for this run" >&2
   echo "  --skip-preflight             Skip Java/cache pre-check" >&2
   exit 2
 }
@@ -105,6 +107,14 @@ while [ "$#" -gt 0 ]; do
       ;;
     --skip-preflight)
       SKIP_PREFLIGHT=true
+      shift
+      ;;
+    --coverage)
+      CAPTURE_ARGS+=(--coverage)
+      shift
+      ;;
+    --no-remote-cache)
+      CAPTURE_ARGS+=(--no-remote-cache)
       shift
       ;;
     --continue-on-error)

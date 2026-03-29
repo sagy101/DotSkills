@@ -1,12 +1,12 @@
 # SBT Multi-Repo Build & Test Skill
 
-An AI agent skill for building, testing, publishing, and diagnosing Scala/SBT services in a multi-repo workspace. Provides four agent-facing commands that wrap internal plumbing for log-first execution, workspace dependency management, and JUnit XML test parsing.
+An AI agent skill for building, testing, collecting scoped scoverage reports, publishing, and diagnosing Scala/SBT services in a multi-repo workspace. Provides four agent-facing commands that wrap internal plumbing for log-first execution, workspace dependency management, JUnit XML test parsing, and remote-cache-safe coverage runs.
 
 ## Agent-Facing Commands
 
 | Command | Script | Description |
 |---|---|---|
-| **Build** | `sbt_build.sh` | Compile, test, or publishLocal with automatic preflight, dep-checking, log capture, auto-publish of missing deps, and test report parsing |
+| **Build** | `sbt_build.sh` | Compile, test, collect scoped coverage, or publishLocal with automatic preflight, dep-checking, log capture, auto-publish of missing deps, and test report parsing |
 | **Status** | `sbt_status.sh` | Discover project dependencies, inspect workspace state, plan cross-repo changes, or verify artifact resolution |
 | **Refresh** | `sbt_refresh.sh` | Publish upstream dependencies in order, clear stale caches, and rebuild |
 | **Reset** | `sbt_reset.sh` | Wipe the isolated build cache and return to clean remote-only resolution |
@@ -17,8 +17,8 @@ These scripts are implementation details — the agent calls the three commands 
 
 | Script | Purpose |
 |---|---|
-| `run_sbt_capture.sh` | Runs SBT with log capture, error summary extraction, and workspace dep pre-check |
-| `run_sbt.sh` | Low-level SBT wrapper: Java resolution, isolated cache flags, `sbt_env` forwarding, test-run locking, stale lock auto-clearing, `--batch` mode |
+| `run_sbt_capture.sh` | Runs SBT with log capture, error summary extraction, workspace dep pre-check, and forwarding for `--coverage` / `--no-remote-cache` |
+| `run_sbt.sh` | Low-level SBT wrapper: Java resolution, isolated cache flags, `sbt_env` forwarding, test-run locking, stale lock auto-clearing, `--batch` mode, remote-cache bypass, and scoped scoverage wrapping |
 | `check_workspace_deps.sh` | Pre-checks that workspace `ProjectRef` dependencies are published in the isolated cache |
 | `preflight_check.sh` | Validates Java, python3, credentials, isolated cache, branch alignment, stale publishes, resolver risks |
 | `discover_deps.sh` | Scans a single repo for ProjectRef deps, workspace artifact deps (direct + transitive), dirty-repo warnings, build config |
@@ -110,6 +110,30 @@ flowchart LR
 1. `sbt_status.sh <project-dir>` — understand the dependency state
 2. `sbt_build.sh <project-dir> -- compile` — build with automatic preflight and dep-checking
 3. `sbt_refresh.sh <project-dir> --publish-upstreams --rebuild` — when upstream changes need propagating
+
+### Coverage Mode
+
+Coverage runs are exposed through `sbt_build.sh --coverage -- "<scoped command>"`.
+
+The implementation intentionally keeps the user command as its own SBT argument and injects setup/teardown commands around it in the same SBT session:
+
+1. Recursively remove local `target/scala-*` directories before startup.
+2. Disable `maybePullRemoteCache` for the scoped project (or `every` scope when no project is given), which prevents CAP-style remote cache hooks from restoring uninstrumented classes.
+3. Run scoped `clean`, then `coverage`.
+4. Force `Test / fork := false` so scoverage writes measurements in-process.
+5. Execute the original user command unchanged.
+6. Run scoped `coverageReport`.
+
+This design was verified against CAP `cap-commons` using:
+
+```bash
+bash sbt-build-test/scripts/sbt_build.sh /Users/sashlag/cap-projects/cap-commons \
+  --workspace-dir /Users/sashlag/cap-projects \
+  --coverage -- \
+  "aws / testOnly com.proofpoint.casb.cap.sdk.aws.test.unittests.paginator.AwsUserPaginationTest"
+```
+
+That run executed 4 tests successfully and produced non-zero AWS coverage (`3.93%` statement, `3.03%` branch), which confirms both the remote-cache bypass and report generation paths.
 
 ### Example Dependency Graph
 
@@ -251,3 +275,4 @@ Combines direct and transitive artifact lists, checks each workspace repo with u
 19. **SBT server kill on refresh** — `sbt_refresh.sh --kill-server` (auto-triggered with `--clean-target`) shuts down the SBT server process to avoid incremental state carrying over after cache wipes.
 20. **Log freshness detection** — `run_sbt_capture.sh` compares log file mtime against invocation start time and warns if the log is from a previous run.
 21. **Human-readable exit codes** — `run_sbt_capture.sh` prints exit code meaning: 0=SUCCESS, 1=SBT error, 2=Infrastructure error.
+22. **Coverage-safe input task execution** — coverage mode injects setup (`maybePullRemoteCache := None`, `clean`, `coverage`, `Test / fork := false`) and teardown (`coverageReport`) as separate SBT arguments around the original user command, so input tasks such as `testOnly <suite>` still execute normally instead of being swallowed by a semicolon-only wrapper.

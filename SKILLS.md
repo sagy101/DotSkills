@@ -86,7 +86,7 @@ Read pod logs, list pods, execute commands in pods, and restart deployments on E
 
 ## SBT Build & Test
 
-Compile, test, and publishLocal any SBT project. Handles multi-repo dependency chains automatically — detects upstream repos, publishes them in correct order, clears caches, and rebuilds. Uses an isolated build cache so normal SBT is never affected.
+Compile, test, collect scoped coverage, and publishLocal any SBT project. Handles multi-repo dependency chains automatically — detects upstream repos, publishes them in correct order, clears caches, and rebuilds. Uses an isolated build cache so normal SBT is never affected.
 
 > Full details: [docs/sbt-build-test/sbt-build-test-design.md](docs/sbt-build-test/sbt-build-test-design.md)
 
@@ -96,7 +96,8 @@ Compile, test, and publishLocal any SBT project. Handles multi-repo dependency c
 | 2 | Simple | "Run tests for my-service" | Runs `-- test`, parses JUnit XML reports, and displays a summary of passed/failed/skipped tests with failure details. |
 | 3 | Medium | "Compile my-service with auto-publish of upstream dependencies" | Runs with `--auto-publish-deps`, detects stale or missing upstream workspace artifacts, publishes them in dependency order, then compiles the target project. |
 | 4 | Medium | "Run tests for just the core subproject" | Runs `-- "core / test"` targeting a specific subproject, parses its JUnit results, and reports findings. |
-| 5 | Complex | "I changed shared-models — rebuild and test both my-service and api-gateway that depend on it" | Runs workspace status to map the dependency graph, publishes shared-models first, then builds both downstream projects in order with `--auto-publish-deps`, and reports combined test results. |
+| 5 | Complex | "Run coverage for just the aws subproject's AwsUserPaginationTest" | Runs `--coverage -- "aws / testOnly ..."` with remote-cache pulls disabled for that scoped project, keeps the test command intact, generates `coverageReport`, and summarizes both the test result and coverage output. |
+| 6 | Complex | "I changed shared-models — rebuild and test both my-service and api-gateway that depend on it" | Runs workspace status to map the dependency graph, publishes shared-models first, then builds both downstream projects in order with `--auto-publish-deps`, and reports combined test results. |
 
 ---
 

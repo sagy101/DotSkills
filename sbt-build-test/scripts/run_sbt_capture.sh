@@ -5,7 +5,7 @@ set -euo pipefail
 usage() {
   local _rc
   _rc="${1:-2}"
-  echo "Usage: run_sbt_capture.sh <project-dir> [--workspace-dir <workspace-dir>] [--artifact-version <version>] [--sbt-env <value>] [--label <label>] [--log-file <path>] [--tail <lines>] -- <sbt-arg>..." >&2
+  echo "Usage: run_sbt_capture.sh <project-dir> [--workspace-dir <workspace-dir>] [--artifact-version <version>] [--sbt-env <value>] [--label <label>] [--log-file <path>] [--tail <lines>] [--batch] [--coverage] [--no-remote-cache] -- <sbt-arg>..." >&2
   exit "$_rc"
 }
 
@@ -28,6 +28,8 @@ LOG_FILE=""
 TAIL_LINES=0
 AUTO_PUBLISH_DEPS=false
 FORCE_BATCH=false
+COVERAGE_MODE=false
+NO_REMOTE_CACHE=false
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
@@ -71,6 +73,15 @@ while [ "$#" -gt 0 ]; do
       ;;
     --auto-publish-deps)
       AUTO_PUBLISH_DEPS=true
+      shift
+      ;;
+    --coverage)
+      COVERAGE_MODE=true
+      NO_REMOTE_CACHE=true
+      shift
+      ;;
+    --no-remote-cache)
+      NO_REMOTE_CACHE=true
       shift
       ;;
     --)
@@ -127,6 +138,11 @@ if [ -n "$SBT_ENV_VALUE" ]; then
 fi
 if [ "$FORCE_BATCH" = true ]; then
   RUN_CMD+=(--batch)
+fi
+if [ "$COVERAGE_MODE" = true ]; then
+  RUN_CMD+=(--coverage)
+elif [ "$NO_REMOTE_CACHE" = true ]; then
+  RUN_CMD+=(--no-remote-cache)
 fi
 RUN_CMD+=(--)
 for arg in "$@"; do
