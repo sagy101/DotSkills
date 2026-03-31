@@ -210,10 +210,22 @@ def publish_page(
         if png_files:
             print(f"  Uploading {len(png_files)} diagram attachment(s)...")
             time.sleep(2)
-            for png in png_files:
+            for i, png in enumerate(png_files):
                 _attach_with_retry(
-                    confluence, result_id, png, "Mermaid diagram (auto-generated)", backoff=3
+                    confluence, result_id, png, "Mermaid diagram (auto-generated)", backoff=5
                 )
+                if i < len(png_files) - 1:
+                    time.sleep(1)  # throttle to avoid Confluence transaction conflicts
+            # Re-save the page body so Confluence resolves ri:attachment
+            # references — on initial create, attachments didn't exist yet
+            # so Confluence rewrites filenames to UNKNOWN_ATTACHMENT.
+            confluence.update_page(
+                page_id=result_id,
+                title=title,
+                body=body,
+                type="page",
+                representation="storage",
+            )
 
     return result_id, page_url
 
