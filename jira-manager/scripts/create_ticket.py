@@ -38,85 +38,43 @@ from jira_client import JiraAPIError, JiraClient
 from jira_config_loader import JiraConfig, add_config_arg, load_config, load_manifest, save_manifest
 from workflow_ops import handle_status_transition, upload_attachments
 
-# Schema types that are not valid for issue creation (e.g. rank fields cause
-# "rankBeforeIssue: expected Object" errors when their raw value is copied).
-_NON_COPYABLE_SCHEMA_TYPES = {
-    "com.pyxis.greenhopper.jira:gh-lexo-rank",
-    "com.pyxis.greenhopper.jira:gh-global-rank",
-    "com.atlassian.jpo:jpo-custom-field-baseline-start",
-    "com.atlassian.jpo:jpo-custom-field-baseline-end",
-}
-
-# Fields that are always set by the script and should never be copied
-_SKIP_COPY_FIELDS = {
-    "project",
-    "summary",
-    "issuetype",
-    "parent",
-    "created",
-    "updated",
-    "creator",
-    "reporter",
-    "status",
-    "statuscategorychangedate",
-    "workratio",
-    "votes",
-    "watches",
-    "comment",
-    "issuelinks",
-    "subtasks",
-    "aggregateprogress",
-    "progress",
-    "timetracking",
-    "attachment",
-    "worklog",
-    "resolution",
-    "resolutiondate",
-    "lastViewed",
-    "thumbnail",
-}
-
 
 def _copy_custom_fields(
     fields: dict[str, Any],
     source_key: str,
     client: JiraClient,
+    issue_type_id: str | None,
 ) -> None:
     """Copy custom fields from an existing issue into the fields dict.
 
-    Only copies fields that start with 'customfield_' and are not already
-    set in the fields dict. Skips None values and fields whose schema type
-    is known to be non-copyable (e.g. rank fields).
+    Only copies ``customfield_*`` fields that are on the target issue type's
+    create screen (fetched via ``get_create_meta_for_type``).  Fields not on
+    the screen are skipped automatically — no hardcoded skip lists needed.
     """
-    # Build a set of field IDs to skip based on their schema type
-    non_copyable_ids: set[str] = set()
-    try:
-        all_fields = client.get_fields()
-        for f in all_fields:
-            schema_custom = f.get("schema", {}).get("custom", "")
-            if schema_custom in _NON_COPYABLE_SCHEMA_TYPES:
-                non_copyable_ids.add(f["id"])
-    except Exception:
-        pass  # If metadata fetch fails, proceed without schema filtering
+    screen_field_ids: set[str] | None = None
+    if issue_type_id:
+        try:
+            meta_fields = client.get_create_meta_for_type(issue_type_id)
+            screen_field_ids = {f.get("key", f.get("fieldId", "")) for f in meta_fields}
+        except Exception:
+            pass  # If createmeta fails, fall back to copying nothing
 
     source = client.get_issue(source_key)
     source_fields = source.get("fields", {})
     copied = []
-    skipped_schema = []
+    skipped = []
     for fid, value in source_fields.items():
-        if fid in fields or fid in _SKIP_COPY_FIELDS:
+        if fid in fields:
             continue
         if not fid.startswith("customfield_") or value is None:
             continue
-        if fid in non_copyable_ids:
-            skipped_schema.append(fid)
+        if screen_field_ids is not None and fid not in screen_field_ids:
+            skipped.append(fid)
             continue
         fields[fid] = value
         copied.append(fid)
-    if skipped_schema:
-        print(
-            f"  Skipped {len(skipped_schema)} non-copyable fields (rank/computed): {', '.join(skipped_schema)}"
-        )
+    if skipped:
+        print(f"  Skipped {len(skipped)} fields not on create screen")
     if copied:
         print(f"  Copied {len(copied)} custom fields from {source_key}: {', '.join(copied)}")
 
@@ -386,7 +344,8 @@ def main() -> None:
 
     # Copy custom fields from a source issue (before dry-run so it shows in preview)
     if args.copy_fields_from:
-        _copy_custom_fields(fields, args.copy_fields_from, client)
+        issue_type_id = fields.get("issuetype", {}).get("id")
+        _copy_custom_fields(fields, args.copy_fields_from, client, issue_type_id)
 
     if args.dry_run:
         _handle_dry_run(fields, effective_status, args.attachment)
