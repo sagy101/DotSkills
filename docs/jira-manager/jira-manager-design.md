@@ -17,7 +17,7 @@ This skill gives **any SKILL.md-compatible agent** reliable Jira CRUD by combini
 | Capability | Description |
 |---|---|
 | **Create tickets** | Single or bulk creation from markdown/JSON source files with dependency ordering |
-| **Update tickets** | Modify fields, status, sprint, priority, assignee, attachments, comments, and issue links on existing issues |
+| **Update tickets** | Modify fields, status, sprint, priority, assignee, parent, attachments, comments, and issue links on existing issues |
 | **Bulk update** | Update multiple tickets by explicit list, board, JQL, or field filter |
 | **Fetch tickets** | Query by key, JQL, field filter, parent, or Agile board (table/detail/JSON output) |
 | **Delete tickets** | Remove issues with dry-run preview and confirmation gate |
@@ -37,7 +37,7 @@ This skill gives **any SKILL.md-compatible agent** reliable Jira CRUD by combini
 
 **1. Discovery-first architecture** — Before creating or updating tickets, the agent runs `discover_fields.py --all --apply` to learn the project's statuses, priorities, components, versions, sprints, and custom fields. This populates `field_catalog` in `.jira.json`, which all other scripts reference. No hardcoded field IDs or status names.
 
-**2. Generic `--set` and `--filter` flags** — Named flags cover common fields (`--status`, `--priority`, `--sprint`), but any field can be set or filtered via `--set "field=value"` and `--filter field=value`. This means the skill works with custom fields (story points, team, environment, etc.) without needing per-field flag definitions.
+**2. Generic `--set` and `--filter` flags** — Named flags cover common fields (`--status`, `--priority`, `--sprint`, `--parent`), but any field can be set or filtered via `--set "field=value"` and `--filter field=value`. This means the skill works with custom fields (story points, team, environment, etc.) without needing per-field flag definitions. The `parent` field is auto-wrapped as `{"key": "..."}` whether set via `--parent` or `--set "parent=KEY"`.
 
 **3. Manifest-driven idempotency** — `.jira-manifest.json` maps local definitions (markdown sections or JSON entries) to Jira issue keys. Bulk create skips already-created tickets. Diff compares local definitions against live Jira state. This prevents duplicate creation on retry and enables incremental sync.
 
@@ -56,6 +56,10 @@ This skill gives **any SKILL.md-compatible agent** reliable Jira CRUD by combini
 **10. Virtual environment isolation** — `jira_setup_env.py` creates `.venv/` inside the skill directory (e.g., `jira-manager/.venv/`). The agent invokes scripts using the absolute path to the venv Python interpreter (e.g., `/path/to/jira-manager/.venv/bin/python`) — no shell activation required. This keeps the skill self-contained and works identically whether installed in the repo or synced to `~/.codeium/windsurf/skills/`.
 
 **11. Required field pre-validation via create_meta** — `discover_fields.py --apply` now always fetches Jira's `createmeta` (required fields per issue type) and persists it in `.jira.json`. Before any create API call, `create_ticket.py` and `bulk_create.py` validate that all required fields are present and exit with actionable `--set` hints if any are missing. This catches errors like "QBR is mandatory for Epics" before hitting the API.
+
+**18. Actionable auto-diagnosis on create errors** — When `create_ticket.py` gets a 400 error, it checks each candidate field against the issue type's create screen (via `createmeta`). Fields that are on the screen with allowed values are marked **★ Recommended** and shown first. Fields not on the screen are flagged as "not on create screen, likely not settable" and shown last. This prevents the agent from trying non-settable fields before the actionable ones.
+
+**19. Hierarchy-aware parent updates** — `update_ticket.py --parent` auto-wraps the key as `{"key": "..."}` for the API. When a parent update fails with a hierarchy error, the script fetches both issue types' hierarchy levels via the v3 `createmeta` endpoint, identifies the gap (e.g., Initiative level 3 → Epic level 1 skips Feature level 2), and suggests the intermediate type to create. The full project hierarchy is printed for reference.
 
 **12. CLI flag normalization for LLM agents** — `jira_config_loader.py` calls `_normalize_argv()` at import time, patching `sys.argv` in-place before argparse ever sees it. Since every script imports `jira_config_loader`, normalization is automatic — no per-script wiring needed. Converts single-dash long flags (`-format`) to double-dash (`--format`). Short flags like `-v` are untouched.
 
@@ -138,6 +142,8 @@ If `field_catalog` is empty or stale, scripts may fail with "field not configure
 | Orphaned subtasks | Medium | Dependency-ordered creation; stop on parent failure |
 | Invalid status transitions | Medium | Transition query + clear error messages |
 | Stale field catalog | Medium | Pre-flight check triggers re-discovery |
+| Hierarchy mismatch when re-parenting | Medium | Auto-diagnosis prints both levels + intermediate types needed |
+| Agent ignoring auto-diagnosis hints | Medium | Actionable matches (★ Recommended) sorted first; non-settable fields flagged |
 | Agent abandoning scripts for inline code | High | SKILL.md rules #1-2 mandate script usage; troubleshooting table documents common mistakes |
 | Agent using wrong flag syntax (`-flag` vs `--flag`) | Medium | `normalize_args()` auto-corrects single-dash long flags |
 | Markup conversion artifacts | Low | `--no-convert` escape hatch; round-trip tested |
@@ -153,4 +159,4 @@ If `field_catalog` is empty or stale, scripts may fail with "field not configure
 
 ## Status
 
-**Stable (v1.8)** — Full CRUD, bulk operations, Agile board/sprint support, field discovery, diff/validate, markup conversion, comments, and issue links implemented.
+**Stable (v1.9)** — Full CRUD, bulk operations, Agile board/sprint support, field discovery, diff/validate, markup conversion, comments, issue links, parent re-parenting with hierarchy diagnosis, and actionable auto-diagnosis implemented.

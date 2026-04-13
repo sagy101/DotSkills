@@ -37,7 +37,7 @@ from field_resolver import (
     build_update_fields,
     resolve_sprint_id,
 )
-from jira_client import JiraClient
+from jira_client import JiraAPIError, JiraClient
 from jira_config_loader import JiraConfig, add_config_arg, load_config
 from workflow_ops import handle_status_transition, upload_attachments
 
@@ -83,11 +83,97 @@ def _print_dry_run(
         print(f"Attachments: {', '.join(attachments)}")
 
 
+def _diagnose_hierarchy_error(client: JiraClient, issue_key: str, parent_key: str) -> None:
+    """When a parent update fails with a hierarchy error, show useful diagnostics."""
+    try:
+        issue = client.get_issue(issue_key, fields=["issuetype"])
+        parent = client.get_issue(parent_key, fields=["issuetype"])
+        issue_type = issue["fields"]["issuetype"]
+        parent_type = parent["fields"]["issuetype"]
+
+        hierarchy = client.get_issue_type_hierarchy()
+        if not hierarchy:
+            return
+
+        level_map = {t["name"]: t.get("hierarchyLevel", "?") for t in hierarchy}
+        issue_level = level_map.get(issue_type["name"], "?")
+        parent_level = level_map.get(parent_type["name"], "?")
+
+        print("\n--- Hierarchy diagnosis ---", file=sys.stderr)
+        print(
+            f"  {issue_key} type: {issue_type['name']} (level {issue_level})",
+            file=sys.stderr,
+        )
+        print(
+            f"  {parent_key} type: {parent_type['name']} (level {parent_level})",
+            file=sys.stderr,
+        )
+
+        if isinstance(issue_level, int) and isinstance(parent_level, int):
+            if parent_level <= issue_level:
+                print(
+                    f"  Problem: parent level ({parent_level}) must be higher than "
+                    f"child level ({issue_level}).",
+                    file=sys.stderr,
+                )
+            elif parent_level - issue_level > 1:
+                gap_levels = sorted(
+                    [
+                        t
+                        for t in hierarchy
+                        if issue_level < t.get("hierarchyLevel", -99) < parent_level
+                    ],
+                    key=lambda t: t.get("hierarchyLevel", 0),
+                )
+                if gap_levels:
+                    names = ", ".join(
+                        f"{t['name']} (level {t.get('hierarchyLevel')})" for t in gap_levels
+                    )
+                    print(
+                        f"  Problem: levels are not consecutive. Intermediate types: {names}",
+                        file=sys.stderr,
+                    )
+                    print(
+                        f"  Fix: create a {gap_levels[0]['name']} under {parent_key}, "
+                        f"then parent {issue_key} under that.",
+                        file=sys.stderr,
+                    )
+
+        print("\n  Full hierarchy for this project:", file=sys.stderr)
+        for t in hierarchy:
+            lvl = t.get("hierarchyLevel", "?")
+            print(f"    level {lvl}: {t['name']}", file=sys.stderr)
+        print("---", file=sys.stderr)
+    except Exception:
+        pass
+
+
+def _apply_field_updates(
+    client: JiraClient, issue_key: str, fields: dict[str, Any], parent_arg: str | None
+) -> None:
+    """Apply field updates to an issue, with hierarchy error diagnosis for parent changes."""
+    try:
+        client.update_issue(issue_key, fields)
+        print(f"Updated {issue_key}")
+        print(f"  {client.browse_url(issue_key)}")
+    except JiraAPIError as e:
+        parent_key = parent_arg or (fields.get("parent") or {}).get("key")
+        if parent_key and "hierarchy" in e.detail.lower():
+            _diagnose_hierarchy_error(client, issue_key, parent_key)
+        sys.exit(1)
+    except Exception:
+        sys.exit(1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Update a Jira issue")
     add_config_arg(parser)
     parser.add_argument("--key", required=True, help="Issue key (e.g. API-123)")
     parser.add_argument("--summary", help="New summary/title")
+    parser.add_argument(
+        "--parent",
+        help="Set parent issue key (e.g. API-456). Auto-wraps as {key: ...} for the API.",
+    )
     parser.add_argument(
         "--comment",
         help="Add a comment to the issue",
@@ -104,6 +190,9 @@ def main() -> None:
 
     config = load_config(args.config)
     fields, status_from_set = build_update_fields(args, config)
+
+    if args.parent:
+        fields["parent"] = {"key": args.parent}
 
     effective_status = args.status or status_from_set
     effective_sprint = getattr(args, "sprint", None)
@@ -130,12 +219,7 @@ def main() -> None:
     client = JiraClient(config)
 
     if fields:
-        try:
-            client.update_issue(args.key, fields)
-            print(f"Updated {args.key}")
-            print(f"  {client.browse_url(args.key)}")
-        except Exception:
-            sys.exit(1)
+        _apply_field_updates(client, args.key, fields, args.parent)
 
     if effective_status:
         handle_status_transition(client, args.key, effective_status, config)

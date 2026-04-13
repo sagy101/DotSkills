@@ -95,11 +95,15 @@ $PY $S/create_ticket.py --type bug --summary "Bug title" \
 
 Create flags: `--type`, `--summary`, `--description`, `--epic`, `--parent`, `--priority`, `--assignee`, `--component` (repeatable), `--fix-version` (repeatable), `--sprint`, `--labels`, `--story-points`, `--attachment` (repeatable), `--fields` (raw JSON for custom fields), `--copy-fields-from ISSUE-KEY` (copy custom fields like QBR/team from an existing issue).
 
-**`--copy-fields-from`**: Fetches all custom fields from the source issue and applies them to the new issue. Only copies `customfield_*` fields that aren't already set by other flags. Useful when your Jira project has required custom fields (e.g. QBR, QBR Theme) that vary per team/project — just point at a sibling issue instead of hunting for field IDs.
+**`--copy-fields-from`**: Fetches all custom fields from the source issue and applies them to the new issue. Only copies `customfield_*` fields that aren't already set by other flags. Automatically skips non-copyable fields (e.g. GreenHopper rank fields) by checking field schema metadata. Useful when your Jira project has required custom fields (e.g. QBR, QBR Theme) that vary per team/project — just point at a sibling issue instead of hunting for field IDs.
 
 **Create order**: epics → stories → subtasks. On failure, stop — do not continue with dependents.
 
-If create fails with a 400 error, the script auto-diagnoses the missing field: it searches for matching fields, shows allowed values, and suggests the exact `--fields` JSON to fix it. You can also run `$PY $S/discover_fields.py --fields-for-type <type>` manually.
+If create fails with a 400 error, the script auto-diagnoses the missing field. **Always follow the auto-diagnosis output:**
+- Fields marked **★ Recommended** are on the create screen with allowed values — use the `Fix:` line verbatim.
+- Fields marked **"not on create screen"** cannot be set during creation — skip them.
+- If multiple matches appear, the recommended one is almost always correct. Do NOT try non-settable fields first.
+- You can also run `$PY $S/discover_fields.py --fields-for-type <type>` manually to explore available fields.
 
 ### Bulk create
 
@@ -120,6 +124,9 @@ $PY $S/update_ticket.py --key PROJ-101 --status "In Progress"
 # Unassign (empty string = unassign)
 $PY $S/update_ticket.py --key PROJ-101 --assignee ""
 
+# Re-parent an issue (set parent to another issue)
+$PY $S/update_ticket.py --key PROJ-101 --parent PROJ-200
+
 # Any field by name (updates only — resolves via field_catalog)
 $PY $S/update_ticket.py --key PROJ-101 --set "components=Backend"
 
@@ -128,7 +135,9 @@ $PY $S/update_ticket.py --key PROJ-101 --comment "Done." \
   --link "Blocks:PROJ-200" --attachment report.pdf
 ```
 
-Update flags: `--summary`, `--description`, `--status`, `--priority`, `--assignee`, `--component`, `--fix-version`, `--sprint`, `--labels`, `--story-points`, `--set "field=value"` (repeatable), `--fields` (raw JSON), `--comment`, `--link "Type:KEY"` (repeatable), `--attachment` (repeatable), `--dry-run`.
+Update flags: `--summary`, `--description`, `--status`, `--priority`, `--assignee`, `--parent`, `--component`, `--fix-version`, `--sprint`, `--labels`, `--story-points`, `--set "field=value"` (repeatable), `--fields` (raw JSON), `--comment`, `--link "Type:KEY"` (repeatable), `--attachment` (repeatable), `--dry-run`.
+
+**`--parent`**: Sets the parent issue (e.g. `--parent PROJ-200`). Auto-wraps as `{"key": "..."}` for the API. If the update fails with a hierarchy error, the script auto-diagnoses the issue: shows both issue types' hierarchy levels and suggests what intermediate type to create. Also works via `--set "parent=PROJ-200"`.
 
 ### Bulk update
 

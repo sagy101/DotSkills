@@ -107,10 +107,16 @@ def _resolve_from_catalog(
     return jira_field_id, field_value, None
 
 
+_OBJECT_KEY_FIELDS = {"parent"}
+
+
 def _resolve_from_fallbacks(
     config: JiraConfig, normalized: str, field_name: str, field_value: str
 ) -> tuple[str, object, None]:
     """Try field_mappings, _fields_index, then use field_name as-is."""
+    if normalized in _OBJECT_KEY_FIELDS:
+        return normalized, {"key": field_value}, None
+
     mapped_id = config.get_field_id(normalized)
     if mapped_id:
         try:

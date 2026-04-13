@@ -171,21 +171,24 @@ def _print_field_fix_hint(fid: str, client: JiraClient, issue_type_id: str | Non
         break
 
 
-def _diagnose_candidate(
-    candidate: str,
-    all_fields: list[dict[str, Any]],
-    client: JiraClient,
-    issue_type_id: str | None,
-) -> None:
-    """Diagnose a single candidate field name from a 400 error."""
-    candidate_lower = candidate.lower()
-    matches = [f for f in all_fields if candidate_lower in f.get("name", "").lower()]
-    if not matches:
-        print(f"  Could not find a field matching '{candidate}'.", file=sys.stderr)
-        return
-    for mf in matches:
-        print(f"  Possible match: {mf['name']} ({mf['id']})", file=sys.stderr)
-        _print_field_fix_hint(mf["id"], client, issue_type_id)
+def _check_field_on_screen(
+    fid: str, client: JiraClient, issue_type_id: str | None
+) -> tuple[bool, list[dict]]:
+    """Check if a field is on the create screen and return its allowed values.
+
+    Returns (is_on_screen, allowed_values).
+    """
+    if not issue_type_id:
+        return False, []
+    try:
+        type_fields = client.get_create_meta_for_type(issue_type_id)
+    except Exception:
+        return False, []
+    for tf in type_fields:
+        tf_key = tf.get("key", tf.get("fieldId", ""))
+        if tf_key == fid:
+            return True, tf.get("allowedValues", [])
+    return False, []
 
 
 def _suggest_fix_for_field_error(
@@ -193,16 +196,49 @@ def _suggest_fix_for_field_error(
     client: JiraClient,
     issue_type_id: str | None,
 ) -> None:
-    """When create fails with a 400, try to identify the missing field and suggest a fix."""
+    """When create fails with a 400, try to identify the missing field and suggest a fix.
+
+    Sorts matches so actionable fields (on the create screen with allowed values)
+    appear first, and non-actionable fields are flagged with a warning.
+    """
     candidates = _extract_field_candidates(error_detail)
     if not candidates:
         return
 
-    print("\n--- Auto-diagnosis ---", file=sys.stderr)
     all_fields = client.get_fields()
 
+    actionable: list[tuple[dict, bool, list]] = []
+    non_actionable: list[dict] = []
+
     for candidate in candidates:
-        _diagnose_candidate(candidate, all_fields, client, issue_type_id)
+        candidate_lower = candidate.lower()
+        matches = [f for f in all_fields if candidate_lower in f.get("name", "").lower()]
+        if not matches:
+            non_actionable.append({"name": candidate, "id": "?"})
+            continue
+        for mf in matches:
+            on_screen, allowed = _check_field_on_screen(mf["id"], client, issue_type_id)
+            if on_screen:
+                actionable.append((mf, on_screen, allowed))
+            else:
+                non_actionable.append(mf)
+
+    print("\n--- Auto-diagnosis ---", file=sys.stderr)
+
+    for mf, _on_screen, allowed in actionable:
+        marker = " ★ Recommended" if allowed else ""
+        print(f"  {mf['name']} ({mf['id']}){marker}", file=sys.stderr)
+        _print_field_fix_hint(mf["id"], client, issue_type_id)
+
+    for mf in non_actionable:
+        fid = mf.get("id", "?")
+        if fid == "?":
+            print(f"  Could not find a field matching '{mf['name']}'.", file=sys.stderr)
+        else:
+            print(
+                f"  {mf['name']} ({fid}) — not on create screen, likely not settable",
+                file=sys.stderr,
+            )
 
     print("---", file=sys.stderr)
 

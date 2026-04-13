@@ -346,6 +346,23 @@ class JiraClient:
             body["fields"] = fields
         return self._request("POST", f"/rest/api/2/issue/{issue_key}/transitions", body)  # type: ignore[no-any-return]
 
+    def get_issue_type_hierarchy(self, project_key: str | None = None) -> list[dict[str, Any]]:
+        """Fetch all issue types with hierarchy levels for the project via v3 createmeta.
+
+        Returns a list of dicts: [{"id": ..., "name": ..., "hierarchyLevel": ...}, ...],
+        sorted by hierarchyLevel descending (highest first).
+        """
+        pk = project_key or self.config.project_key
+        try:
+            result = self._request(
+                "GET",
+                f"/rest/api/3/issue/createmeta/{pk}/issuetypes",
+            )
+            types = result.get("issueTypes", result if isinstance(result, list) else [])
+            return sorted(types, key=lambda t: t.get("hierarchyLevel", 0), reverse=True)
+        except Exception:
+            return []
+
     def get_project(self, project_key: str | None = None) -> dict[str, Any]:
         """Fetch project metadata."""
         pk = project_key or self.config.project_key

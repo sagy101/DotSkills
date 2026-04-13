@@ -161,6 +161,22 @@ class TestResolveSetField:
         assert jira_id == "customfield_12345"
         assert jira_val == "hello"
 
+    def test_parent_auto_wraps_as_object(self):
+        """--set 'parent=KEY' should auto-wrap as {"key": "KEY"} via _OBJECT_KEY_FIELDS."""
+        config = _make_config()
+        jira_id, jira_val, status_val = resolve_set_field(config, "parent", "API-8615")
+        assert jira_id == "parent"
+        assert jira_val == {"key": "API-8615"}
+        assert status_val is None
+
+    def test_parent_auto_wrap_via_apply_set_pairs(self):
+        """apply_set_pairs with parent= produces the correct object format."""
+        config = _make_config()
+        args = _make_args(set=["parent=PROJ-100"])
+        fields: dict = {}
+        apply_set_pairs(fields, args, config)
+        assert fields["parent"] == {"key": "PROJ-100"}
+
 
 # ---------------------------------------------------------------------------
 # _resolve_from_catalog — type-specific formatting
