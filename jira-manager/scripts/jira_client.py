@@ -568,6 +568,13 @@ class JiraClient:
         except urllib.error.HTTPError:
             return False
 
+    def search_users(self, query: str) -> list[dict[str, Any]]:
+        """Search for users by display name or email. Returns list of user dicts with accountId."""
+        result: list[dict[str, Any]] = self._request(
+            "GET", f"/rest/api/2/user/search?query={urllib.parse.quote(query)}"
+        )
+        return result
+
     def browse_url(self, issue_key: str) -> str:
         """Return the browse URL for an issue."""
         return f"{self.base_url}/browse/{issue_key}"

@@ -14,6 +14,7 @@ Workflow operations (transitions, attachments) have been moved to workflow_ops.p
 """
 
 import argparse
+import difflib
 import json
 import sys
 from pathlib import Path
@@ -211,14 +212,61 @@ def apply_priority(fields: dict[str, Any], args: argparse.Namespace, config: Jir
         fields["priority"] = {"name": args.priority}
 
 
-def apply_assignee(fields: dict[str, Any], args: argparse.Namespace) -> None:
-    """Add assignee to fields dict if provided. Empty string unassigns."""
+def apply_assignee(fields: dict[str, Any], args: argparse.Namespace, client: Any = None) -> None:
+    """Add assignee to fields dict if provided. Empty string unassigns.
+
+    On Jira Cloud, display names must be resolved to an accountId.
+    If a client is provided, the function searches for the user and uses
+    accountId. Falls back to {"name": ...} for Jira Server or if no client.
+    """
     if args.assignee is None:
         return
     if args.assignee == "":
         fields["assignee"] = None
-    else:
-        fields["assignee"] = {"name": args.assignee}
+        return
+
+    # If it looks like an accountId already, use it directly
+    if args.assignee.startswith("5") and len(args.assignee) == 24:
+        fields["assignee"] = {"accountId": args.assignee}
+        return
+
+    # Try to resolve display name to accountId via user search
+    if client is not None:
+        try:
+            users = client.search_users(args.assignee)
+            if users:
+                display_names = [u.get("displayName", "") for u in users]
+                # Prefer exact display name match (case-insensitive)
+                exact = [
+                    u for u in users if u.get("displayName", "").lower() == args.assignee.lower()
+                ]
+                if exact:
+                    fields["assignee"] = {"accountId": exact[0]["accountId"]}
+                    return
+                # No exact match — suggest closest names
+                close = difflib.get_close_matches(args.assignee, display_names, n=3, cutoff=0.4)
+                if close:
+                    print(
+                        f"WARNING: No exact match for assignee '{args.assignee}'. "
+                        f"Did you mean one of: {', '.join(repr(n) for n in close)}?",
+                        file=sys.stderr,
+                    )
+                else:
+                    print(
+                        f"WARNING: No match for assignee '{args.assignee}'. "
+                        f"Found users: {', '.join(repr(n) for n in display_names[:3])}",
+                        file=sys.stderr,
+                    )
+                return  # Do not set assignee — let the agent self-correct
+            print(
+                f"WARNING: No users found matching '{args.assignee}'.",
+                file=sys.stderr,
+            )
+            return
+        except Exception:
+            pass  # Fall back to name-based assignment
+
+    fields["assignee"] = {"name": args.assignee}
 
 
 def apply_components(fields: dict[str, Any], args: argparse.Namespace, config: JiraConfig) -> None:
@@ -267,7 +315,7 @@ def resolve_sprint_id(config: JiraConfig, sprint_value: str) -> tuple[int | None
 
 
 def apply_named_fields(
-    fields: dict[str, Any], args: argparse.Namespace, config: JiraConfig
+    fields: dict[str, Any], args: argparse.Namespace, config: JiraConfig, client: Any = None
 ) -> None:
     """Apply all named field flags (priority, assignee, component, fix-version,
     story-points, labels) to the fields dict.
@@ -278,7 +326,7 @@ def apply_named_fields(
     apply_story_points(fields, args, config)
     apply_labels(fields, args)
     apply_priority(fields, args, config)
-    apply_assignee(fields, args)
+    apply_assignee(fields, args, client)
     apply_components(fields, args, config)
     apply_fix_versions(fields, args, config)
 
@@ -319,7 +367,7 @@ def apply_extra_fields(fields: dict[str, Any], args: argparse.Namespace) -> None
 
 
 def build_update_fields(
-    args: argparse.Namespace, config: JiraConfig
+    args: argparse.Namespace, config: JiraConfig, client: Any = None
 ) -> tuple[dict[str, Any], str | None]:
     """Build the fields dict from CLI arguments.
 
@@ -334,7 +382,7 @@ def build_update_fields(
     if description is not None:
         fields["description"] = description
 
-    apply_named_fields(fields, args, config)
+    apply_named_fields(fields, args, config, client=client)
     status_from_set = apply_set_pairs(fields, args, config)
     apply_extra_fields(fields, args)
 

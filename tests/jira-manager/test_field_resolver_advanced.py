@@ -347,6 +347,24 @@ class TestBuildUpdateFields:
         assert fields == {}
         assert status is None
 
+    def test_assignee_resolved_via_client(self):
+        """When a client is passed, assignee display name resolves to accountId."""
+        config = _make_config()
+        client = mock.MagicMock()
+        client.search_users.return_value = [
+            {"displayName": "Jane Smith", "accountId": "acc123"},
+        ]
+        args = _make_args(assignee="Jane Smith")
+        fields, _ = build_update_fields(args, config, client=client)
+        assert fields["assignee"] == {"accountId": "acc123"}
+
+    def test_assignee_without_client_uses_name(self):
+        """Without a client, assignee falls back to name-based format."""
+        config = _make_config()
+        args = _make_args(assignee="Jane Smith")
+        fields, _ = build_update_fields(args, config)
+        assert fields["assignee"] == {"name": "Jane Smith"}
+
 
 # ---------------------------------------------------------------------------
 # validate_required_fields

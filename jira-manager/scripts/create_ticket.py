@@ -215,7 +215,9 @@ def _add_epic_link(fields: dict[str, Any], args: argparse.Namespace, config: Jir
         )
 
 
-def build_fields(args: argparse.Namespace, config: JiraConfig) -> tuple[dict[str, Any], str | None]:
+def build_fields(
+    args: argparse.Namespace, config: JiraConfig, client: Any = None
+) -> tuple[dict[str, Any], str | None]:
     """Build the Jira fields dict from CLI arguments.
 
     Returns (fields_dict, status_value_or_None).
@@ -245,7 +247,7 @@ def build_fields(args: argparse.Namespace, config: JiraConfig) -> tuple[dict[str
         fields["parent"] = {"key": args.parent}
 
     _add_epic_link(fields, args, config)
-    apply_named_fields(fields, args, config)
+    apply_named_fields(fields, args, config, client=client)
     status_from_set = apply_set_pairs(fields, args, config)
     apply_extra_fields(fields, args)
 
@@ -333,14 +335,13 @@ def main() -> None:
     args = parser.parse_args()
 
     config = load_config(args.config)
-    fields, status_from_set = build_fields(args, config)
+    client = JiraClient(config)
+    fields, status_from_set = build_fields(args, config, client=client)
     effective_status = args.status or status_from_set
 
     missing = validate_required_fields(config, args.type, fields)
     if missing:
         _print_missing_fields_and_exit(missing, args.type)
-
-    client = JiraClient(config)
 
     # Copy custom fields from a source issue (before dry-run so it shows in preview)
     if args.copy_fields_from:

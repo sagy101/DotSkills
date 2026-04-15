@@ -5,6 +5,7 @@ import argparse
 import importlib.util
 import sys
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 _MODULE_PATH = (
@@ -38,7 +39,12 @@ class TestApplyAssignee:
     def _make_args(self, assignee_value: str | None) -> argparse.Namespace:
         return argparse.Namespace(assignee=assignee_value)
 
-    def test_normal_assignee(self):
+    def _make_client(self, search_results: list[dict] | None = None) -> mock.MagicMock:
+        client = mock.MagicMock()
+        client.search_users.return_value = search_results if search_results is not None else []
+        return client
+
+    def test_no_client_falls_back_to_name(self):
         fields = {}
         apply_assignee(fields, self._make_args("user@example.com"))
         assert fields["assignee"] == {"name": "user@example.com"}
@@ -52,6 +58,64 @@ class TestApplyAssignee:
         fields = {}
         apply_assignee(fields, self._make_args(None))
         assert "assignee" not in fields
+
+    def test_exact_match_resolves_to_account_id(self):
+        client = self._make_client(
+            [
+                {"displayName": "Dor Melamed", "accountId": "abc123"},
+                {"displayName": "Dor Lebel", "accountId": "def456"},
+            ]
+        )
+        fields = {}
+        apply_assignee(fields, self._make_args("Dor Melamed"), client)
+        assert fields["assignee"] == {"accountId": "abc123"}
+
+    def test_case_insensitive_exact_match(self):
+        client = self._make_client(
+            [
+                {"displayName": "Dor Melamed", "accountId": "abc123"},
+            ]
+        )
+        fields = {}
+        apply_assignee(fields, self._make_args("dor melamed"), client)
+        assert fields["assignee"] == {"accountId": "abc123"}
+
+    def test_no_exact_match_suggests_similar_names(self, capsys: Any) -> None:
+        client = self._make_client(
+            [
+                {"displayName": "Dor Melamed", "accountId": "abc123"},
+                {"displayName": "Dor Lebel", "accountId": "def456"},
+                {"displayName": "Dorothy Copeland", "accountId": "ghi789"},
+            ]
+        )
+        fields: dict[str, Any] = {}
+        apply_assignee(fields, self._make_args("Dor Melamd"), client)
+        assert "assignee" not in fields  # not set — agent should self-correct
+        stderr = capsys.readouterr().err
+        assert "Did you mean one of" in stderr
+        assert "Dor Melamed" in stderr
+
+    def test_no_users_found_warns(self, capsys: Any) -> None:
+        client = self._make_client([])
+        fields: dict[str, Any] = {}
+        apply_assignee(fields, self._make_args("Nonexistent Person"), client)
+        assert "assignee" not in fields
+        stderr = capsys.readouterr().err
+        assert "No users found" in stderr
+
+    def test_account_id_passthrough(self):
+        """If value looks like an accountId, use it directly without searching."""
+        fields = {}
+        test_id = "5f4e3d2c1b0a9876543210ab"  # pragma: allowlist secret
+        apply_assignee(fields, self._make_args(test_id))
+        assert fields["assignee"] == {"accountId": test_id}
+
+    def test_client_search_error_falls_back_to_name(self):
+        client = mock.MagicMock()
+        client.search_users.side_effect = Exception("API error")
+        fields = {}
+        apply_assignee(fields, self._make_args("Some User"), client)
+        assert fields["assignee"] == {"name": "Some User"}
 
 
 # ---------------------------------------------------------------------------

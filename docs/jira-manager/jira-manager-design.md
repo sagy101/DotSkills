@@ -61,6 +61,8 @@ This skill gives **any SKILL.md-compatible agent** reliable Jira CRUD by combini
 
 **19. Hierarchy-aware parent updates** — `update_ticket.py --parent` auto-wraps the key as `{"key": "..."}` for the API. When a parent update fails with a hierarchy error, the script fetches both issue types' hierarchy levels via the v3 `createmeta` endpoint, identifies the gap (e.g., Initiative level 3 → Epic level 1 skips Feature level 2), and suggests the intermediate type to create. The full project hierarchy is printed for reference.
 
+**20. Assignee resolution with fuzzy suggestions** — `--assignee` accepts a display name (e.g., `"Dor Melamed"`), which is resolved to a Jira Cloud `accountId` via the `/rest/api/2/user/search` endpoint. Exact match is case-insensitive. If no exact match is found, the top 3 closest display names (via `difflib.get_close_matches`) are printed as suggestions and the assignee field is **not set** — allowing the agent to self-correct. Raw `accountId` values are passed through directly. Falls back to `{"name": ...}` for Jira Server or when no client is available.
+
 **12. CLI flag normalization for LLM agents** — `jira_config_loader.py` calls `_normalize_argv()` at import time, patching `sys.argv` in-place before argparse ever sees it. Since every script imports `jira_config_loader`, normalization is automatic — no per-script wiring needed. Converts single-dash long flags (`-format`) to double-dash (`--format`). Short flags like `-v` are untouched.
 
 **13. Config discovery with git root boundary** — `.jira.json` is discovered by walking up from CWD, stopping at the nearest git root to avoid picking up configs from unrelated parent directories. Global config (`~/.jira.json`) is merged underneath project-level config (project wins on conflict). An explicit `--config` flag overrides discovery entirely.
@@ -146,6 +148,7 @@ If `field_catalog` is empty or stale, scripts may fail with "field not configure
 | Agent ignoring auto-diagnosis hints | Medium | Actionable matches (★ Recommended) sorted first; non-settable fields flagged |
 | Agent abandoning scripts for inline code | High | SKILL.md rules #1-2 mandate script usage; troubleshooting table documents common mistakes |
 | Agent using wrong flag syntax (`-flag` vs `--flag`) | Medium | `normalize_args()` auto-corrects single-dash long flags |
+| Wrong assignee name (typo, wrong case) | Medium | Fuzzy matching suggests top 3 closest names; assignee not set until corrected |
 | Markup conversion artifacts | Low | `--no-convert` escape hatch; round-trip tested |
 | Raw JQL matching too broadly | High | Dry-run preview; `--confirm` required; max-results cap with warning |
 
@@ -159,4 +162,4 @@ If `field_catalog` is empty or stale, scripts may fail with "field not configure
 
 ## Status
 
-**Stable (v1.9)** — Full CRUD, bulk operations, Agile board/sprint support, field discovery, diff/validate, markup conversion, comments, issue links, parent re-parenting with hierarchy diagnosis, and actionable auto-diagnosis implemented.
+**Stable (v2.0)** — Full CRUD, bulk operations, Agile board/sprint support, field discovery, diff/validate, markup conversion, comments, issue links, parent re-parenting with hierarchy diagnosis, and actionable auto-diagnosis implemented.

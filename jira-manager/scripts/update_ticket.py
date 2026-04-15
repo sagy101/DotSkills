@@ -189,7 +189,8 @@ def main() -> None:
     args = parser.parse_args()
 
     config = load_config(args.config)
-    fields, status_from_set = build_update_fields(args, config)
+    client = JiraClient(config)
+    fields, status_from_set = build_update_fields(args, config, client=client)
 
     if args.parent:
         fields["parent"] = {"key": args.parent}
@@ -215,8 +216,6 @@ def main() -> None:
         for link_spec in links:
             print(f"DRY RUN \u2014 would add link to {args.key}: {link_spec}")
         return
-
-    client = JiraClient(config)
 
     if fields:
         _apply_field_updates(client, args.key, fields, args.parent)

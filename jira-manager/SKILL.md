@@ -88,6 +88,9 @@ $PY $S/create_ticket.py --type story --summary "Title" --description "Desc" \
 # Subtask under a story
 $PY $S/create_ticket.py --type sub-task --summary "Subtask title" --parent PROJ-101
 
+# With assignee (use display name — automatically resolved to accountId on Jira Cloud)
+$PY $S/create_ticket.py --type story --summary "Title" --assignee "Jane Smith" --parent PROJ-100
+
 # With extra required fields (use --fields for raw JSON when named flags aren't enough)
 $PY $S/create_ticket.py --type bug --summary "Bug title" \
   --fields '{"customfield_29823": {"value": "Dev"}, "customfield_29843": [{"value": "Production"}]}'
@@ -120,6 +123,9 @@ $PY $S/update_ticket.py --key PROJ-101 --summary "New Title" --story-points 3 --
 
 # Status transition
 $PY $S/update_ticket.py --key PROJ-101 --status "In Progress"
+
+# Assign by display name (auto-resolved to accountId on Jira Cloud)
+$PY $S/update_ticket.py --key PROJ-101 --assignee "Jane Smith"
 
 # Unassign (empty string = unassign)
 $PY $S/update_ticket.py --key PROJ-101 --assignee ""
