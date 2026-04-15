@@ -100,6 +100,18 @@ def extract_page_id(page_ref: str) -> str:
     raise ValueError(f"Could not extract page ID from: {page_ref}")
 
 
+def strip_title_heading(md_content: str, title: str) -> str:
+    """Strip the first H1 heading if it matches *title*.
+
+    Confluence displays the page title in its own header, so keeping the
+    identical H1 inside the body produces a visual duplicate.
+    """
+    h1_match = re.match(r"^#\s+(.+?)(\s*\n)", md_content)
+    if h1_match and h1_match.group(1).strip() == title.strip():
+        return md_content[h1_match.end() :]
+    return md_content
+
+
 def resolve_title(file_path: str, md_content: str, config: "ConfluenceConfig") -> str:
     """Resolve page title using: title_map > first heading > filename."""
     # 1. Explicit title_map

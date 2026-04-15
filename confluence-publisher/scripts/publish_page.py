@@ -50,7 +50,7 @@ from confluence_config import (  # noqa: E402
     resolve_credentials,
     save_manifest,
 )
-from page_utils import resolve_title  # noqa: E402
+from page_utils import resolve_title, strip_title_heading  # noqa: E402
 
 ensure_deps({"atlassian-python-api": "atlassian", "markdown": "markdown"})
 
@@ -189,6 +189,7 @@ def publish_page(
 ) -> tuple[str, str]:
     """Publish a single page. Returns (page_id, page_url)."""
     md_content = file_path.read_text(encoding="utf-8")
+    md_content = strip_title_heading(md_content, title)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         body, png_files = _render_and_prepare_body(

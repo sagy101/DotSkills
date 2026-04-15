@@ -352,3 +352,53 @@ class TestUploadOrdering:
             "attach_file",
             "update_page",  # re-save after attachments
         ], f"Unexpected call order: {call_log}"
+
+
+# ---------------------------------------------------------------------------
+# Fix 3: Strip duplicate H1 heading that matches page title
+# ---------------------------------------------------------------------------
+
+
+class TestStripTitleHeading:
+    def test_h1_matching_title_is_stripped(self) -> None:
+        """When the first H1 matches the page title, it should not appear in the body."""
+        config = _make_config()
+        confluence = _make_confluence_mock()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            md_path = Path(tmp) / "test.md"
+            md_path.write_text("# My Page\n\nBody content", encoding="utf-8")
+
+            publish_page(
+                confluence=confluence,
+                config=config,
+                file_path=md_path,
+                title="My Page",
+                mode="create",
+                parent_id="100",
+            )
+
+        body = confluence.create_page.call_args.kwargs.get("body", "")
+        assert "<h1>" not in body, f"H1 should be stripped from body but got: {body}"
+        assert "Body content" in body
+
+    def test_h1_not_matching_title_is_kept(self) -> None:
+        """When the first H1 does NOT match the title, it should remain in the body."""
+        config = _make_config()
+        confluence = _make_confluence_mock()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            md_path = Path(tmp) / "test.md"
+            md_path.write_text("# Different Heading\n\nBody content", encoding="utf-8")
+
+            publish_page(
+                confluence=confluence,
+                config=config,
+                file_path=md_path,
+                title="My Page",
+                mode="create",
+                parent_id="100",
+            )
+
+        body = confluence.create_page.call_args.kwargs.get("body", "")
+        assert "Different Heading" in body

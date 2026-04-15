@@ -56,6 +56,8 @@ This skill gives **any SKILL.md-compatible agent** the ability to publish, sync,
 
 **10. Module structure** — `confluence_config.py` handles configuration loading, credential resolution, shell detection, and manifest I/O. `page_utils.py` contains page reference utilities (tiny link codec, page ID extraction, title resolution, child page pagination). All scripts share the same `--config` argument definition via `add_config_arg()` for consistency.
 
+**11. H1 title deduplication** — Confluence renders the page title in its own header. If the markdown file starts with a `# Heading` that matches the page title, that H1 is stripped from the body before publishing to avoid a visual duplicate. The comparison is whitespace-trimmed. If the H1 doesn't match, it is kept. This logic lives in `page_utils.strip_title_heading()` and is called by both `publish_page.py` and `diff_pages.py`.
+
 ---
 
 ## Approval Gates

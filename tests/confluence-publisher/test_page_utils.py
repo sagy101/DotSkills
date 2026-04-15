@@ -23,6 +23,7 @@ decode_tiny_link = _mod.decode_tiny_link
 encode_tiny_id = _mod.encode_tiny_id
 extract_page_id = _mod.extract_page_id
 resolve_title = _mod.resolve_title
+strip_title_heading = _mod.strip_title_heading
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +102,41 @@ class TestResolveTitle:
     def test_readme_uses_parent_dir(self):
         config = self._make_config()
         assert resolve_title("docs/my-section/README.md", "No heading", config) == "My Section"
+
+
+# ---------------------------------------------------------------------------
+# strip_title_heading
+# ---------------------------------------------------------------------------
+
+
+class TestStripTitleHeading:
+    def test_strips_matching_h1(self):
+        md = "# My Title\n\nBody text here"
+        result = strip_title_heading(md, "My Title")
+        assert result == "\nBody text here" or result == "Body text here"
+        assert "Body text here" in result
+        assert not result.startswith("# My Title")
+
+    def test_preserves_non_matching_h1(self):
+        md = "# Different Title\n\nBody text here"
+        result = strip_title_heading(md, "My Title")
+        assert result == md
+
+    def test_preserves_no_h1(self):
+        md = "## Subtitle\n\nBody text here"
+        result = strip_title_heading(md, "Subtitle")
+        assert result == md
+
+    def test_strips_with_extra_whitespace(self):
+        md = "#   My Title  \n\nBody"
+        result = strip_title_heading(md, "My Title")
+        assert "Body" in result
+        assert not result.startswith("#")
+
+    def test_preserves_h1_not_at_start(self):
+        md = "Some preamble\n# My Title\n\nBody"
+        result = strip_title_heading(md, "My Title")
+        assert result == md
 
 
 # ---------------------------------------------------------------------------

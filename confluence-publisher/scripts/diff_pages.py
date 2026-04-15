@@ -51,6 +51,7 @@ ensure_deps(
 
 from atlassian import Confluence  # noqa: E402
 from markdownify import markdownify as md_convert  # type: ignore[import-untyped]  # noqa: E402
+from page_utils import strip_title_heading  # noqa: E402
 from transforms import (  # noqa: E402
     markdown_to_confluence_storage,
     normalize_remote_mermaid_macros,
@@ -175,6 +176,7 @@ def diff_file(
 
     # Transform local markdown through the same publish pipeline
     local_md_raw = file_path.read_text(encoding="utf-8")
+    local_md_raw = strip_title_heading(local_md_raw, manifest[rel_path]["title"])
     local_html = local_md_to_storage_html(local_md_raw, rel_path, manifest, config.space_key)
 
     # Normalize remote HTML (replace mermaid image macros with placeholders)
