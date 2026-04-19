@@ -11,6 +11,7 @@ Comparison notes:
 - "Tie" means both sides support the capability at a broadly comparable functional level, even if the UX or ergonomics differ.
 - The skills intentionally do not compete on wrappers for low-value native git/CLI operations when local tooling is clearly simpler.
 - For Confluence inline comments, the skill follows the live Cloud API states such as `resolved` and `reopened` rather than inventing friendlier aliases.
+- Context-efficiency claims are inherently client-dependent. Public anecdotes and Atlassian Labs' `mcp-compressor` project suggest preloaded Atlassian MCP tool descriptions often cost roughly `~7k-10k` tokens, with some clients/users reporting materially higher numbers in specific sessions. Skills are usually lighter in this repo's environment because only a short skill registry is present up front and full `SKILL.md` content is loaded on demand.
 
 ---
 
