@@ -10,6 +10,7 @@ Comparison notes:
 - This compares the MCP tools listed in Atlassian's supported-tools page against capabilities that are actually implemented in this repo's scripts and skill docs.
 - "Tie" means both sides support the capability at a broadly comparable functional level, even if the UX or ergonomics differ.
 - The skills intentionally do not compete on wrappers for low-value native git/CLI operations when local tooling is clearly simpler.
+- Where the skill omits a capability intentionally, the table says why rather than just saying "not supported".
 - For Confluence inline comments, the skill follows the live Cloud API states such as `resolved` and `reopened` rather than inventing friendlier aliases.
 - Context-efficiency claims are inherently client-dependent. Public anecdotes and Atlassian Labs' `mcp-compressor` project suggest preloaded Atlassian MCP tool descriptions often cost roughly `~7k-10k` tokens, with some clients/users reporting materially higher numbers in specific sessions. Skills are usually lighter in this repo's environment because only a short skill registry is present up front and full `SKILL.md` content is loaded on demand.
 
@@ -106,20 +107,20 @@ Comparison notes:
 
 | Capability | Atlassian MCP | bitbucket-manager Skill | Advantage |
 |---|---|---|---|
-| **List workspaces** | `bitbucketWorkspace.list` | Not supported (uses config) | **MCP** |
-| **Get workspace** | `bitbucketWorkspace.get` | Not supported | **MCP** |
+| **List workspaces** | `bitbucketWorkspace.list` | Intentionally omitted — config-first skill assumes a known workspace per repo/user config | **MCP** |
+| **Get workspace** | `bitbucketWorkspace.get` | Intentionally omitted — low-value for this config-first workflow | **MCP** |
 | **List repos** | `bitbucketRepository.list` | `repo_list.py` with `--name` filter | Tie |
 | **Get repo** | `bitbucketRepository.get` | Not directly (auto-detected from git remote) | **MCP** |
-| **Get branch** | `bitbucketRepoContent.branch.get` | Not supported | **MCP** |
-| **Create branch** | `bitbucketRepoContent.branch.create` | Not supported | **MCP** |
-| **Create commit** | `bitbucketRepoContent.commit.create` | Not supported | **MCP** |
-| **Get commit** | `bitbucketRepoContent.commit.get` | Not supported (fetches build status for a commit) | **MCP** |
-| **Get file contents** | `bitbucketRepoContent.files.get` | Not supported | **MCP** |
+| **Get branch** | `bitbucketRepoContent.branch.get` | Intentionally omitted — native git/CLI is simpler for branch inspection | **MCP** |
+| **Create branch** | `bitbucketRepoContent.branch.create` | Intentionally omitted — native git/CLI is simpler for branch creation | **MCP** |
+| **Create commit** | `bitbucketRepoContent.commit.create` | Intentionally omitted — native git/CLI is the safer, clearer interface for commit authoring | **MCP** |
+| **Get commit** | `bitbucketRepoContent.commit.get` | Intentionally omitted as a generic repo primitive; the skill only covers commit build/status lookups | **MCP** |
+| **Get file contents** | `bitbucketRepoContent.files.get` | Intentionally omitted — native git/CLI or local filesystem reads are simpler here | **MCP** |
 | **Create PR** | `bitbucketPullRequest.create` | `pr_create.py` with `--dry-run`, default reviewers from config | **Skill** — dry-run, config defaults |
 | **Get PR** | `bitbucketPullRequest.get` | `pr_get.py` — shows reviewers with approval status | Tie |
 | **List PRs** | `bitbucketPullRequest.list` | `pr_list.py` — filter by state, author, branch | Tie |
 | **PR diff** | `bitbucketPullRequest.diff` | `pr_diff.py` — raw diff, summary, JSON metadata | Tie |
-| **Approve PR** | `bitbucketPullRequest.approve` | Not supported | **MCP** |
+| **Approve PR** | `bitbucketPullRequest.approve` | Intentionally omitted — PR approval is treated as a human review/control action, not an agent action | **MCP** |
 | **Merge PR** | `bitbucketPullRequest.merge` | `pr_merge.py` — merge strategies (squash, fast-forward), precondition checks, `--dry-run` | **Skill** — strategies, preconditions |
 | **Decline PR** | Not supported | `pr_decline.py` with `--dry-run` | **Skill** |
 | **PR comment — add** | `bitbucketPullRequest.comment` | `pr_comment.py --body` — general, inline file-level, threaded replies | **Skill** — inline + replies |
@@ -128,7 +129,6 @@ Comparison notes:
 | **PR comment — delete** | Not supported | `pr_comment.py --delete ID [ID ...]` — bulk delete | **Skill** |
 | **PR comment — resolve** | Not supported | `pr_comment.py --resolve ID [ID ...]` — bulk resolve | **Skill** |
 | **PR comment — reopen** | Not supported | `pr_comment.py --unresolve ID [ID ...]` — bulk reopen for resolved inline threads | **Skill** |
-| **PR emoji reactions** | Not supported | Not supported | Tie |
 | **PR build checks** | Not supported | `pr_checks.py --pr 42` | **Skill** |
 | **Commit/branch build status** | Not supported | `build_status.py --commit X` / `--branch Y` | **Skill** |
 | **Extract Jira issues from PR** | Not supported | `pr_jira.py --pr 42` — scans branch, title, description, commits | **Skill** |
@@ -153,6 +153,6 @@ Comparison notes:
 |---|---|---|---|
 | Jira | **20** | 0 | 9 |
 | Confluence | **24** | 0 | 11 |
-| Bitbucket | **13** | 7 | 11 |
+| Bitbucket | **13** | 7 | 10 |
 
 **Bottom line within these three products:** the skills now tie or beat the MCP across most compared Jira and Confluence workflows and close much of the Bitbucket gap for PR, pipeline, environment, and deployment reads. The MCP still keeps clear advantages on several Bitbucket administrative and repository-content surfaces.
