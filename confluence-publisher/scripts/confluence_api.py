@@ -8,7 +8,7 @@ Used by surgical_edit.py, diff_versions.py, and page_versions.py.
 """
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -67,14 +67,23 @@ def _wiki_base(config: ConfluenceConfig) -> str:
     return url
 
 
+def _api_base(config: ConfluenceConfig, api_version: str) -> str:
+    """Return the Confluence REST base for the requested API version."""
+    if api_version == "v2":
+        return f"{_wiki_base(config)}/api/v2"
+    return f"{_wiki_base(config)}/rest/api"
+
+
 def _rest_get(
     config: ConfluenceConfig,
     path: str,
     params: dict[str, str] | None = None,
+    *,
+    api_version: str = "v1",
 ) -> dict[str, Any]:
     """Make a GET request to the Confluence REST API."""
     username, token = resolve_credentials(config)
-    url = f"{_wiki_base(config)}/rest/api{path}"
+    url = f"{_api_base(config, api_version)}{path}"
     try:
         resp = requests.get(url, auth=(username, token), params=params or {}, timeout=60)
     except requests.RequestException as exc:
@@ -94,10 +103,12 @@ def _rest_put(
     config: ConfluenceConfig,
     path: str,
     json_body: dict[str, Any],
+    *,
+    api_version: str = "v1",
 ) -> dict[str, Any]:
     """Make a PUT request to the Confluence REST API."""
     username, token = resolve_credentials(config)
-    url = f"{_wiki_base(config)}/rest/api{path}"
+    url = f"{_api_base(config, api_version)}{path}"
     try:
         resp = requests.put(
             url,
@@ -123,10 +134,12 @@ def _rest_post(
     config: ConfluenceConfig,
     path: str,
     json_body: dict[str, Any],
+    *,
+    api_version: str = "v1",
 ) -> dict[str, Any]:
     """Make a POST request to the Confluence REST API."""
     username, token = resolve_credentials(config)
-    url = f"{_wiki_base(config)}/rest/api{path}"
+    url = f"{_api_base(config, api_version)}{path}"
     try:
         resp = requests.post(
             url,
@@ -145,6 +158,20 @@ def _rest_post(
         return resp.json()  # type: ignore[no-any-return]
     except ValueError:
         print(f"ERROR: POST {path} returned non-JSON response ({len(resp.text)} chars)")
+        sys.exit(1)
+
+
+def _rest_delete(config: ConfluenceConfig, path: str, *, api_version: str = "v1") -> None:
+    """Make a DELETE request to the Confluence REST API."""
+    username, token = resolve_credentials(config)
+    url = f"{_api_base(config, api_version)}{path}"
+    try:
+        resp = requests.delete(url, auth=(username, token), timeout=60)
+    except requests.RequestException as exc:
+        print(f"ERROR: DELETE {path} failed: {exc}")
+        sys.exit(1)
+    if resp.status_code not in (200, 202, 204):
+        print(f"ERROR: DELETE {path} returned {resp.status_code}: {resp.text[:300]}")
         sys.exit(1)
 
 
@@ -328,7 +355,48 @@ class PageComment:
     body_html: str
     author: str
     created: str
-    comment_type: str  # "comment" for footer, "inline" for inline
+    page_id: str
+    parent_comment_id: str = ""
+    comment_type: str = "comment"  # "comment" for footer, "inline" for inline
+    resolved: bool = False
+    like_count: int = 0
+    like_users: list[str] = field(default_factory=list)
+
+
+@dataclass
+class PageInfo:
+    """A page returned by the v2 pages-in-space endpoint."""
+
+    page_id: str
+    title: str
+    space_id: str
+    status: str
+    subtype: str = ""
+    parent_id: str = ""
+    version: int = 0
+    url: str = ""
+
+
+def _comment_path(comment_type: str, comment_id: str | None = None) -> str:
+    kind = "inline-comments" if comment_type == "inline" else "footer-comments"
+    return f"/{kind}" if comment_id is None else f"/{kind}/{comment_id}"
+
+
+def _extract_like_users(data: Any) -> list[str]:
+    if isinstance(data, dict):
+        results = data.get("results", [])
+        users = []
+        for item in results:
+            if isinstance(item, dict):
+                account_id = item.get("accountId")
+                if account_id:
+                    users.append(str(account_id))
+            elif item is not None:
+                users.append(str(item))
+        return users
+    if isinstance(data, list):
+        return [str(item) for item in data]
+    return []
 
 
 def get_page_comments(
@@ -348,33 +416,115 @@ def get_page_comments(
     Returns:
         List of PageComment objects.
     """
-    params = {
-        "expand": "body.storage,version",
+    return list_page_comments(config, page_id, comment_type=comment_type, limit=limit)
+
+
+def list_page_comments(
+    config: ConfluenceConfig,
+    page_id: str,
+    comment_type: str = "comment",
+    limit: int = 50,
+    resolution_status: str | None = None,
+) -> list[PageComment]:
+    """List footer or inline comments for a page using REST v2."""
+    params: dict[str, str] = {
+        "body-format": "storage",
         "limit": str(limit),
     }
-    # For footer comments: /content/{id}/child/comment
-    # depth=all includes replies
-    path = f"/content/{page_id}/child/comment"
-    if comment_type == "inline":
-        params["location"] = "inline"
+    if comment_type == "inline" and resolution_status:
+        params["resolution-status"] = resolution_status
 
-    data = _rest_get(config, path, params)
+    data = _rest_get(
+        config,
+        _comment_path(comment_type)
+        .replace("/footer-comments", f"/pages/{page_id}/footer-comments")
+        .replace("/inline-comments", f"/pages/{page_id}/inline-comments"),
+        params,
+        api_version="v2",
+    )
 
-    comments = []
+    comments: list[PageComment] = []
     for item in data.get("results", []):
-        author = item.get("version", {}).get("by", {}).get("displayName", "unknown")
-        created = item.get("version", {}).get("when", "")
+        version = item.get("version", {})
+        author = version.get("by", {}).get("displayName") or version.get("authorId", "unknown")
+        created = version.get("when") or version.get("createdAt", "")
         body = item.get("body", {}).get("storage", {}).get("value", "")
+        like_info = item.get("likes", {})
         comments.append(
+            PageComment(
+                comment_id=str(item["id"]),
+                page_id=str(item.get("pageId", page_id)),
+                parent_comment_id=str(item.get("parentCommentId", "")),
+                body_html=body,
+                author=author,
+                created=created,
+                comment_type=comment_type,
+                resolved=bool(item.get("resolved", item.get("resolutionStatus") == "resolved")),
+                like_count=len(like_info.get("results", [])) if isinstance(like_info, dict) else 0,
+                like_users=_extract_like_users(like_info),
+            )
+        )
+    return comments
+
+
+def list_comment_children(
+    config: ConfluenceConfig,
+    comment_id: str,
+    comment_type: str = "comment",
+    limit: int = 50,
+) -> list[PageComment]:
+    """List direct child comments of a footer or inline comment."""
+    params = {"body-format": "storage", "limit": str(limit)}
+    data = _rest_get(
+        config,
+        f"{_comment_path(comment_type, comment_id)}/children",
+        params,
+        api_version="v2",
+    )
+    children: list[PageComment] = []
+    for item in data.get("results", []):
+        version = item.get("version", {})
+        author = version.get("by", {}).get("displayName") or version.get("authorId", "unknown")
+        created = version.get("when") or version.get("createdAt", "")
+        body = item.get("body", {}).get("storage", {}).get("value", "")
+        like_info = item.get("likes", {})
+        children.append(
             PageComment(
                 comment_id=str(item["id"]),
                 body_html=body,
                 author=author,
                 created=created,
-                comment_type=comment_type,
+                page_id=str(item.get("pageId", "")),
+                parent_comment_id=str(item.get("parentCommentId", comment_id)),
+                comment_type=str(item.get("type", comment_type)),
+                resolved=bool(item.get("resolved", item.get("resolutionStatus") == "resolved")),
+                like_count=len(like_info.get("results", [])) if isinstance(like_info, dict) else 0,
+                like_users=_extract_like_users(like_info),
             )
         )
-    return comments
+    return children
+
+
+def walk_comment_thread(
+    config: ConfluenceConfig,
+    page_id: str,
+    comment_type: str = "comment",
+    limit: int = 50,
+) -> list[PageComment]:
+    """Return root comments and all descendants in depth-first order."""
+    roots = list_page_comments(config, page_id, comment_type=comment_type, limit=limit)
+    ordered: list[PageComment] = []
+
+    def _walk(comment: PageComment) -> None:
+        ordered.append(comment)
+        for child in list_comment_children(
+            config, comment.comment_id, comment_type=comment_type, limit=limit
+        ):
+            _walk(child)
+
+    for root in roots:
+        _walk(root)
+    return ordered
 
 
 def add_page_comment(
@@ -382,6 +532,10 @@ def add_page_comment(
     page_id: str,
     body_html: str,
     comment_type: str = "comment",
+    parent_comment_id: str | None = None,
+    inline_text_selection: str | None = None,
+    inline_text_selection_match_count: int | None = None,
+    inline_text_selection_match_index: int | None = None,
 ) -> str:
     """Add a comment to a page.
 
@@ -396,17 +550,158 @@ def add_page_comment(
         The created comment ID.
     """
     payload: dict[str, Any] = {
-        "type": comment_type,
-        "container": {"id": page_id, "type": "page", "status": "current"},
         "body": {
-            "storage": {
-                "value": body_html,
-                "representation": "storage",
-            }
+            "representation": "storage",
+            "value": body_html,
         },
     }
-    result = _rest_post(config, "/content", payload)
+    if parent_comment_id:
+        payload["parentCommentId"] = parent_comment_id
+    else:
+        payload["pageId"] = page_id
+
+    if comment_type == "inline":
+        if not inline_text_selection:
+            print("ERROR: inline comments require inline_text_selection")
+            sys.exit(1)
+        payload["inlineCommentProperties"] = {"textSelection": inline_text_selection}
+        if inline_text_selection_match_count is not None:
+            payload["inlineCommentProperties"]["textSelectionMatchCount"] = (
+                inline_text_selection_match_count
+            )
+        if inline_text_selection_match_index is not None:
+            payload["inlineCommentProperties"]["textSelectionMatchIndex"] = (
+                inline_text_selection_match_index
+            )
+        result = _rest_post(config, "/inline-comments", payload, api_version="v2")
+    else:
+        result = _rest_post(config, "/footer-comments", payload, api_version="v2")
     return str(result["id"])
+
+
+def reply_to_comment(
+    config: ConfluenceConfig,
+    page_id: str,
+    parent_comment_id: str,
+    body_html: str,
+    comment_type: str = "comment",
+) -> str:
+    """Reply to a footer comment."""
+    return add_page_comment(
+        config,
+        page_id,
+        body_html,
+        comment_type=comment_type,
+        parent_comment_id=parent_comment_id,
+    )
+
+
+def edit_comment(
+    config: ConfluenceConfig,
+    comment_id: str,
+    body_html: str,
+    comment_type: str = "comment",
+    resolved: bool | None = None,
+) -> str:
+    """Update a footer or inline comment."""
+    current = _rest_get(
+        config,
+        _comment_path(comment_type, comment_id),
+        params={"include-version": "true", "body-format": "storage"},
+        api_version="v2",
+    )
+    current_version = int(current.get("version", {}).get("number", 0))
+    payload: dict[str, Any] = {
+        "version": {"number": current_version + 1},
+        "body": {"representation": "storage", "value": body_html},
+    }
+    base = current.get("_links", {}).get("base")
+    if base:
+        payload["_links"] = {"base": base}
+    if comment_type == "inline" and resolved is not None:
+        payload["resolved"] = resolved
+    result = _rest_put(config, _comment_path(comment_type, comment_id), payload, api_version="v2")
+    return str(result.get("id", comment_id))
+
+
+def delete_comment(
+    config: ConfluenceConfig, comment_id: str, comment_type: str = "comment"
+) -> None:
+    """Delete a footer or inline comment."""
+    _rest_delete(config, _comment_path(comment_type, comment_id), api_version="v2")
+
+
+def resolve_comment(config: ConfluenceConfig, comment_id: str, comment_type: str = "inline") -> str:
+    """Resolve an inline comment."""
+    return edit_comment(
+        config,
+        comment_id,
+        _rest_get(
+            config,
+            _comment_path(comment_type, comment_id),
+            params={"body-format": "storage"},
+            api_version="v2",
+        )
+        .get("body", {})
+        .get("storage", {})
+        .get("value", ""),
+        comment_type=comment_type,
+        resolved=True,
+    )
+
+
+def unresolve_comment(
+    config: ConfluenceConfig, comment_id: str, comment_type: str = "inline"
+) -> str:
+    """Unresolve an inline comment."""
+    current = _rest_get(
+        config,
+        _comment_path(comment_type, comment_id),
+        params={"body-format": "storage"},
+        api_version="v2",
+    )
+    body = current.get("body", {}).get("storage", {}).get("value", "")
+    return edit_comment(config, comment_id, body, comment_type=comment_type, resolved=False)
+
+
+def get_page_like_count(config: ConfluenceConfig, page_id: str) -> int:
+    data = _rest_get(config, f"/pages/{page_id}/likes/count", api_version="v2")
+    if isinstance(data, dict):
+        return int(data.get("count", 0))
+    return int(data)
+
+
+def get_page_like_users(config: ConfluenceConfig, page_id: str) -> list[str]:
+    data = _rest_get(config, f"/pages/{page_id}/likes/users", api_version="v2")
+    return _extract_like_users(data)
+
+
+def get_comment_like_count(
+    config: ConfluenceConfig,
+    comment_id: str,
+    comment_type: str = "comment",
+) -> int:
+    data = _rest_get(
+        config,
+        f"{_comment_path(comment_type, comment_id)}/likes/count",
+        api_version="v2",
+    )
+    if isinstance(data, dict):
+        return int(data.get("count", 0))
+    return int(data)
+
+
+def get_comment_like_users(
+    config: ConfluenceConfig,
+    comment_id: str,
+    comment_type: str = "comment",
+) -> list[str]:
+    data = _rest_get(
+        config,
+        f"{_comment_path(comment_type, comment_id)}/likes/users",
+        api_version="v2",
+    )
+    return _extract_like_users(data)
 
 
 # ---------------------------------------------------------------------------
@@ -423,6 +718,68 @@ class SpaceInfo:
     space_type: str
     status: str
     url: str = ""
+
+
+@dataclass
+class PageListItem:
+    """A page from the v2 pages-in-space listing."""
+
+    page_id: str
+    title: str
+    space_id: str
+    status: str
+    subtype: str = ""
+    parent_id: str = ""
+    version: int = 0
+    url: str = ""
+
+
+def _resolve_space_id(config: ConfluenceConfig, space_key: str) -> str:
+    data = _rest_get(config, "/spaces", {"keys": space_key, "limit": "1"}, api_version="v2")
+    results = data.get("results", [])
+    if not results:
+        print(f"ERROR: Could not resolve space key '{space_key}' to a space id")
+        sys.exit(1)
+    return str(results[0]["id"])
+
+
+def list_pages(
+    config: ConfluenceConfig,
+    space_key: str | None = None,
+    title: str | None = None,
+    status: str | None = None,
+    page_type: str | None = None,
+    limit: int = 50,
+) -> list[PageListItem]:
+    """List pages in a space using the v2 pages endpoint."""
+    key = space_key or config.space_key
+    space_id = _resolve_space_id(config, key)
+    params: dict[str, str] = {"limit": str(limit)}
+    if title:
+        params["title"] = title
+    if status:
+        params["status"] = status
+    data = _rest_get(config, f"/spaces/{space_id}/pages", params, api_version="v2")
+    pages: list[PageListItem] = []
+    for item in data.get("results", []):
+        subtype = str(item.get("subtype", ""))
+        if page_type and subtype != page_type:
+            continue
+        version = item.get("version", {}) or {}
+        links = item.get("_links", {}) or {}
+        pages.append(
+            PageListItem(
+                page_id=str(item.get("id", "")),
+                title=item.get("title", ""),
+                space_id=str(item.get("spaceId", space_id)),
+                status=item.get("status", ""),
+                subtype=subtype,
+                parent_id=str(item.get("parentId", "")),
+                version=int(version.get("number", 0) or 0),
+                url=str(links.get("webui", "")),
+            )
+        )
+    return pages
 
 
 def list_spaces(
@@ -444,7 +801,7 @@ def list_spaces(
     if space_type:
         params["type"] = space_type
 
-    data = _rest_get(config, "/space", params)
+    data = _rest_get(config, "/spaces", params, api_version="v2")
 
     spaces = []
     for item in data.get("results", []):

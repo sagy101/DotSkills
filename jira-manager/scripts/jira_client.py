@@ -397,12 +397,28 @@ class JiraClient:
     def get_boards(self, project_key: str | None = None) -> list[dict[str, Any]]:
         """Fetch all boards for the project via the Agile REST API."""
         pk = project_key or self.config.project_key
-        result = self._request(
-            "GET",
-            "/rest/agile/1.0/board",
-            params={"projectKeyOrId": pk},
-        )
-        return result.get("values", [])  # type: ignore[no-any-return]
+        all_boards: list[dict[str, Any]] = []
+        start_at = 0
+        page_size = 50
+        while True:
+            result = self._request(
+                "GET",
+                "/rest/agile/1.0/board",
+                params={
+                    "projectKeyOrId": pk,
+                    "startAt": str(start_at),
+                    "maxResults": str(page_size),
+                },
+            )
+            boards = result.get("values", [])
+            if not boards:
+                break
+            all_boards.extend(boards)
+            total = result.get("total", len(all_boards))
+            if start_at + len(boards) >= total:
+                break
+            start_at += len(boards)
+        return all_boards
 
     def get_sprints(
         self,
@@ -507,14 +523,99 @@ class JiraClient:
         """Add a comment to an issue. Returns the created comment."""
         return self._request(  # type: ignore[no-any-return]
             "POST",
-            f"/rest/api/2/issue/{issue_key}/comment",
-            {"body": body},
+            f"/rest/api/3/issue/{issue_key}/comment",
+            {"body": self._comment_body(body)},
         )
 
     def get_comments(self, issue_key: str) -> list[dict[str, Any]]:
         """Fetch all comments on an issue."""
-        result = self._request("GET", f"/rest/api/2/issue/{issue_key}/comment")
-        return result.get("comments", [])  # type: ignore[no-any-return]
+        comments: list[dict[str, Any]] = []
+        start_at = 0
+        page_size = 100
+        while True:
+            result = self._request(
+                "GET",
+                f"/rest/api/3/issue/{issue_key}/comment",
+                params={"startAt": str(start_at), "maxResults": str(page_size)},
+            )
+            page = result.get("comments", [])
+            if not page:
+                break
+            comments.extend(page)
+            total = result.get("total", len(comments))
+            if start_at + len(page) >= total:
+                break
+            start_at += len(page)
+        return comments
+
+    def get_comment(self, issue_key: str, comment_id: str) -> dict[str, Any]:
+        """Fetch a single comment by ID."""
+        return self._request(  # type: ignore[no-any-return]
+            "GET",
+            f"/rest/api/3/issue/{issue_key}/comment/{comment_id}",
+        )
+
+    def update_comment(self, issue_key: str, comment_id: str, body: str) -> dict[str, Any]:
+        """Update an existing comment."""
+        return self._request(  # type: ignore[no-any-return]
+            "PUT",
+            f"/rest/api/3/issue/{issue_key}/comment/{comment_id}",
+            {"body": self._comment_body(body)},
+        )
+
+    def delete_comment(self, issue_key: str, comment_id: str) -> dict[str, Any]:
+        """Delete a comment by ID."""
+        return self._request(  # type: ignore[no-any-return]
+            "DELETE",
+            f"/rest/api/3/issue/{issue_key}/comment/{comment_id}",
+        )
+
+    def get_remote_issue_links(self, issue_key: str) -> list[dict[str, Any]]:
+        """Fetch remote issue links for an issue."""
+        result = self._request("GET", f"/rest/api/2/issue/{issue_key}/remotelink")
+        return result if isinstance(result, list) else result.get("values", [])  # type: ignore[no-any-return]
+
+    def get_visible_projects(self) -> list[dict[str, Any]]:
+        """Fetch all projects visible to the authenticated user."""
+        projects: list[dict[str, Any]] = []
+        start_at = 0
+        page_size = 50
+        while True:
+            result = self._request(
+                "GET",
+                "/rest/api/3/project/search",
+                params={"startAt": str(start_at), "maxResults": str(page_size)},
+            )
+            if isinstance(result, list):
+                return result
+            values = result.get("values", [])
+            if not values:
+                break
+            projects.extend(values)
+            total = result.get("total", len(projects))
+            if start_at + len(values) >= total:
+                break
+            start_at += len(values)
+        return projects
+
+    @staticmethod
+    def _comment_body(body: str) -> dict[str, Any]:
+        """Build a minimal Atlassian Document Format comment body."""
+        return {
+            "type": "doc",
+            "version": 1,
+            "content": [
+                {
+                    "type": "paragraph",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": body,
+                        }
+                    ],
+                }
+            ],
+        }
 
     # -----------------------------------------------------------------
     # Worklogs

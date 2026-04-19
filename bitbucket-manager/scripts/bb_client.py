@@ -14,7 +14,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any
+from typing import Any, NoReturn
 
 from bb_config import BitbucketConfig, resolve_credentials
 
@@ -29,8 +29,8 @@ class BitbucketClient:
 
     def __init__(self, config: BitbucketConfig) -> None:
         self.config = config
-        email, app_password = resolve_credentials(config)
-        creds = base64.b64encode(f"{email}:{app_password}".encode()).decode()
+        email, api_token = resolve_credentials(config)
+        creds = base64.b64encode(f"{email}:{api_token}".encode()).decode()
         self._headers = {
             "Authorization": f"Basic {creds}",
             "Content-Type": "application/json",
@@ -59,7 +59,22 @@ class BitbucketClient:
         return None
 
     @staticmethod
-    def _handle_http_error(e: urllib.error.HTTPError, method: str, path: str) -> None:
+    def _http_error_hint(code: int, path: str) -> str:
+        if code == 401:
+            return (
+                " Hint: verify BITBUCKET_EMAIL plus a Bitbucket Cloud API token/app password "
+                "with REST scopes for this endpoint. Plain no-scope Atlassian tokens will fail "
+                "for Bitbucket REST auth. SSH git access alone does not validate REST auth."
+            )
+        if code == 403:
+            return (
+                " Hint: credentials were accepted, but this account/token lacks permission for "
+                f"{path}."
+            )
+        return ""
+
+    @staticmethod
+    def _handle_http_error(e: urllib.error.HTTPError, method: str, path: str) -> NoReturn:
         """Log and re-raise a non-retryable HTTP error."""
         error_body = e.read().decode()
         try:
@@ -68,8 +83,62 @@ class BitbucketClient:
             detail = msg if msg else error_body[:500]
         except (json.JSONDecodeError, AttributeError):
             detail = error_body[:500] if _DEBUG else f"HTTP {e.code} (set BB_DEBUG=1 for details)"
-        print(f"ERROR {e.code} {method} {path}: {detail}", file=sys.stderr)
+        hint = BitbucketClient._http_error_hint(e.code, path)
+        print(f"ERROR {e.code} {method} {path}: {detail}{hint}", file=sys.stderr)
+        raise SystemExit(1)
+
+    @staticmethod
+    def _log_debug_request(url: str, body: bytes | None) -> None:
+        if _DEBUG:
+            print(f"DEBUG: {url}", file=sys.stderr)
+            if body:
+                print(f"DEBUG: body={body[:500].decode()!r}", file=sys.stderr)
+
+    @staticmethod
+    def _decode_response(resp: Any, raw: bool) -> Any:
+        if resp.status == 204:
+            return "" if raw else {}
+        response_text = resp.read().decode()
+        if not response_text:
+            return "" if raw else {}
+        if raw:
+            return response_text
+        return json.loads(response_text)
+
+    @staticmethod
+    def _maybe_retry_rate_limit(
+        e: urllib.error.HTTPError, attempt: int, method: str, path: str
+    ) -> bool:
+        if e.code != 429 or attempt >= _MAX_429_RETRIES:
+            return False
+        wait = _429_BACKOFF_BASE * (2**attempt)
+        print(
+            f"Rate limited, retrying in {wait}s... (attempt {attempt + 1}/{_MAX_429_RETRIES})",
+            file=sys.stderr,
+        )
+        e.read()  # drain response body
+        time.sleep(wait)
+        return True
+
+    @staticmethod
+    def _handle_url_error(e: urllib.error.URLError, method: str, path: str) -> None:
+        if isinstance(e.reason, socket.timeout | TimeoutError):
+            print(f"ERROR: Request timed out (60s) {method} {path}", file=sys.stderr)
+        else:
+            print(f"ERROR: URL error {method} {path}: {e.reason}", file=sys.stderr)
         raise
+
+    def _request_once(
+        self,
+        method: str,
+        url: str,
+        path: str,
+        body: bytes | None,
+        raw: bool,
+    ) -> Any:
+        req = urllib.request.Request(url, data=body, headers=self._headers, method=method)
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return self._decode_response(resp, raw)
 
     def _request(
         self,
@@ -77,6 +146,7 @@ class BitbucketClient:
         path: str,
         data: dict | None = None,
         params: dict | None = None,
+        raw: bool = False,
     ) -> Any:
         """Execute an HTTP request against the Bitbucket REST API.
 
@@ -84,43 +154,22 @@ class BitbucketClient:
         """
         url = self._build_url(path, params)
         body = self._build_body(method, data)
-
-        if _DEBUG:
-            print(f"DEBUG: {method} {url}", file=sys.stderr)
-            if body:
-                print(f"DEBUG: body={body[:500].decode()!r}", file=sys.stderr)
+        self._log_debug_request(f"{method} {url}", body)
 
         last_error: urllib.error.HTTPError | None = None
         for attempt in range(_MAX_429_RETRIES + 1):
-            req = urllib.request.Request(url, data=body, headers=self._headers, method=method)
             try:
-                with urllib.request.urlopen(req, timeout=60) as resp:
-                    if resp.status == 204:
-                        return {}
-                    raw = resp.read().decode()
-                    return json.loads(raw) if raw else {}
+                return self._request_once(method, url, path, body, raw)
             except TimeoutError:
                 print(f"ERROR: Request timed out (60s) {method} {path}", file=sys.stderr)
                 raise
             except urllib.error.HTTPError as e:
-                if e.code == 429 and attempt < _MAX_429_RETRIES:
-                    wait = _429_BACKOFF_BASE * (2**attempt)
-                    print(
-                        f"Rate limited, retrying in {wait}s... "
-                        f"(attempt {attempt + 1}/{_MAX_429_RETRIES})",
-                        file=sys.stderr,
-                    )
-                    e.read()  # drain response body
-                    time.sleep(wait)
+                if self._maybe_retry_rate_limit(e, attempt, method, path):
                     last_error = e
                     continue
                 self._handle_http_error(e, method, path)
             except urllib.error.URLError as e:
-                if isinstance(e.reason, socket.timeout | TimeoutError):
-                    print(f"ERROR: Request timed out (60s) {method} {path}", file=sys.stderr)
-                else:
-                    print(f"ERROR: URL error {method} {path}: {e.reason}", file=sys.stderr)
-                raise
+                self._handle_url_error(e, method, path)
 
         # All retries exhausted
         if last_error:
@@ -169,7 +218,7 @@ class BitbucketClient:
         self,
         callables: list,
         max_workers: int = 5,
-    ) -> list:
+    ) -> list[Any]:
         """Execute multiple zero-arg callables in parallel, return results in order."""
         results = [None] * len(callables)
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
@@ -281,6 +330,14 @@ class BitbucketClient:
         return self._request(  # type: ignore[no-any-return]
             "POST",
             f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/decline",
+        )
+
+    def get_pr_diff(self, workspace: str, repo_slug: str, pr_id: int) -> str:
+        """Fetch the raw unified diff for a pull request."""
+        return self._request(  # type: ignore[no-any-return]
+            "GET",
+            f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/diff",
+            raw=True,
         )
 
     # -----------------------------------------------------------------
@@ -427,6 +484,124 @@ class BitbucketClient:
         )
 
     # -----------------------------------------------------------------
+    # Pipelines / Deployments / Environments
+    # -----------------------------------------------------------------
+    def list_pipelines(
+        self,
+        workspace: str,
+        repo_slug: str,
+        max_results: int = 50,
+    ) -> list[dict]:
+        """List repository pipelines."""
+        return self._paginate(
+            f"/repositories/{workspace}/{repo_slug}/pipelines",
+            max_results=max_results,
+        )
+
+    def get_pipeline(self, workspace: str, repo_slug: str, pipeline_uuid: str) -> dict:
+        """Fetch a single pipeline by UUID."""
+        return self._request(  # type: ignore[no-any-return]
+            "GET",
+            f"/repositories/{workspace}/{repo_slug}/pipelines/{pipeline_uuid}",
+        )
+
+    def run_pipeline(
+        self,
+        workspace: str,
+        repo_slug: str,
+        target: dict[str, Any],
+        variables: list[dict[str, Any]] | None = None,
+    ) -> dict:
+        """Trigger a pipeline run."""
+        payload: dict[str, Any] = {"target": target}
+        if variables:
+            payload["variables"] = variables
+        return self._request(  # type: ignore[no-any-return]
+            "POST",
+            f"/repositories/{workspace}/{repo_slug}/pipelines",
+            data=payload,
+        )
+
+    def list_pipeline_steps(
+        self,
+        workspace: str,
+        repo_slug: str,
+        pipeline_uuid: str,
+        max_results: int = 50,
+    ) -> list[dict]:
+        """List steps for a pipeline."""
+        return self._paginate(
+            f"/repositories/{workspace}/{repo_slug}/pipelines/{pipeline_uuid}/steps",
+            max_results=max_results,
+        )
+
+    def get_pipeline_step(
+        self,
+        workspace: str,
+        repo_slug: str,
+        pipeline_uuid: str,
+        step_uuid: str,
+    ) -> dict:
+        """Fetch a single pipeline step by UUID."""
+        return self._request(  # type: ignore[no-any-return]
+            "GET",
+            f"/repositories/{workspace}/{repo_slug}/pipelines/{pipeline_uuid}/steps/{step_uuid}",
+        )
+
+    def get_pipeline_step_log(
+        self,
+        workspace: str,
+        repo_slug: str,
+        pipeline_uuid: str,
+        step_uuid: str,
+        log_uuid: str,
+    ) -> str:
+        """Fetch the raw log for a pipeline step."""
+        return self._request(  # type: ignore[no-any-return]
+            "GET",
+            f"/repositories/{workspace}/{repo_slug}/pipelines/{pipeline_uuid}/steps/{step_uuid}/logs/{log_uuid}",
+            raw=True,
+        )
+
+    def list_environments(
+        self,
+        workspace: str,
+        repo_slug: str,
+        max_results: int = 50,
+    ) -> list[dict]:
+        """List repository deployment environments."""
+        return self._paginate(
+            f"/repositories/{workspace}/{repo_slug}/environments",
+            max_results=max_results,
+        )
+
+    def get_environment(self, workspace: str, repo_slug: str, environment_uuid: str) -> dict:
+        """Fetch a single deployment environment by UUID."""
+        return self._request(  # type: ignore[no-any-return]
+            "GET",
+            f"/repositories/{workspace}/{repo_slug}/environments/{environment_uuid}",
+        )
+
+    def list_deployments(
+        self,
+        workspace: str,
+        repo_slug: str,
+        max_results: int = 50,
+    ) -> list[dict]:
+        """List repository deployments."""
+        return self._paginate(
+            f"/repositories/{workspace}/{repo_slug}/deployments",
+            max_results=max_results,
+        )
+
+    def get_deployment(self, workspace: str, repo_slug: str, deployment_uuid: str) -> dict:
+        """Fetch a single deployment by UUID."""
+        return self._request(  # type: ignore[no-any-return]
+            "GET",
+            f"/repositories/{workspace}/{repo_slug}/deployments/{deployment_uuid}",
+        )
+
+    # -----------------------------------------------------------------
     # Build Status (commit-level)
     # -----------------------------------------------------------------
     def get_commit_statuses(
@@ -462,10 +637,23 @@ class BitbucketClient:
     # -----------------------------------------------------------------
     # Utility
     # -----------------------------------------------------------------
-    def test_connection(self, workspace: str) -> bool:
-        """Test connectivity and credentials."""
+    def test_connection(self, workspace: str) -> tuple[bool, str | None]:
+        """Test connectivity and credentials with an actionable failure reason."""
+        url = self._build_url(f"/repositories/{workspace}", {"pagelen": "1"})
+        req = urllib.request.Request(url, headers=self._headers, method="GET")
         try:
-            self._request("GET", f"/repositories/{workspace}", params={"pagelen": "1"})
-            return True
-        except (urllib.error.HTTPError, urllib.error.URLError):
-            return False
+            with urllib.request.urlopen(req, timeout=60):
+                pass
+            return True, None
+        except urllib.error.HTTPError as e:
+            hint = self._http_error_hint(e.code, f"/repositories/{workspace}")
+            if e.code == 401:
+                return False, f"REST auth rejected the token.{hint}"
+            if e.code == 403:
+                return (
+                    False,
+                    f"REST auth succeeded, but access to workspace '{workspace}' was denied.{hint}",
+                )
+            return False, f"HTTP {e.code} while contacting workspace '{workspace}'."
+        except urllib.error.URLError as e:
+            return False, f"Network error while contacting Bitbucket: {e.reason}"

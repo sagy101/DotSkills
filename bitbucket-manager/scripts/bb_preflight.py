@@ -187,10 +187,14 @@ def _check_connectivity(raw: dict, env_vars_ok: bool) -> bool:
         config = load_config()
         client = BitbucketClient(config)
         workspace = raw.get("workspace", "")
-        if client.test_connection(workspace):
+        ok, detail = client.test_connection(workspace)
+        if ok:
             print(f"{_PASS} Connectivity — API reachable, credentials valid")
             return True
-        print(f"{_FAIL} Connectivity — API returned error (check credentials and workspace)")
+        if detail:
+            print(f"{_FAIL} Connectivity — {detail}")
+        else:
+            print(f"{_FAIL} Connectivity — API returned error (check credentials and workspace)")
         return False
     except SystemExit:
         print(f"{_FAIL} Connectivity — config/credential resolution failed")

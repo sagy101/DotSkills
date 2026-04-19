@@ -108,6 +108,18 @@ def format_issue_detail(
             f"Parent:      {parent['key']} - {parent.get('fields', {}).get('summary', '')}"
         )
 
+    remote_links = issue.get("remoteLinks", [])
+    if remote_links:
+        lines.append("Remote Links:")
+        for remote_link in remote_links:
+            obj = remote_link.get("object", {}) if isinstance(remote_link, dict) else {}
+            title = obj.get("title") or obj.get("url") or remote_link.get("url", "?")
+            url = obj.get("url") or remote_link.get("url", "")
+            if url and title != url:
+                lines.append(f"  - {title}: {url}")
+            else:
+                lines.append(f"  - {title}")
+
     desc = fields.get("description", "")
     if desc:
         if convert_markup:
@@ -119,6 +131,15 @@ def format_issue_detail(
     return "\n".join(lines)
 
 
+def _add_remote_links_to_issues(client: JiraClient, issues: list[dict[str, Any]]) -> None:
+    """Fetch and attach remote links to issues in place."""
+    for issue in issues:
+        key = issue.get("key")
+        if not key:
+            continue
+        issue["remoteLinks"] = client.get_remote_issue_links(key)
+
+
 def _handle_key(
     client: JiraClient,
     config: JiraConfig,
@@ -126,9 +147,12 @@ def _handle_key(
     format_type: str,
     fields: list[str] | None,
     convert: bool = True,
+    include_remote_links: bool = False,
 ) -> None:
     try:
         issue = client.get_issue(key, fields=fields)
+        if include_remote_links and format_type in {"json", "detail"}:
+            issue["remoteLinks"] = client.get_remote_issue_links(key)
         if format_type == "json":
             print(json.dumps(issue, indent=2))
         elif format_type == "detail":
@@ -148,11 +172,15 @@ def _handle_jql(
     fields: list[str] | None,
     max_results: int,
     convert: bool = True,
+    include_remote_links: bool = False,
 ) -> None:
     try:
         result = client.search_jql(jql, fields=fields, max_results=max_results)
         issues = result.get("issues", [])
         total = result.get("total", 0)
+
+        if include_remote_links and format_type in {"json", "detail"}:
+            _add_remote_links_to_issues(client, issues)
 
         if format_type == "json":
             print(json.dumps(issues, indent=2))
@@ -178,9 +206,13 @@ def _handle_children(
     format_type: str,
     fields: list[str] | None,
     convert: bool = True,
+    include_remote_links: bool = False,
 ) -> None:
     try:
         issues = client.get_children(parent_key, fields=fields)
+
+        if include_remote_links and format_type in {"json", "detail"}:
+            _add_remote_links_to_issues(client, issues)
 
         if format_type == "json":
             print(json.dumps(issues, indent=2))
@@ -207,6 +239,7 @@ def _handle_board_issues(
     max_results: int,
     convert: bool = True,
     fetch_all: bool = False,
+    include_remote_links: bool = False,
 ) -> None:
     try:
         jql = build_board_jql(client, board_id, filter_pairs=filter_args, fetch_all=fetch_all)
@@ -214,6 +247,9 @@ def _handle_board_issues(
         issues = client.get_board_issues(board_id, jql=jql, fields=fields, max_results=max_results)
 
         truncated = max_results > 0 and len(issues) >= max_results
+
+        if include_remote_links and format_type in {"json", "detail"}:
+            _add_remote_links_to_issues(client, issues)
 
         if format_type == "json":
             print(json.dumps(issues, indent=2))
@@ -274,6 +310,11 @@ def _normalize_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -
         args.key = None
     elif args.key:
         args.key = args.key[0]  # unwrap single-element list
+
+    if args.filter and any([args.key, args.keys, args.jql, args.children_of, args.boards]):
+        parser.error(
+            "Cannot combine --filter with --key, --keys, --jql, --children-of, or --boards"
+        )
 
     if mode_count > 1:
         parser.error(
@@ -347,6 +388,11 @@ def main() -> None:
         action="store_true",
         help="Skip Jira wiki markup to Markdown conversion for descriptions",
     )
+    parser.add_argument(
+        "--include-remote-links",
+        action="store_true",
+        help="Fetch and include remote issue links in detail/json output",
+    )
     args = parser.parse_args()
     _normalize_args(parser, args)
 
@@ -372,20 +418,64 @@ def main() -> None:
             args.max_results,
             convert,
             fetch_all=args.fetch_all,
+            include_remote_links=args.include_remote_links,
         )
     elif args.key and not args.keys:
-        _handle_key(client, config, args.key, args.format, field_list, convert)
+        _handle_key(
+            client,
+            config,
+            args.key,
+            args.format,
+            field_list,
+            convert,
+            include_remote_links=args.include_remote_links,
+        )
     elif args.keys:
         keys = [k.strip() for k in args.keys.split(",") if k.strip()]
         jql = f"key in ({','.join(keys)})"
-        _handle_jql(client, config, jql, args.format, field_list, len(keys), convert)
+        _handle_jql(
+            client,
+            config,
+            jql,
+            args.format,
+            field_list,
+            len(keys),
+            convert,
+            include_remote_links=args.include_remote_links,
+        )
     elif args.jql:
-        _handle_jql(client, config, args.jql, args.format, field_list, args.max_results, convert)
+        _handle_jql(
+            client,
+            config,
+            args.jql,
+            args.format,
+            field_list,
+            args.max_results,
+            convert,
+            include_remote_links=args.include_remote_links,
+        )
     elif args.children_of:
-        _handle_children(client, config, args.children_of, args.format, field_list, convert)
+        _handle_children(
+            client,
+            config,
+            args.children_of,
+            args.format,
+            field_list,
+            convert,
+            include_remote_links=args.include_remote_links,
+        )
     elif args.filter:
         jql = _build_filter_jql(args, config)
-        _handle_jql(client, config, jql, args.format, field_list, args.max_results, convert)
+        _handle_jql(
+            client,
+            config,
+            jql,
+            args.format,
+            field_list,
+            args.max_results,
+            convert,
+            include_remote_links=args.include_remote_links,
+        )
 
 
 if __name__ == "__main__":

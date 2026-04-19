@@ -300,8 +300,8 @@ def load_config(config_path: str | None = None) -> BitbucketConfig:
 
 
 def resolve_credentials(config: BitbucketConfig) -> tuple[str, str]:
-    """Resolve email and app password from env file or environment variables.
-    Returns (email, app_password). Exits on failure with shell-specific advice."""
+    """Resolve email and API token from env file or environment variables.
+    Returns (email, api_token). Exits on failure with shell-specific advice."""
     env_vars: dict[str, str] = {}
 
     if config.env_file:
@@ -322,22 +322,34 @@ def resolve_credentials(config: BitbucketConfig) -> tuple[str, str]:
                     "Use an absolute path in global config, or a relative path in project config."
                 )
                 sys.exit(2)
-        if not env_path.exists():
-            print(f"ERROR: env_file not found: {env_path}")
-            sys.exit(2)
-        env_vars = load_env_file(env_path)
+        if env_path.exists():
+            env_vars = load_env_file(env_path)
+        else:
+            print(f"WARN: env_file not found: {env_path}", file=sys.stderr)
 
     email = env_vars.get(config.email_env) or os.environ.get(config.email_env)
     token = env_vars.get(config.token_env) or os.environ.get(config.token_env)
 
     if not email:
         print(f"ERROR: Credential not found: {config.email_env}")
-        print("Set it globally in your shell profile (recommended):")
+        if config.env_file:
+            print(
+                "Set it globally in your shell profile, or fix the configured env_file path and "
+                "re-run."
+            )
+        else:
+            print("Set it globally in your shell profile (recommended):")
         print(_credential_hint(config.email_env))
         sys.exit(2)
     if not token:
         print(f"ERROR: Credential not found: {config.token_env}")
-        print("Set it globally in your shell profile (recommended):")
+        if config.env_file:
+            print(
+                "Set it globally in your shell profile, or fix the configured env_file path and "
+                "re-run."
+            )
+        else:
+            print("Set it globally in your shell profile (recommended):")
         print(_credential_hint(config.token_env))
         sys.exit(2)
 

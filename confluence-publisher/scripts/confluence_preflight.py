@@ -36,6 +36,44 @@ _WARN = "[WARN]"
 SKILL_DIR = SCRIPT_DIR.parent
 VENV_PYTHON = SKILL_DIR / ".venv" / "bin" / "python"
 REQUIRED_IMPORTS = ["atlassian", "markdown"]
+_CONNECTIVITY_CHECK = """
+import json
+import sys
+
+from confluence_config import connect, load_config
+
+try:
+    config = load_config()
+    confluence = connect(config)
+
+    space = confluence.get_space(config.space_key)
+    if not space or (isinstance(space, dict) and "statusCode" in space):
+        error = f"cannot access space '{config.space_key}'"
+        if isinstance(space, dict) and space.get("statusCode") == 401:
+            error = "bad credentials"
+        print(json.dumps({"ok": False, "error": error}))
+        raise SystemExit(1)
+
+    root = confluence.get_page_by_id(config.root_page_id, expand="version")
+    if not root or (isinstance(root, dict) and "statusCode" in root):
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": f"root page {config.root_page_id} not found",
+                }
+            )
+        )
+        raise SystemExit(1)
+
+    root_title = root.get("title", "<unknown>") if isinstance(root, dict) else "<unknown>"
+    print(json.dumps({"ok": True, "root_title": root_title, "root_page_id": config.root_page_id}))
+except SystemExit:
+    raise
+except Exception as exc:  # pragma: no cover - exercised via wrapper
+    print(json.dumps({"ok": False, "error": str(exc)}))
+    raise SystemExit(1)
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -209,34 +247,35 @@ def _check_connectivity(raw: dict, creds_ok: bool) -> bool:
         return True
 
     try:
-        from confluence_config import connect, load_config
-
-        config = load_config()
-        confluence = connect(config)
-
-        # Test space access
-        space = confluence.get_space(config.space_key)
-        if not space or (isinstance(space, dict) and "statusCode" in space):
-            print(f"{_FAIL} Connectivity — cannot access space '{config.space_key}'")
-            if isinstance(space, dict) and space.get("statusCode") == 401:
-                print("  Bad credentials — check your API token")
-            return False
-
-        # Test root page access
-        root = confluence.get_page_by_id(config.root_page_id, expand="version")
-        if not root or (isinstance(root, dict) and "statusCode" in root):
-            print(f"{_FAIL} Connectivity — root page {config.root_page_id} not found")
-            print("  Check root_page_id in .confluence.json — it may be wrong or deleted")
-            return False
-
-        root_title = root.get("title", "<unknown>") if isinstance(root, dict) else "<unknown>"
-        print(
-            f'{_PASS} Connectivity — API OK, root page: "{root_title}" (id={config.root_page_id})'
+        result = subprocess.run(
+            [str(VENV_PYTHON), "-c", _CONNECTIVITY_CHECK],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(SCRIPT_DIR),
         )
-        return True
+        payload = None
+        stdout = result.stdout.strip()
+        if stdout:
+            last_line = stdout.splitlines()[-1]
+            try:
+                payload = json.loads(last_line)
+            except json.JSONDecodeError:
+                payload = None
 
-    except SystemExit:
-        print(f"{_FAIL} Connectivity — config/credential resolution failed")
+        if result.returncode == 0 and isinstance(payload, dict) and payload.get("ok"):
+            print(
+                f'{_PASS} Connectivity — API OK, root page: "{payload["root_title"]}" '
+                f"(id={payload['root_page_id']})"
+            )
+            return True
+
+        if isinstance(payload, dict) and payload.get("error"):
+            print(f"{_FAIL} Connectivity — {payload['error']}")
+        elif result.stderr.strip():
+            print(f"{_FAIL} Connectivity — {result.stderr.strip().splitlines()[-1]}")
+        else:
+            print(f"{_FAIL} Connectivity — config/credential resolution failed")
         return False
     except Exception as e:
         print(f"{_FAIL} Connectivity — {e}")
