@@ -294,7 +294,7 @@ def search_cql(
     """
     data = _rest_get(
         config,
-        "/content/search",
+        "/search",
         params={"cql": cql, "limit": str(limit)},
     )
 
