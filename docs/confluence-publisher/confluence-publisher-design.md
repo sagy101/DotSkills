@@ -27,6 +27,8 @@ This skill gives **any SKILL.md-compatible agent** the ability to publish, sync,
 | **Version diff** | Compare two versions of the same Confluence page |
 | **Version history** | Browse page versions, fetch content from a specific version |
 | **Revert** | Restore a page to a previous version (non-destructive, creates new version) |
+| **Comments** | List/add/reply/edit/delete footer comments, list/add/edit/delete inline comments, resolve/unresolve inline comments, walk threaded child comments, and read like counts/users |
+| **Page list** | List pages in a space with `space-key`, `title`, `status`, and `type` filters |
 | **Cross-page links** | Automatic rewriting of `.md` links to Confluence page-link macros |
 | **Mermaid diagrams** | Render ` ```mermaid ` blocks to PNG attachments with graceful fallback |
 | **Attachments** | Upload file attachments alongside pages; `attachment:` link conversion |
@@ -57,6 +59,10 @@ This skill gives **any SKILL.md-compatible agent** the ability to publish, sync,
 **10. Module structure** — `confluence_config.py` handles configuration loading, credential resolution, shell detection, and manifest I/O. `page_utils.py` contains page reference utilities (tiny link codec, page ID extraction, title resolution, child page pagination). All scripts share the same `--config` argument definition via `add_config_arg()` for consistency.
 
 **11. H1 title deduplication** — Confluence renders the page title in its own header. If the markdown file starts with a `# Heading` that matches the page title, that H1 is stripped from the body before publishing to avoid a visual duplicate. The comparison is whitespace-trimmed. If the H1 doesn't match, it is kept. This logic lives in `page_utils.strip_title_heading()` and is called by both `publish_page.py` and `diff_pages.py`.
+
+**12. REST v2 comment and like limits** — Confluence Cloud v2 exposes separate footer and inline comment routes. We use v2 for list/add/reply/edit/delete and inline resolve state. Like counts and like-user reads are supported for pages, footer comments, and inline comments. Like/unlike mutation is not exposed in the reviewed Cloud REST docs, so the skill only reads likes and does not pretend to toggle them.
+
+**13. Footer-reply CLI scope** — The `reply` CLI is intentionally footer-focused because that is the primary documented workflow for threaded discussion. Inline replies are still possible at the API layer through `parentCommentId`, but the CLI stays narrow so it does not imply a stronger UX guarantee than the API docs support.
 
 ---
 

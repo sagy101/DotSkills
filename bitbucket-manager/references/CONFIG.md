@@ -27,8 +27,8 @@ If both exist, they are **deep-merged** (project-level wins on conflicts).
 |---|---|---|---|
 | `workspace` | Yes | — | Bitbucket workspace slug |
 | `credentials.email_env` | No | `"BITBUCKET_EMAIL"` | Environment variable name for the Bitbucket email/username |
-| `credentials.token_env` | No | `"BITBUCKET_TOKEN"` | Environment variable name for the app password |
-| `env_file` | No | `null` | Optional path to a `.env` file. Absolute paths are used as-is (useful in global config). Relative paths resolve against project root (traversal-protected). |
+| `credentials.token_env` | No | `"BITBUCKET_TOKEN"` | Environment variable name for the API token |
+| `env_file` | No | `null` | Optional path to a `.env` file. Absolute paths are used as-is (useful in global config). Relative paths resolve against project root (traversal-protected). If the file is missing, the skill warns and falls back to normal shell environment variables. |
 | `default_reviewers` | No | `[]` | List of reviewer UUIDs added to new PRs when `--reviewers` is omitted |
 | `default_destination` | No | `"master"` | Default destination branch for new PRs when `--destination` is omitted |
 
@@ -62,7 +62,7 @@ Then each project only needs optional overrides in `.bitbucket.json`:
 
 ## Credential resolution order
 
-1. If `env_file` is set, load variables from that file first
+1. If `env_file` is set and exists, load variables from that file first
 2. Then check OS environment variables
 3. The variable names are taken from `credentials.email_env` and `credentials.token_env`
 
@@ -71,12 +71,20 @@ Then each project only needs optional overrides in `.bitbucket.json`:
 - **bash**: `echo 'export BITBUCKET_TOKEN="<value>"' >> ~/.bashrc && source ~/.bashrc`
 - **fish**: `set -Ux BITBUCKET_TOKEN '<value>'`
 
-## App password setup
+## API token setup
 
-Create a Bitbucket app password at **Bitbucket Settings > Personal settings > App passwords**.
+Prefer **Bitbucket Cloud API tokens** with the needed REST scopes. Atlassian is transitioning away from app passwords, so new setups should use API tokens unless you are maintaining an older legacy credential.
+
+Create a Bitbucket API token at **Bitbucket Settings > Personal settings > API tokens**.
 
 Required scopes:
 - `Repositories: Read` — for listing repos and reading PR details
 - `Repositories: Write` — for build status operations
 - `Pull requests: Read` — for listing and reading PRs
 - `Pull requests: Write` — for creating, updating, merging, declining PRs and posting comments
+
+If SSH git commands work but the REST scripts still return `401`, the most common causes are:
+- the token is invalid or expired
+- the token is the wrong credential type for Bitbucket Cloud REST auth
+- the token is missing the scopes required by the specific endpoint
+- the wrong email is paired with the token in Basic auth

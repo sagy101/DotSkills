@@ -24,7 +24,12 @@ This skill gives **any SKILL.md-compatible agent** reliable Bitbucket Cloud PR m
 | **Decline PR** | Close a PR without merging |
 | **PR comments** | Add general, inline, or threaded reply comments; list comments with threaded display, filters, and multi-PR support |
 | **Bulk resolve comments** | Resolve one or more comment threads by explicit ID with rate-limit-safe 1s delay between calls |
+| **Reopen comments** | Reopen resolved inline comment threads by explicit ID |
 | **Comment filtering** | Filter threads by resolution status, author, file path, and reply presence |
+| **PR diff** | Fetch raw diff text or a compact per-file summary for automation |
+| **Pipelines** | List, inspect, trigger, and inspect steps/logs for repository pipelines |
+| **Environments** | List and inspect repository deployment environments |
+| **Deployments** | List and inspect repository deployment records |
 | **PR checks** | View build/pipeline status checks for a PR |
 | **Build status** | View CI status for a specific commit SHA or branch HEAD |
 | **Jira extraction** | Scan branch, title, description, and commits for Jira issue keys |
@@ -56,7 +61,9 @@ This skill gives **any SKILL.md-compatible agent** reliable Bitbucket Cloud PR m
 
 **11. Rate-limit handling** — `bb_client.py._request()` automatically retries HTTP 429 responses with exponential backoff (2s, 4s, 8s — 3 retries max). Bulk resolve operations additionally space calls 1s apart per Atlassian's recommendation for mutative requests. Bitbucket Cloud does not return `Retry-After` headers, so backoff is time-based.
 
-**12. Agent-optimised comment display** — Threaded view uses thread headers with numbering and resolution details (who/when), tree connectors (`+--`, `|`) for replies, and a summary line. Unresolved threads sort first. Filters (`--status`, `--author`, `--file`, `--has-replies`, `--no-replies`) operate at thread level and combine with AND logic.
+**12. Agent-optimised comment display** — Threaded view uses thread headers with numbering and resolution details (who/when), tree connectors (`+--`, `|`) for replies, and a summary line. Unresolved threads sort first. Filters (`--status`, `--author`, `--file`, `--has-replies`, `--no-replies`) operate at thread level and combine with AND logic. `pr_comment.py` also supports reopening resolved inline comment threads by ID.
+
+**13. Thin workflow scripts for pipelines and deployments** — New Bitbucket CLI entrypoints stay intentionally small: one command each for PR diffs, pipeline listing/getting/running/step listing/log fetch, and environment/deployment listing/getting. This keeps the user-facing interface simple while mapping directly to the REST endpoints.
 
 ---
 
@@ -93,4 +100,4 @@ This skill gives **any SKILL.md-compatible agent** reliable Bitbucket Cloud PR m
 
 ## Status
 
-**Stable (v1.3)** — Added bulk resolve (explicit comment IDs), multi-PR comment listing, comment filters (status/author/file/replies), agent-optimised threaded display, shared `bb_threads.py` module, and automatic 429 retry with exponential backoff.
+**Stable (v1.4)** — Added PR diff retrieval, comment reopen, pipelines, environments, and deployments workflows alongside the existing PR/comment features; preserved the shared threaded comment model and automatic 429 retry with exponential backoff.

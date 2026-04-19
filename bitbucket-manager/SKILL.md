@@ -2,8 +2,9 @@
 name: bitbucket-manager
 description: >
   Create, update, get, list, merge, decline, and comment on Bitbucket Cloud pull requests.
-  Add, edit, delete, and resolve PR comments. View Bitbucket PR build checks, commit/branch
-  pipeline status, extract linked Jira issues from PRs, and list workspace repositories.
+  Add, edit, delete, resolve, and reopen PR comments. View Bitbucket PR diffs, build checks,
+  commit/branch pipeline status, pipeline steps/logs, environments, deployments, extract
+  linked Jira issues from PRs, and list workspace repositories.
   Use when the user wants to manage Bitbucket PRs, view PR build checks, or browse repos.
   Pure Python stdlib — zero pip dependencies.
 license: MIT
@@ -12,7 +13,8 @@ metadata:
   version: "1.0"
 compatibility: >
   Python 3.10+. Bitbucket Cloud REST API v2.
-  Requires an app password with repository and pull request read/write permissions.
+  Requires a Bitbucket API token created with scopes
+  (plain no-scope Atlassian tokens will fail for Bitbucket REST API access).
 ---
 
 # Bitbucket Manager
@@ -32,7 +34,11 @@ Use when the user wants to:
 - **Edit** an existing PR comment
 - **Delete** one or more PR comments
 - **Resolve** one or more PR comments in bulk
+- **Reopen** resolved inline comment threads by ID
 - **View comments** on one or more PRs (threaded view with filters)
+- **View PR diffs** as raw text or compact summaries
+- **View and run pipelines** plus inspect steps and step logs
+- **View deployment environments and deployments**
 - **View** Bitbucket PR build checks or commit/branch pipeline status
 - **Extract** Jira issue keys linked to a PR
 - **List** repositories in a workspace
@@ -40,7 +46,19 @@ Use when the user wants to:
 ## Prerequisites
 
 1. **Config**: `.bitbucket.json` in project root and/or `~/.bitbucket.json` for global defaults (see [CONFIG.md](references/CONFIG.md))
-2. **Credentials**: `BITBUCKET_EMAIL` and `BITBUCKET_TOKEN` (app password) exported in shell profile or in a `.env` file
+2. **Credentials**: `BITBUCKET_EMAIL` and `BITBUCKET_TOKEN` exported in shell profile or in a `.env` file
+
+Bitbucket token setup is important:
+- Use **Create API token with scopes**, not the plain **Create API token** button
+- Choose **Bitbucket** as the app when prompted
+- Minimum read-only scopes:
+  - `Repositories: Read`
+  - `Pull requests: Read`
+- Add write scopes for live mutations:
+  - `Repositories: Write`
+  - `Pull requests: Write`
+
+If you use a plain no-scope Atlassian token, Bitbucket REST calls will fail with `401 Unauthorized` even if SSH git access works.
 
 No pip install or venv needed — all scripts use Python stdlib only.
 
@@ -75,6 +93,11 @@ python3 <skill_dir>/scripts/bb_preflight.py
 ```
 
 This checks Python version, config file, credentials, repo auto-detection, and API connectivity in one pass. Each check prints `[PASS]`, `[FAIL]`, or `[WARN]` with actionable fix instructions. Exit code 0 = all checks passed, 1 = at least one failed.
+
+If connectivity fails with a `401`, check the token type before anything else:
+- a no-scope Atlassian token is not enough for Bitbucket REST
+- the token must be a Bitbucket token created with scopes
+- `BITBUCKET_EMAIL` must match the Atlassian account that created the token
 
 Skip the connectivity check (faster, offline-safe):
 
@@ -201,6 +224,27 @@ python3 <skill_dir>/scripts/pr_comment.py --pr 42 --resolve 769609697 769609700 
 python3 <skill_dir>/scripts/pr_comment.py --pr 42 --resolve 769609697 769609700 --dry-run
 ```
 
+### Reopen resolved comments
+
+```bash
+# Reopen a single resolved inline comment thread
+python3 <skill_dir>/scripts/pr_comment.py --pr 42 --unresolve 769609697
+
+# Reopen multiple threads
+python3 <skill_dir>/scripts/pr_comment.py --pr 42 --unresolve 769609697 769609700
+
+# Dry run
+python3 <skill_dir>/scripts/pr_comment.py --pr 42 --unresolve 769609697 --dry-run
+```
+
+### Show a PR diff
+
+```bash
+python3 <skill_dir>/scripts/pr_diff.py --pr 42
+python3 <skill_dir>/scripts/pr_diff.py --pr 42 --format summary
+python3 <skill_dir>/scripts/pr_diff.py --pr 42 --format json
+```
+
 ### List comments
 
 ```bash
@@ -239,6 +283,32 @@ Shows threaded view with thread headers (numbering, resolution status with who/w
 ```bash
 python3 <skill_dir>/scripts/pr_checks.py --pr 42
 python3 <skill_dir>/scripts/pr_checks.py --pr 42 --format json
+```
+
+### List pipelines
+
+```bash
+python3 <skill_dir>/scripts/pipeline_list.py
+python3 <skill_dir>/scripts/pipeline_list.py --max-results 200
+python3 <skill_dir>/scripts/pipeline_list.py --format json
+python3 <skill_dir>/scripts/pipeline_get.py --pipeline "{pipeline-uuid}"
+python3 <skill_dir>/scripts/pipeline_get.py --pipeline "{pipeline-uuid}" --format json
+python3 <skill_dir>/scripts/pipeline_run.py --branch main --selector "Deploy to production"
+python3 <skill_dir>/scripts/pipeline_run.py --branch main --selector "Deploy to production" --dry-run
+python3 <skill_dir>/scripts/pipeline_steps.py --pipeline "{pipeline-uuid}" --max-results 100
+python3 <skill_dir>/scripts/pipeline_step_get.py --pipeline "{pipeline-uuid}" --step "{step-uuid}"
+python3 <skill_dir>/scripts/pipeline_log.py --pipeline "{pipeline-uuid}" --step "{step-uuid}" --log "{log-uuid}"
+```
+
+### List environments and deployments
+
+```bash
+python3 <skill_dir>/scripts/environment_list.py
+python3 <skill_dir>/scripts/environment_list.py --max-results 200
+python3 <skill_dir>/scripts/environment_get.py --environment "{environment-uuid}"
+python3 <skill_dir>/scripts/deployment_list.py
+python3 <skill_dir>/scripts/deployment_list.py --max-results 200
+python3 <skill_dir>/scripts/deployment_get.py --deployment "{deployment-uuid}"
 ```
 
 ### Check build status for a commit or branch
@@ -292,8 +362,8 @@ When composing `--description` or `--body` arguments:
 
 | Error | Cause | Fix |
 |---|---|---|
-| `401 Unauthorized` | Bad credentials | Verify `BITBUCKET_EMAIL` and `BITBUCKET_TOKEN` env vars. Token must be an app password, not account password |
-| `403 Forbidden` | Insufficient permissions | App password needs repository and PR read/write scopes |
+| `401 Unauthorized` | Wrong token type, wrong email, expired token, or invalid credentials | Verify `BITBUCKET_EMAIL` and `BITBUCKET_TOKEN`. Use **Create API token with scopes** for Bitbucket; plain no-scope Atlassian tokens will fail |
+| `403 Forbidden` | Insufficient permissions | API token needs repository and PR read/write scopes |
 | `403` on resolve | Tried to resolve a general comment | Only inline (diff) comments can be resolved. General PR comments cannot be resolved via the API |
 | `403` on delete | Not the comment author | You can only delete comments you authored |
 | `404 Not Found` | Wrong workspace, repo slug, PR ID, or comment ID | Verify config `workspace` and run `repo_list.py` to check |
@@ -313,4 +383,4 @@ When composing `--description` or `--body` arguments:
 | Can't detect repo from git remote | Provide `--repo <slug>` explicitly |
 | Merge fails with "unresolved merge conflicts" | Resolve conflicts on source branch, push, then retry |
 | Wrong workspace detected | Set `workspace` in `.bitbucket.json` or use `--workspace` flag |
-| App password vs OAuth token confusion | This skill uses app passwords (Basic auth). Create one at Bitbucket Settings > App passwords |
+| API token vs OAuth token confusion | This skill uses Basic auth with `BITBUCKET_EMAIL` + `BITBUCKET_TOKEN`. Create the token via **Create API token with scopes** in Bitbucket settings |

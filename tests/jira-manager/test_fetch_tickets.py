@@ -3,9 +3,12 @@
 
 import argparse
 import importlib.util
+import io
 import sys
 from pathlib import Path
 from unittest import mock
+
+import pytest
 
 _SCRIPTS_DIR = str(Path(__file__).resolve().parent.parent.parent / "jira-manager" / "scripts")
 if _SCRIPTS_DIR not in sys.path:
@@ -22,6 +25,7 @@ sys.modules["fetch_tickets"] = _mod
 format_issue_table = _mod.format_issue_table
 format_issue_detail = _mod.format_issue_detail
 _extract_sprint_from_value = _mod._extract_sprint_from_value
+_add_remote_links_to_issues = _mod._add_remote_links_to_issues
 
 
 def _make_config(
@@ -142,6 +146,62 @@ class TestFormatIssueDetail:
         detail = format_issue_detail(issue, config, convert_markup=False)
         assert "Parent:      TEST-100 - Parent Epic" in detail
 
+    def test_remote_links_shown(self):
+        config = _make_config()
+        issue = _make_issue()
+        issue["remoteLinks"] = [
+            {
+                "object": {
+                    "title": "Design doc",
+                    "url": "https://example.com/design",
+                }
+            }
+        ]
+
+        detail = format_issue_detail(issue, config, convert_markup=False)
+
+        assert "Remote Links:" in detail
+        assert "Design doc" in detail
+        assert "https://example.com/design" in detail
+
+
+class TestRemoteLinkEnrichment:
+    def test_adds_remote_links_in_place(self):
+        client = mock.MagicMock()
+        client.get_remote_issue_links.side_effect = [
+            [{"object": {"title": "Doc 1", "url": "https://example.com/1"}}],
+            [],
+        ]
+        issues = [{"key": "TEST-1"}, {"key": "TEST-2"}]
+
+        _add_remote_links_to_issues(client, issues)
+
+        assert issues[0]["remoteLinks"][0]["object"]["title"] == "Doc 1"
+        assert issues[1]["remoteLinks"] == []
+
+
+class TestRemoteLinkCliWiring:
+    def test_handle_key_includes_remote_links_for_json(self):
+        stdout = io.StringIO()
+        client = mock.MagicMock()
+        client.get_issue.return_value = {"key": "TEST-1", "fields": {"summary": "Issue"}}
+        client.get_remote_issue_links.return_value = [
+            {"object": {"title": "Doc", "url": "https://x"}}
+        ]
+
+        with mock.patch("sys.stdout", stdout):
+            _mod._handle_key(
+                client,
+                _make_config(),
+                "TEST-1",
+                "json",
+                None,
+                convert=False,
+                include_remote_links=True,
+            )
+
+        assert '"remoteLinks"' in stdout.getvalue()
+
 
 # ---------------------------------------------------------------------------
 # Sprint extraction
@@ -216,6 +276,23 @@ class TestKeyCoalescing:
         args = self._parse(["--keys", "PROJ-1,PROJ-2"])
         assert args.key is None
         assert args.keys == "PROJ-1,PROJ-2"
+
+
+class TestFilterConflict:
+    def test_filter_with_key_is_rejected(self) -> None:
+        parser = argparse.ArgumentParser()
+        args = argparse.Namespace(
+            filter=[["status=In Progress"]],
+            key="PROJ-1",
+            keys=None,
+            jql=None,
+            children_of=None,
+            boards=False,
+            board_id=None,
+        )
+
+        with pytest.raises(SystemExit):
+            _mod._normalize_args(parser, args)
 
 
 if __name__ == "__main__":

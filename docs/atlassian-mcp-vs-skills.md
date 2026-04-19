@@ -4,6 +4,12 @@
 >
 > Last updated: 2026-04-19
 
+Comparison notes:
+- This compares the MCP tools listed in Atlassian's supported-tools page against capabilities that are actually implemented in this repo's scripts and skill docs.
+- "Tie" means both sides support the capability at a broadly comparable functional level, even if the UX or ergonomics differ.
+- The skills intentionally do not compete on wrappers for low-value native git/CLI operations when local tooling is clearly simpler.
+- For Confluence inline comments, the skill follows the live Cloud API states such as `resolved` and `reopened` rather than inventing friendlier aliases.
+
 ---
 
 ## Jira
@@ -24,13 +30,15 @@
 | **Transitions — list** | `getTransitionsForJiraIssue` | `discover_fields.py --transitions ISSUE-KEY` | Tie |
 | **Transitions — execute** | `transitionJiraIssue` | `update_ticket.py --status "Done"` — auto-resolves name → transition ID | Tie (skill adds name resolution) |
 | **Add comment** | `addCommentToJiraIssue` | `update_ticket.py --comment` | Tie |
+| **Edit comment** | Not supported | `issue_comments.py edit --key PROJ-101 --comment-id 123 --body "..."` | **Skill** |
+| **Delete comment** | Not supported | `issue_comments.py delete --key PROJ-101 --comment-id 123` | **Skill** |
 | **Add worklog** | `addWorklogToJiraIssue` | `update_ticket.py --worklog "2h" --worklog-comment "..."` | Tie |
 | **Issue links (create)** | Not supported | `update_ticket.py --link "Blocks:PROJ-456"` — auto-resolves link type names | **Skill** |
-| **Remote issue links (read)** | `getJiraIssueRemoteIssueLinks` | Not supported (reads regular issue links, not remote) | **MCP** |
+| **Remote issue links (read)** | `getJiraIssueRemoteIssueLinks` | `fetch_tickets.py --include-remote-links` — detail/json output enrichment | Tie |
 | **Attachments** | Not supported | `--attachment` on create/update; images auto-extracted from markdown descriptions | **Skill** |
 | **Field discovery** | `getJiraIssueTypeMetaWithFields` — create-field metadata for one type | `discover_fields.py` — full catalog, search, statuses, priorities, components, versions, sprints, fields-for-type, transitions | **Skill** — much richer discovery |
 | **Issue type metadata** | `getJiraProjectIssueTypesMetadata` — list types in project | `discover_fields.py --fields-for-type` includes this | Tie |
-| **Project listing** | `getVisibleJiraProjects` | Not supported (uses project key from config) | **MCP** |
+| **Project listing** | `getVisibleJiraProjects` | `list_projects.py` — visible projects in table output | Tie |
 | **User lookup** | `lookupJiraAccountId` — by name/email | Auto-resolves display name → accountId inline during updates | Tie |
 | **Markdown → Jira markup** | Not supported (raw API) | Auto-converts markdown descriptions to Jira wiki markup | **Skill** |
 | **Mermaid diagrams** | Not supported | Auto-renders ` ```mermaid ` blocks to PNG, uploads as attachments | **Skill** |
@@ -40,7 +48,7 @@
 | **Auto-diagnosis** | Not supported | Hierarchy errors, field resolution failures → actionable fix suggestions | **Skill** |
 | **Sprint management** | Not supported | `--sprint "Sprint 5"` on update/bulk update, board-based sprint listing | **Skill** |
 
-**Jira totals: Skill wins 18, MCP wins 2, Tie 7**
+**Jira totals: Skill wins 20, MCP wins 0, Tie 9**
 
 ---
 
@@ -54,12 +62,21 @@
 | **Delete page** | Not supported | `delete_page.py` — by manifest key or page ID, with `--dry-run` | **Skill** |
 | **Search (CQL)** | `searchConfluenceUsingCql` | `search_pages.py --cql` | Tie |
 | **Footer comments — list** | `getConfluencePageFooterComments` | `page_comments.py list --page-id` | Tie |
-| **Footer comments — create** | `createConfluenceFooterComment` (supports replies) | `page_comments.py add --page-id --body` | Tie (MCP supports replies) |
+| **Footer comments — create** | `createConfluenceFooterComment` (supports replies) | `page_comments.py add --page-id --body` | Tie |
+| **Footer comments — reply** | `createConfluenceFooterComment` — reply via parent | `page_comments.py reply --page-id --parent-comment-id --body` | Tie |
+| **Footer comments — edit** | Not supported | `page_comments.py edit --comment-id ... --body ...` | **Skill** |
+| **Footer comments — delete** | Not supported | `page_comments.py delete --comment-id ...` | **Skill** |
 | **Inline comments — list** | `getConfluencePageInlineComments` | `page_comments.py list --page-id --inline` | Tie |
-| **Inline comments — create** | `createConfluenceInlineComment` — tied to selected text | Not supported (requires selection context) | **MCP** |
+| **Inline comments — create** | `createConfluenceInlineComment` — tied to selected text | `page_comments.py add --page-id --inline --inline-text-selection ...` | Tie |
+| **Inline comments — edit** | Not supported | `page_comments.py edit --comment-id ... --inline --body ...` | **Skill** |
+| **Inline comments — delete** | Not supported | `page_comments.py delete --comment-id ... --inline` | **Skill** |
+| **Inline comments — resolve / unresolve** | Not supported | `page_comments.py resolve|unresolve --comment-id ... --inline` | **Skill** |
 | **List spaces** | `getConfluenceSpaces` | `list_spaces.py` with `--type` filter | Tie |
-| **Pages in space** | `getPagesInConfluenceSpace` — filter by title/status/type | Not directly (uses manifest or discover) | **MCP** |
+| **Pages in space** | `getPagesInConfluenceSpace` — filter by title/status/type | `list_pages.py --space-key --title --status --type` | Tie |
 | **Page descendants** | `getConfluencePageDescendants` | `discover_pages.py` — walks tree, builds manifest | Tie |
+| **Page likes (read)** | Not supported | `page_comments.py likes --page-id 123` | **Skill** |
+| **Comment likes (read)** | Not supported | `page_comments.py likes --comment-id 456 [--inline]` | **Skill** |
+| **Likes / reactions (write)** | Not supported | Not supported | Tie |
 | **Version history** | Not supported | `page_versions.py --list` — browse all versions | **Skill** |
 | **Fetch specific version** | Not supported | `page_versions.py --fetch 56` — content at any version | **Skill** |
 | **Version diff** | Not supported | `diff_versions.py` — compare two versions, section integrity check | **Skill** |
@@ -78,7 +95,7 @@
 | **Verify hierarchy** | Not supported | `verify_hierarchy.py` — shows full page tree | **Skill** |
 | **Dry run** | Not supported | `--dry-run` on publish, surgical edit, replace, revert | **Skill** |
 
-**Confluence totals: Skill wins 17, MCP wins 2, Tie 8**
+**Confluence totals: Skill wins 24, MCP wins 0, Tie 11**
 
 ---
 
@@ -98,7 +115,7 @@
 | **Create PR** | `bitbucketPullRequest.create` | `pr_create.py` with `--dry-run`, default reviewers from config | **Skill** — dry-run, config defaults |
 | **Get PR** | `bitbucketPullRequest.get` | `pr_get.py` — shows reviewers with approval status | Tie |
 | **List PRs** | `bitbucketPullRequest.list` | `pr_list.py` — filter by state, author, branch | Tie |
-| **PR diff** | `bitbucketPullRequest.diff` | Not supported | **MCP** |
+| **PR diff** | `bitbucketPullRequest.diff` | `pr_diff.py` — raw diff, summary, JSON metadata | Tie |
 | **Approve PR** | `bitbucketPullRequest.approve` | Not supported | **MCP** |
 | **Merge PR** | `bitbucketPullRequest.merge` | `pr_merge.py` — merge strategies (squash, fast-forward), precondition checks, `--dry-run` | **Skill** — strategies, preconditions |
 | **Decline PR** | Not supported | `pr_decline.py` with `--dry-run` | **Skill** |
@@ -107,20 +124,23 @@
 | **PR comment — edit** | Not supported | `pr_comment.py --edit ID --body "..."` | **Skill** |
 | **PR comment — delete** | Not supported | `pr_comment.py --delete ID [ID ...]` — bulk delete | **Skill** |
 | **PR comment — resolve** | Not supported | `pr_comment.py --resolve ID [ID ...]` — bulk resolve | **Skill** |
+| **PR comment — reopen** | Not supported | `pr_comment.py --unresolve ID [ID ...]` — bulk reopen for resolved inline threads | **Skill** |
+| **PR emoji reactions** | Not supported | Not supported | Tie |
 | **PR build checks** | Not supported | `pr_checks.py --pr 42` | **Skill** |
 | **Commit/branch build status** | Not supported | `build_status.py --commit X` / `--branch Y` | **Skill** |
 | **Extract Jira issues from PR** | Not supported | `pr_jira.py --pr 42` — scans branch, title, description, commits | **Skill** |
-| **Pipeline — list** | `bitbucketPipeline.list` | Not supported | **MCP** |
-| **Pipeline — get** | `bitbucketPipeline.get` | Not supported | **MCP** |
-| **Pipeline — run** | `bitbucketPipeline.run` | Not supported | **MCP** |
-| **Pipeline — steps** | `bitbucketPipeline.steps` / `step.get` / `step.log` | Not supported | **MCP** |
-| **Environments** | `bitbucketEnvironment` — list, get, create, update, delete | Not supported | **MCP** |
-| **Deployments** | `bitbucketDeployment` — list, get | Not supported | **MCP** |
+| **Pipeline — list** | `bitbucketPipeline.list` | `pipeline_list.py` | Tie |
+| **Pipeline — get** | `bitbucketPipeline.get` | `pipeline_get.py` | Tie |
+| **Pipeline — run** | `bitbucketPipeline.run` | `pipeline_run.py` with `--dry-run` | Tie |
+| **Pipeline — steps / step.get / step.log** | `bitbucketPipeline.steps` / `step.get` / `step.log` | `pipeline_steps.py`, `pipeline_step_get.py`, `pipeline_log.py` | Tie |
+| **Environments — list/get** | `bitbucketEnvironment` — list, get | `environment_list.py`, `environment_get.py` | Tie |
+| **Environments — create/update/delete** | `bitbucketEnvironment` — create, update, delete | Not supported | **MCP** |
+| **Deployments** | `bitbucketDeployment` — list, get | `deployment_list.py`, `deployment_get.py` | Tie |
 | **Dry run** | Not supported | `--dry-run` on create, update, merge, decline, comment, edit, delete | **Skill** |
 | **Auto-detect repo from git** | Not supported (must specify) | Auto-detects workspace + repo from `git remote` | **Skill** |
 | **Config defaults** | Not supported | Default reviewers, destination branch, workspace from `.bitbucket.json` | **Skill** |
 
-**Bitbucket totals: Skill wins 12, MCP wins 13, Tie 3**
+**Bitbucket totals: Skill wins 13, MCP wins 7, Tie 11**
 
 ---
 
@@ -148,14 +168,15 @@ These are products/features exclusive to the MCP with no skill equivalent.
 | **Setup** | Near-zero: cloud-hosted, OAuth 2.1 or API token | Python 3.10+, config file, API token per skill |
 | **Dry run / preview** | None | Available on all write operations across all skills |
 | **Bulk operations** | One item at a time | Bulk create, bulk update, batch publish, batch delete |
-| **Error handling** | Standard HTTP errors | Auto-diagnosis with actionable fix suggestions (hierarchy errors, field resolution, transition resolution) |
+| **Error handling** | Standard HTTP errors | Richer on Jira and preflight flows; still uneven on some newer Bitbucket/Confluence paths, but moving toward actionable hints |
 | **Markdown support** | Confluence pages accept markdown body | Jira: auto-converts markdown → wiki markup. Confluence: full transform pipeline (mermaid, cross-links, attachments) |
-| **Offline / air-gapped** | Cloud-only, requires internet | Local scripts, works air-gapped with any Jira/Confluence/Bitbucket instance |
+| **Offline / air-gapped** | Cloud-hosted MCP, requires network access to Atlassian Cloud | Local scripts with user-managed config; still require network access to the target Jira/Confluence/Bitbucket API, whether cloud or internally reachable |
 | **Customization** | None — fixed tool set | Fully hackable Python scripts, config-driven |
 | **AI-native features** | Rovo natural language search, Teamwork Graph cross-linking, ARI fetch | None (but designed for AI agents via SKILL.md prompt format) |
 | **Auth model** | OAuth 2.1 (org-managed) or API token | API token (user-managed) |
-| **Pipelines / CI** | Full pipeline management (list, get, run, steps, logs) | Build status checks only (no pipeline triggering) |
-| **Deployment management** | Environments + Deployments CRUD | Not supported |
+| **Pipelines / CI** | Full pipeline management (list, get, run, steps, logs) | Pipelines supported for list/get/run/steps/logs; adds dry-run for run |
+| **Deployment management** | Environments + Deployments CRUD | Environments list/get and deployments list/get |
+| **CLI policy** | Exposes many remote repository primitives directly | Deliberately avoids low-value wrappers when native git/CLI is clearly better |
 
 ---
 
@@ -163,9 +184,9 @@ These are products/features exclusive to the MCP with no skill equivalent.
 
 | Product | Skill Wins | MCP Wins | Tie |
 |---|---|---|---|
-| Jira | **18** | 2 | 7 |
-| Confluence | **17** | 2 | 8 |
-| Bitbucket | 12 | **13** | 3 |
+| Jira | **20** | 0 | 9 |
+| Confluence | **24** | 0 | 11 |
+| Bitbucket | **13** | 7 | 11 |
 | Platform-only | 0 | **6 products** | 0 |
 
-**Bottom line:** The skills dominate Jira and Confluence in depth (bulk ops, diffing, surgical edits, markup conversion, version management, field discovery). The MCP has broader Bitbucket coverage (pipelines, environments, deployments, repo content) and exclusive access to JSM, Compass, Rovo AI, and Teamwork Graph. For Bitbucket PR workflows specifically, the skill offers richer comment management (edit, delete, resolve, filter) and safety features (dry-run, precondition checks).
+**Bottom line:** The skills now tie or beat the MCP across most compared Jira and Confluence workflows and close much of the Bitbucket gap for PR, pipeline, environment, and deployment reads. The MCP still keeps clear advantages in Atlassian platform breadth (JSM, Compass, Rovo, Teamwork Graph), several Bitbucket administrative surfaces, and centralized hosted setup. The skills also intentionally leave some repository primitives to native git/CLI when that is the cleaner tool.

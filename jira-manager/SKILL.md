@@ -73,7 +73,7 @@ $PY $S/fetch_tickets.py --boards
 ```
 
 Formats: `table` (default — shows key, type, SP, priority, status, sprint, summary), `detail`, `json`.
-Options: `--max-results N` (default 50), `--no-convert` (skip markup conversion).
+Options: `--max-results N` (default 50), `--no-convert` (skip markup conversion), `--include-remote-links` (fetch remote issue links for detail/json output).
 
 **Filter values that are JQL functions** (e.g. `currentUser()`, `now()`, `startOfDay()`) are passed through unquoted. Plain values are auto-quoted.
 
@@ -166,6 +166,21 @@ $PY $S/delete_ticket.py --key PROJ-110 --dry-run    # preview
 $PY $S/delete_ticket.py --key PROJ-110 --confirm     # execute
 ```
 **Never delete without explicit user approval.**
+
+## Manage comments
+
+```bash
+$PY $S/issue_comments.py list --key PROJ-101
+$PY $S/issue_comments.py add --key PROJ-101 --body "Thanks for the update."
+$PY $S/issue_comments.py edit --key PROJ-101 --comment-id 12345 --body "Revised note."
+$PY $S/issue_comments.py delete --key PROJ-101 --comment-id 12345
+```
+
+## List projects
+
+```bash
+$PY $S/list_projects.py
+```
 
 ## Discover fields
 

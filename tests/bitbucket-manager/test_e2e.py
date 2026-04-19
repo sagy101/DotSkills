@@ -15,11 +15,14 @@ Usage:
 """
 
 import contextlib
+import os
 import re
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+import pytest
 
 # Scripts live in bitbucket-manager/scripts/ relative to repo root
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -121,7 +124,7 @@ def _cleanup() -> None:
         print(f"[CLEANUP] Local branch {_BRANCH} deleted")
 
 
-def _test_comments(pr: str, test_file: str) -> None:
+def _test_comments(pr: str, test_file: str) -> tuple[str | None, str | None]:
     """Test comment posting, threading, display, filters, and bulk resolve."""
     global _skipped
 
@@ -219,9 +222,11 @@ def _test_comments(pr: str, test_file: str) -> None:
     r = _run("pr_comments.py", "--pr", pr, "--status", "resolved")
     _check("--status resolved (after resolve)", r, stdout_contains="RESOLVED")
 
+    return cid1, cid2
+
 
 def main() -> None:
-    global _pr_id, _passed, _failed
+    global _pr_id, _passed, _failed, _skipped
 
     import argparse
 
@@ -369,8 +374,31 @@ def main() -> None:
         r = _run("pr_get.py", "--pr", pr)
         _check("pr_get (after update)", r, stdout_contains=f"E2E UPDATED {_TIMESTAMP}")
 
+        # Diff output should be available for the disposable PR
+        r = _run("pr_diff.py", "--pr", pr)
+        _check("pr_diff (raw)", r, stdout_contains=f"diff --git a/{_TEST_FILE} b/{_TEST_FILE}")
+
+        r = _run("pr_diff.py", "--pr", pr, "--format", "summary")
+        _check("pr_diff (summary)", r, stdout_contains=_TEST_FILE)
+
         # ── 6–7. Comments: post, reply, display, filter, resolve ─
-        _test_comments(pr, _TEST_FILE)
+        cid1, cid2 = _test_comments(pr, _TEST_FILE)
+
+        # Reopen one resolved thread and verify resolution state flips back
+        if cid1:
+            r = _run("pr_comment.py", "--pr", pr, "--unresolve", cid1)
+            _check("pr_comment --unresolve", r, stdout_contains="Reopened")
+
+            r = _run("pr_comments.py", "--pr", pr, "--status", "unresolved")
+            _check("--status unresolved (after reopen)", r, stdout_contains="UNRESOLVED")
+            _check(
+                "--status unresolved (after reopen) contains root 1",
+                r,
+                stdout_contains=f"E2E root comment 1 {_TIMESTAMP}",
+            )
+        else:
+            print("[SKIP] Could not extract a comment ID for reopen test")
+            _skipped += 1
 
         # ── 8. pr_checks ─────────────────────────────────────────
         r = _run("pr_checks.py", "--pr", pr)
@@ -436,6 +464,15 @@ def main() -> None:
     else:
         print(f"{_passed}/{total} passed, {_failed} FAILED")
     sys.exit(0 if _failed == 0 else 1)
+
+
+def test_bitbucket_manager_e2e() -> None:
+    if os.environ.get("BITBUCKET_E2E") != "1":
+        pytest.skip("set BITBUCKET_E2E=1 to run this live E2E driver")
+    result = subprocess.run(
+        [_PYTHON, str(Path(__file__).resolve())], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 if __name__ == "__main__":

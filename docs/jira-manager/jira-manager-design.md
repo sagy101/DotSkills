@@ -20,6 +20,7 @@ This skill gives **any SKILL.md-compatible agent** reliable Jira CRUD by combini
 | **Update tickets** | Modify fields, status, sprint, priority, assignee, parent, attachments, comments, and issue links on existing issues |
 | **Bulk update** | Update multiple tickets by explicit list, board, JQL, or field filter |
 | **Fetch tickets** | Query by key, JQL, field filter, parent, or Agile board (table/detail/JSON output) |
+| **Project listing** | List projects visible to the authenticated Jira user |
 | **Delete tickets** | Remove issues with dry-run preview and confirmation gate |
 | **Diff** | Compare local ticket definitions against live Jira state |
 | **Validate estimates** | Check that sub-ticket story point sums match parent estimates |
@@ -30,7 +31,9 @@ This skill gives **any SKILL.md-compatible agent** reliable Jira CRUD by combini
 | **Mermaid rendering** | ` ```mermaid ` code blocks are rendered to PNG via mmdc, attached to the issue, and embedded as `!filename.png!` |
 | **Link rewriting** | Convert relative markdown links to git browse URLs in ticket descriptions |
 | **Comments** | Add comments to issues via `--comment` flag during update |
+| **Comment management** | List, add, edit, and delete comments with dedicated issue comment commands |
 | **Issue links** | Create typed links between issues (Blocks, Duplicate, Relates, etc.) via `--link` flag |
+| **Remote links** | Fetch remote issue links for detail/JSON issue output when requested |
 | **Board/sprint ops** | List Agile boards, fetch board issues, move issues between sprints |
 
 ---

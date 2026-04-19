@@ -6,7 +6,7 @@ Quick-reference guide to all skills in this repository. Each section describes w
 
 ## Jira Manager
 
-Manage Jira tickets end-to-end: create, update, fetch, delete, transition, comment, link, and bulk-operate on issues. Fetch by key, JQL, filter, board, or sprint. Discover fields, statuses, and priorities. Supports bulk create from markdown and smart 400-error diagnosis for missing required fields.
+Manage Jira tickets end-to-end: create, update, fetch, delete, transition, comment, link, and bulk-operate on issues. Fetch by key, JQL, filter, board, or sprint. Discover fields, statuses, priorities, visible projects, and remote issue links. Supports bulk create from markdown and smart 400-error diagnosis for missing required fields.
 
 > Full details: [docs/jira-manager/jira-manager-design.md](docs/jira-manager/jira-manager-design.md)
 
@@ -22,7 +22,7 @@ Manage Jira tickets end-to-end: create, update, fetch, delete, transition, comme
 
 ## Confluence Publisher
 
-Publish, sync, diff, delete, discover, and export markdown documentation to/from Confluence Cloud. Handles page creation, updates, deletion, cross-page link rewriting, Mermaid diagram rendering, hierarchy verification, and reverse export to markdown. Also supports surgical HTML edits, section append (insert new content after a heading or at end of page), version comparison, and page revert.
+Publish, sync, diff, delete, discover, and export markdown documentation to/from Confluence Cloud. Handles page creation, updates, deletion, cross-page link rewriting, Mermaid diagram rendering, hierarchy verification, reverse export to markdown, page listing, comment management, and likes reads. Also supports surgical HTML edits, section append (insert new content after a heading or at end of page), version comparison, and page revert.
 
 > Full details: [docs/confluence-publisher/confluence-publisher-design.md](docs/confluence-publisher/confluence-publisher-design.md)
 
@@ -38,7 +38,7 @@ Publish, sync, diff, delete, discover, and export markdown documentation to/from
 
 ## Bitbucket Manager
 
-Manage Bitbucket Cloud pull requests: create, update, get, list, merge, and decline. Add, edit, delete, and resolve PR comments (general and inline). View PR build checks, commit/branch pipeline status, extract linked Jira issues, and list workspace repositories. Pure Python stdlib — zero pip dependencies.
+Manage Bitbucket Cloud pull requests: create, update, get, list, merge, and decline. Add, edit, delete, resolve, and reopen PR comments (general and inline). View PR diffs, PR build checks, pipelines, environments, deployments, commit/branch pipeline status, extract linked Jira issues, and list workspace repositories. Pure Python stdlib — zero pip dependencies.
 
 > Full details: [docs/bitbucket-manager/bitbucket-manager-design.md](docs/bitbucket-manager/bitbucket-manager-design.md)
 

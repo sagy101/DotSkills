@@ -6,9 +6,11 @@ description: >
   export markdown files to Confluence, or when they want to verify existing Confluence pages against
   local docs. Also supports surgical HTML edits (targeted find/replace without overwriting manual
   formatting), version comparison (diff two page versions), version history browsing, page revert,
-  CQL search, page comments (list/add footer and inline), and space listing. Handles page creation,
-  updates, deletion, cross-page link rewriting, Mermaid diagram rendering, hierarchy verification,
-  diff/preview, and reverse export to markdown.
+  CQL search, page comments (list/add/reply/edit/delete/resolve/unresolve plus likes reads and
+  threaded child traversal), page listing by space, and space listing. Handles page creation,
+  updates, deletion, cross-page link
+  rewriting, Mermaid diagram rendering, hierarchy verification, diff/preview, and reverse export to
+  markdown.
 license: MIT
 metadata:
   author: sagy101
@@ -35,6 +37,8 @@ Use this skill when the user wants to:
 - Compare two versions of a Confluence page (version diff)
 - Browse page version history or fetch content from a specific version
 - Revert a page to a previous version
+- Manage Confluence page comments and read like counts/users for pages and comments
+- List pages in a space with title/status/type filters
 
 ## Prerequisites
 

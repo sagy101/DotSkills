@@ -6,11 +6,13 @@ import sys
 import unittest.mock
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "codex-subagent", "scripts"))
 
+import run_codex as _mod
 from run_codex import (
     DEFAULT_MAX_PARALLEL,
     _check_dangerous_flag,
@@ -25,13 +27,18 @@ from run_codex import (
     _normalize_exit_code,
     _read_pid_metadata,
     _register_agent,
+    _report_exit_error,
     _scan_agents,
     _unregister_agent,
+    _validate_args,
+    _validate_prompt,
     build_codex_args,
+    build_prompt_file,
     enforce_parallel_limit,
     parse_args_with_passthrough,
     print_status,
     scan_for_dangerous_flags,
+    setup_worktree,
     version_gte,
 )
 
@@ -961,15 +968,6 @@ class TestParseArgsWithPassthrough:
 
 # ========== Parallel Agent Tracking ==========
 
-import run_codex as _mod  # noqa: E402
-from run_codex import (
-    _report_exit_error,
-    _validate_args,
-    _validate_prompt,
-    build_prompt_file,
-    setup_worktree,
-)
-
 
 @pytest.fixture(autouse=False)
 def isolated_pid_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[str, None, None]:
@@ -1214,7 +1212,7 @@ class TestStatusFlag:
 # ========== _validate_args ==========
 
 
-def _make_args(**kwargs):
+def _make_args(**kwargs: Any) -> Any:
     """Build a minimal valid argparse.Namespace for _validate_args."""
     import argparse
 
@@ -1433,6 +1431,8 @@ class TestSetupWorktree:
         monkeypatch.setattr(sp, "run", lambda *a, **kw: fake_result)
         wt_dir, wt_branch, wt_id = setup_worktree("medium", "write")
         # branch and id both come from the same uuid fragment
+        assert wt_dir is not None
+        assert wt_branch is not None
         assert wt_branch == wt_id
         assert wt_branch in wt_dir
 
