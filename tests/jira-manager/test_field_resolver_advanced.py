@@ -4,6 +4,7 @@ build_update_fields, validate_required_fields."""
 
 import argparse
 import importlib.util
+import os
 import sys
 from pathlib import Path
 from unittest import mock
@@ -25,6 +26,8 @@ _resolve_from_catalog = _mod._resolve_from_catalog
 _resolve_from_fallbacks = _mod._resolve_from_fallbacks
 apply_set_pairs = _mod.apply_set_pairs
 build_update_fields = _mod.build_update_fields
+build_update_fields_with_images = _mod.build_update_fields_with_images
+resolve_description_with_images = _mod.resolve_description_with_images
 validate_required_fields = _mod.validate_required_fields
 
 
@@ -453,6 +456,131 @@ class TestValidateRequiredFields:
         fields = {"customfield_100": "value"}
         missing = validate_required_fields(config, "bug", fields)
         assert missing == []
+
+
+# ---------------------------------------------------------------------------
+# resolve_description_with_images
+# ---------------------------------------------------------------------------
+
+
+class TestResolveDescriptionWithImages:
+    def _make_args(self, **kwargs: object) -> argparse.Namespace:
+        defaults: dict[str, object] = {
+            "description": None,
+            "description_file": None,
+            "rewrite_links": False,
+            "no_convert": True,
+        }
+        defaults.update(kwargs)
+        return argparse.Namespace(**defaults)
+
+    def test_none_description(self):
+        config = _make_config()
+        args = self._make_args()
+        desc, paths = resolve_description_with_images(args, config)
+        assert desc is None
+        assert paths == []
+
+    def test_plain_text_no_images(self):
+        config = _make_config()
+        args = self._make_args(description="Simple text")
+        desc, paths = resolve_description_with_images(args, config)
+        assert desc == "Simple text"
+        assert paths == []
+
+    def test_description_with_local_image(self, tmp_path: Path):
+        img = tmp_path / "arch.png"
+        img.write_bytes(b"PNG")
+        config = _make_config()
+        args = self._make_args(description="See ![arch](arch.png)")
+        orig_dir = os.getcwd()
+        os.chdir(str(tmp_path))
+        try:
+            desc, paths = resolve_description_with_images(args, config)
+        finally:
+            os.chdir(orig_dir)
+        assert desc is not None
+        assert "arch.png" in desc
+        assert len(paths) == 1
+
+    def test_description_with_http_image(self):
+        config = _make_config()
+        args = self._make_args(description="![logo](https://example.com/logo.png)")
+        desc, paths = resolve_description_with_images(args, config)
+        assert "https://example.com/logo.png" in desc
+        assert paths == []
+
+    def test_description_file(self, tmp_path: Path):
+        img = tmp_path / "diagram.png"
+        img.write_bytes(b"PNG")
+        md_file = tmp_path / "desc.md"
+        md_file.write_text("# Title\n\n![diagram](diagram.png)\n", encoding="utf-8")
+        config = _make_config()
+        args = self._make_args(description_file=str(md_file))
+        desc, paths = resolve_description_with_images(args, config)
+        assert desc is not None
+        assert len(paths) == 1
+        assert "diagram.png" in paths[0]
+
+    def test_with_markup_conversion(self, tmp_path: Path):
+        img = tmp_path / "flow.png"
+        img.write_bytes(b"PNG")
+        md_file = tmp_path / "desc.md"
+        md_file.write_text("**Bold** and ![flow](flow.png)\n", encoding="utf-8")
+        config = _make_config()
+        args = self._make_args(description_file=str(md_file), no_convert=False)
+        desc, paths = resolve_description_with_images(args, config)
+        assert desc is not None
+        assert "!flow.png!" in desc
+        assert "*Bold*" in desc
+        assert len(paths) == 1
+
+
+# ---------------------------------------------------------------------------
+# build_update_fields_with_images
+# ---------------------------------------------------------------------------
+
+
+class TestBuildUpdateFieldsWithImages:
+    def test_no_description(self):
+        config = _make_config()
+        args = _make_args()
+        fields, status, img_paths = build_update_fields_with_images(args, config)
+        assert "description" not in fields
+        assert img_paths == []
+        assert status is None
+
+    def test_summary_only(self):
+        config = _make_config()
+        args = _make_args(summary="New Title")
+        fields, status, img_paths = build_update_fields_with_images(args, config)
+        assert fields["summary"] == "New Title"
+        assert img_paths == []
+        assert status is None
+
+    def test_description_with_images(self, tmp_path: Path):
+        img = tmp_path / "screen.png"
+        img.write_bytes(b"PNG")
+        md_file = tmp_path / "update.md"
+        md_file.write_text("Updated with ![screen](screen.png)\n", encoding="utf-8")
+        config = _make_config()
+        args = _make_args(description_file=str(md_file))
+        fields, _, img_paths = build_update_fields_with_images(args, config)
+        assert "description" in fields
+        assert len(img_paths) == 1
+        assert "screen.png" in img_paths[0]
+
+    def test_description_with_set_pairs(self, tmp_path: Path):
+        img = tmp_path / "chart.png"
+        img.write_bytes(b"PNG")
+        md_file = tmp_path / "desc.md"
+        md_file.write_text("![chart](chart.png)\n", encoding="utf-8")
+        config = _make_config(mappings={"story_points": "customfield_10133"})
+        args = _make_args(description_file=str(md_file), set=["story_points=5"])
+        fields, _, img_paths = build_update_fields_with_images(args, config)
+        assert "description" in fields
+        assert fields["customfield_10133"] == 5.0
+        assert len(img_paths) == 1
 
 
 if __name__ == "__main__":

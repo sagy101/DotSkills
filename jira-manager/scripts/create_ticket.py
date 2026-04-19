@@ -29,7 +29,7 @@ from field_resolver import (
     apply_extra_fields,
     apply_named_fields,
     apply_set_pairs,
-    resolve_description,
+    resolve_description_with_images,
     resolve_issue_type,
     resolve_sprint_id,
     validate_required_fields,
@@ -217,10 +217,10 @@ def _add_epic_link(fields: dict[str, Any], args: argparse.Namespace, config: Jir
 
 def build_fields(
     args: argparse.Namespace, config: JiraConfig, client: Any = None
-) -> tuple[dict[str, Any], str | None]:
+) -> tuple[dict[str, Any], str | None, list[str]]:
     """Build the Jira fields dict from CLI arguments.
 
-    Returns (fields_dict, status_value_or_None).
+    Returns (fields_dict, status_value_or_None, description_image_paths).
     """
     fields = {
         "project": {"key": config.project_key},
@@ -229,18 +229,14 @@ def build_fields(
 
     fields["issuetype"] = resolve_issue_type(config, args.type)
 
-    # Description (for create, default to empty string so None means "not provided")
-    description = args.description or ""
-    if args.description_file:
-        description = Path(args.description_file).read_text(encoding="utf-8")
+    # Description — also extracts local image paths for auto-attachment
+    orig_desc = args.description
+    if not args.description and not args.description_file:
+        args.description = ""
+    description, image_paths = resolve_description_with_images(args, config)
+    args.description = orig_desc
     if description:
-        # Temporarily set args.description for resolve_description compatibility
-        orig = args.description
-        args.description = description
-        resolved = resolve_description(args, config)
-        args.description = orig
-        if resolved:
-            fields["description"] = resolved
+        fields["description"] = description
 
     # Parent (for subtasks)
     if args.parent:
@@ -251,7 +247,7 @@ def build_fields(
     status_from_set = apply_set_pairs(fields, args, config)
     apply_extra_fields(fields, args)
 
-    return fields, status_from_set
+    return fields, status_from_set, image_paths
 
 
 def _handle_post_create_sprint(
@@ -336,7 +332,7 @@ def main() -> None:
 
     config = load_config(args.config)
     client = JiraClient(config)
-    fields, status_from_set = build_fields(args, config, client=client)
+    fields, status_from_set, desc_image_paths = build_fields(args, config, client=client)
     effective_status = args.status or status_from_set
 
     missing = validate_required_fields(config, args.type, fields)
@@ -349,7 +345,8 @@ def main() -> None:
         _copy_custom_fields(fields, args.copy_fields_from, client, issue_type_id)
 
     if args.dry_run:
-        _handle_dry_run(fields, effective_status, args.attachment)
+        all_attachments = args.attachment + desc_image_paths
+        _handle_dry_run(fields, effective_status, all_attachments)
         return
 
     try:
@@ -375,7 +372,7 @@ def main() -> None:
     if args.manifest_id:
         _update_manifest(config, args, key)
 
-    upload_attachments(client, key, args.attachment)
+    upload_attachments(client, key, desc_image_paths + args.attachment)
 
     # Output JSON for script chaining
     print(json.dumps({"key": key, "self": result.get("self", "")}))

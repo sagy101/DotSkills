@@ -34,7 +34,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from field_resolver import (
     add_common_field_args,
-    build_update_fields,
+    build_update_fields_with_images,
     resolve_sprint_id,
 )
 from jira_client import JiraAPIError, JiraClient
@@ -190,7 +190,9 @@ def main() -> None:
 
     config = load_config(args.config)
     client = JiraClient(config)
-    fields, status_from_set = build_update_fields(args, config, client=client)
+    fields, status_from_set, desc_image_paths = build_update_fields_with_images(
+        args, config, client=client
+    )
 
     if args.parent:
         fields["parent"] = {"key": args.parent}
@@ -226,7 +228,7 @@ def main() -> None:
     if effective_sprint:
         _handle_sprint(client, args.key, effective_sprint, config)
 
-    upload_attachments(client, args.key, args.attachment)
+    upload_attachments(client, args.key, desc_image_paths + args.attachment)
     _handle_comment(client, args.key, args.comment)
     for link_spec in links:
         _handle_issue_link(client, args.key, link_spec)

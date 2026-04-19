@@ -22,7 +22,12 @@ from typing import Any
 
 from jira_config_loader import JiraConfig
 from link_rewriter import rewrite_links_to_git
-from markup_converter import md_to_jira_markup
+from markup_converter import (
+    MERMAID_BLOCK_RE,
+    extract_local_images,
+    md_to_jira_markup,
+    render_mermaid_blocks,
+)
 
 # ------------------------------------------------------------------
 # Normalization
@@ -176,6 +181,49 @@ def resolve_description(args: argparse.Namespace, config: JiraConfig) -> str | N
     if description and not args.no_convert:
         description = md_to_jira_markup(description)
     return description  # type: ignore[no-any-return]
+
+
+def resolve_description_with_images(
+    args: argparse.Namespace, config: JiraConfig
+) -> tuple[str | None, list[str]]:
+    """Like ``resolve_description`` but also extracts local image paths
+    and renders ````` mermaid`` code blocks to PNG.
+
+    Pipeline order:
+    1. Render mermaid blocks → PNGs (replaced with image references)
+    2. Extract local image references → rewrite to basenames
+    3. Rewrite relative links (if ``--rewrite-links``)
+    4. Convert Markdown → Jira wiki markup (unless ``--no-convert``)
+
+    Returns ``(jira_description, image_file_paths)``.
+    The caller should upload *image_file_paths* as attachments after
+    the issue is created or updated.
+    """
+    description = args.description
+    base_dir = Path.cwd()
+
+    if args.description_file:
+        desc_path = Path(args.description_file)
+        description = desc_path.read_text(encoding="utf-8")
+        base_dir = desc_path.parent.resolve()
+
+    if description is None:
+        return None, []
+
+    if description and MERMAID_BLOCK_RE.search(description):
+        description, _mermaid_pngs = render_mermaid_blocks(description)
+    else:
+        _mermaid_pngs = []
+
+    description, image_paths = extract_local_images(description, base_dir)
+    image_paths = _mermaid_pngs + image_paths
+
+    if args.rewrite_links and description:
+        description = rewrite_links_to_git(description, config)
+    if description and not args.no_convert:
+        description = md_to_jira_markup(description)
+
+    return (description or None), image_paths
 
 
 def apply_story_points(
@@ -387,6 +435,29 @@ def build_update_fields(
     apply_extra_fields(fields, args)
 
     return fields, status_from_set
+
+
+def build_update_fields_with_images(
+    args: argparse.Namespace, config: JiraConfig, client: Any = None
+) -> tuple[dict[str, Any], str | None, list[str]]:
+    """Like ``build_update_fields`` but also extracts local image paths.
+
+    Returns ``(fields_dict, status_value, image_file_paths)``.
+    """
+    fields: dict[str, Any] = {}
+
+    if getattr(args, "summary", None):
+        fields["summary"] = args.summary
+
+    description, image_paths = resolve_description_with_images(args, config)
+    if description is not None:
+        fields["description"] = description
+
+    apply_named_fields(fields, args, config, client=client)
+    status_from_set = apply_set_pairs(fields, args, config)
+    apply_extra_fields(fields, args)
+
+    return fields, status_from_set, image_paths
 
 
 # ------------------------------------------------------------------

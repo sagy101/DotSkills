@@ -50,7 +50,12 @@ from field_resolver import resolve_issue_type, validate_required_fields
 from jira_client import JiraClient
 from jira_config_loader import JiraConfig, add_config_arg, load_config, load_manifest, save_manifest
 from link_rewriter import rewrite_links_to_git
-from markup_converter import md_to_jira_markup
+from markup_converter import (
+    MERMAID_BLOCK_RE,
+    extract_local_images,
+    md_to_jira_markup,
+    render_mermaid_blocks,
+)
 
 
 def _flush_section(
@@ -222,6 +227,27 @@ def print_plan(data: dict[str, Any], epic_key: str, manifest: dict[str, Any]) ->
     return "\n".join(lines)
 
 
+def _process_description(
+    description: str,
+    config: JiraConfig,
+    rewrite_links: bool,
+    no_convert: bool,
+    source_dir: str | Path | None,
+) -> tuple[str, list[str]]:
+    """Render mermaid, extract images, convert markup. Returns (jira_desc, image_paths)."""
+    mermaid_pngs: list[str] = []
+    if description and MERMAID_BLOCK_RE.search(description):
+        description, mermaid_pngs = render_mermaid_blocks(description)
+    image_paths: list[str] = []
+    if description and source_dir:
+        description, image_paths = extract_local_images(description, source_dir)
+    if rewrite_links and description:
+        description = rewrite_links_to_git(description, config)
+    if description and not no_convert:
+        description = md_to_jira_markup(description)
+    return description, mermaid_pngs + image_paths
+
+
 def _build_issue_fields(
     config: JiraConfig,
     item: dict[str, Any],
@@ -230,8 +256,12 @@ def _build_issue_fields(
     parent_key: str | None = None,
     rewrite_links: bool = False,
     no_convert: bool = False,
-) -> dict[str, Any]:
-    """Build the Jira fields dict for a story or subtask."""
+    source_dir: str | Path | None = None,
+) -> tuple[dict[str, Any], list[str]]:
+    """Build the Jira fields dict for a story or subtask.
+
+    Returns ``(fields_dict, image_file_paths)``.
+    """
     fields = {
         "project": {"key": config.project_key},
         "summary": item["summary"],
@@ -239,10 +269,15 @@ def _build_issue_fields(
     }
 
     description = item.get("description", "")
-    if rewrite_links and description:
-        description = rewrite_links_to_git(description, config)
-    if description and not no_convert:
-        description = md_to_jira_markup(description)
+    image_paths: list[str] = []
+    if description:
+        description, image_paths = _process_description(
+            description,
+            config,
+            rewrite_links,
+            no_convert,
+            source_dir,
+        )
     if description:
         fields["description"] = description
 
@@ -271,7 +306,7 @@ def _build_issue_fields(
         )
         sys.exit(1)
 
-    return fields
+    return fields, image_paths
 
 
 def _save_to_manifest(
@@ -298,6 +333,7 @@ def _create_story(
     rewrite_links: bool,
     dry_run: bool,
     no_convert: bool = False,
+    source_dir: str | Path | None = None,
 ) -> tuple[str, bool]:
     """Create a single story. Returns (story_key, created_bool)."""
     if manifest.get("stories", {}).get(sid):
@@ -305,17 +341,20 @@ def _create_story(
         print(f"  SKIP Story {sid}: already exists as {story_key}")
         return story_key, False
 
-    fields = _build_issue_fields(
+    fields, image_paths = _build_issue_fields(
         config,
         story,
         "story",
         epic_key=epic_key,
         rewrite_links=rewrite_links,
         no_convert=no_convert,
+        source_dir=source_dir,
     )
 
     if dry_run:
         print(f"  DRY RUN — would create Story {sid}: {story['summary']}")
+        if image_paths:
+            print(f"    Images: {', '.join(Path(p).name for p in image_paths)}")
         return "DRY-RUN", True
 
     assert client is not None
@@ -327,6 +366,11 @@ def _create_story(
 
     story_key = result["key"]
     print(f"  Created Story {sid}: {story_key} — {story['summary']}")
+
+    if image_paths:
+        from workflow_ops import upload_attachments
+
+        upload_attachments(client, story_key, image_paths)
 
     entry = {"key": story_key, "summary": story["summary"]}
     if story.get("story_points") is not None:
@@ -345,6 +389,7 @@ def _create_subtask(
     rewrite_links: bool,
     dry_run: bool,
     no_convert: bool = False,
+    source_dir: str | Path | None = None,
 ) -> bool:
     """Create a single subtask. Returns True if created, False if skipped."""
     if manifest.get("subtasks", {}).get(stid):
@@ -355,17 +400,20 @@ def _create_subtask(
         print(f"    DRY RUN — would create Subtask {stid}: {subtask['summary']}")
         return True
 
-    fields = _build_issue_fields(
+    fields, image_paths = _build_issue_fields(
         config,
         subtask,
         "subtask",
         parent_key=story_key,
         rewrite_links=rewrite_links,
         no_convert=no_convert,
+        source_dir=source_dir,
     )
 
     if dry_run:
         print(f"    DRY RUN — would create Subtask {stid}: {subtask['summary']}")
+        if image_paths:
+            print(f"      Images: {', '.join(Path(p).name for p in image_paths)}")
         return True
 
     assert client is not None
@@ -373,13 +421,15 @@ def _create_subtask(
         result = client.create_issue(fields)
     except Exception:
         print(f"FAILED to create Subtask {stid}")
-        # Return False to indicate skip/failure, but we might want to exit?
-        # The prompt said "If a create fails, stop and report the error".
-        # So we should exit.
         sys.exit(1)
 
     st_key = result["key"]
     print(f"    Created Subtask {stid}: {st_key} — {subtask['summary']}")
+
+    if image_paths:
+        from workflow_ops import upload_attachments
+
+        upload_attachments(client, st_key, image_paths)
 
     entry = {"key": st_key, "summary": subtask["summary"], "parent_key": story_key}
     if subtask.get("story_points") is not None:
@@ -397,6 +447,7 @@ def execute_plan(
     rewrite_links: bool,
     dry_run: bool,
     no_convert: bool = False,
+    source_dir: str | Path | None = None,
 ) -> tuple[int, int]:
     """Create all tickets in dependency order."""
     created_count = 0
@@ -414,6 +465,7 @@ def execute_plan(
             rewrite_links,
             dry_run,
             no_convert=no_convert,
+            source_dir=source_dir,
         )
         if was_created:
             created_count += 1
@@ -432,6 +484,7 @@ def execute_plan(
                 rewrite_links,
                 dry_run,
                 no_convert=no_convert,
+                source_dir=source_dir,
             )
             if was_created:
                 created_count += 1
@@ -466,6 +519,7 @@ def main() -> None:
     config = load_config(args.config)
     manifest = load_manifest(config)
     data = load_source(args.source, config)
+    source_dir = str(Path(args.source).resolve().parent)
 
     # Show plan
     plan = print_plan(data, args.epic, manifest)
@@ -484,6 +538,7 @@ def main() -> None:
             args.rewrite_links,
             dry_run=True,
             no_convert=no_convert,
+            source_dir=source_dir,
         )
         return
 
@@ -500,6 +555,7 @@ def main() -> None:
         args.rewrite_links,
         dry_run=False,
         no_convert=no_convert,
+        source_dir=source_dir,
     )
 
     print(f"\nDone. Created: {created}, Skipped: {skipped}")

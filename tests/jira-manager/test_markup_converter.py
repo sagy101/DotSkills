@@ -24,6 +24,9 @@ _convert_html_lists = _mod._convert_html_lists
 _convert_html_tables = _mod._convert_html_tables
 _jira_tables_to_md = _mod._jira_tables_to_md
 _jira_lists_to_md = _mod._jira_lists_to_md
+extract_local_images = _mod.extract_local_images
+render_mermaid_blocks = _mod.render_mermaid_blocks
+MERMAID_BLOCK_RE = _mod.MERMAID_BLOCK_RE
 
 
 # ---------------------------------------------------------------------------
@@ -382,6 +385,159 @@ class TestJiraListsToMd:
         assert "plain text" in result
         assert "- item" in result
         assert "more text" in result
+
+
+# ---------------------------------------------------------------------------
+# extract_local_images
+# ---------------------------------------------------------------------------
+
+
+class TestExtractLocalImages:
+    def test_no_images(self):
+        text = "Some plain text without images."
+        rewritten, paths = extract_local_images(text, "/tmp")
+        assert rewritten == text
+        assert paths == []
+
+    def test_http_urls_untouched(self):
+        text = "![logo](https://example.com/logo.png)"
+        rewritten, paths = extract_local_images(text, "/tmp")
+        assert rewritten == text
+        assert paths == []
+
+    def test_https_urls_untouched(self):
+        text = "![logo](HTTP://example.com/logo.png)"
+        rewritten, paths = extract_local_images(text, "/tmp")
+        assert rewritten == text
+        assert paths == []
+
+    def test_local_image_rewritten_to_basename(self, tmp_path: Path):
+        img = tmp_path / "sub" / "diagram.png"
+        img.parent.mkdir()
+        img.write_bytes(b"PNG")
+        text = "![arch](sub/diagram.png)"
+        rewritten, paths = extract_local_images(text, str(tmp_path))
+        assert rewritten == "![arch](diagram.png)"
+        assert len(paths) == 1
+        assert paths[0] == str(img.resolve())
+
+    def test_multiple_images(self, tmp_path: Path):
+        for name in ("a.png", "b.jpg"):
+            (tmp_path / name).write_bytes(b"IMG")
+        text = "![A](a.png) and ![B](b.jpg)"
+        rewritten, paths = extract_local_images(text, str(tmp_path))
+        assert "![A](a.png)" in rewritten
+        assert "![B](b.jpg)" in rewritten
+        assert len(paths) == 2
+
+    def test_mixed_local_and_remote(self, tmp_path: Path):
+        (tmp_path / "local.png").write_bytes(b"PNG")
+        text = "![loc](local.png) and ![rem](https://example.com/remote.png)"
+        rewritten, paths = extract_local_images(text, str(tmp_path))
+        assert "![loc](local.png)" in rewritten
+        assert "![rem](https://example.com/remote.png)" in rewritten
+        assert len(paths) == 1
+
+    def test_missing_file_still_included(self, tmp_path: Path):
+        text = "![missing](nonexistent.png)"
+        rewritten, paths = extract_local_images(text, str(tmp_path))
+        assert "![missing](nonexistent.png)" in rewritten
+        assert len(paths) == 1
+
+    def test_duplicate_basenames_deduplicated(self, tmp_path: Path):
+        d1 = tmp_path / "a"
+        d2 = tmp_path / "b"
+        d1.mkdir()
+        d2.mkdir()
+        (d1 / "img.png").write_bytes(b"1")
+        (d2 / "img.png").write_bytes(b"2")
+        text = "![x](a/img.png) ![y](b/img.png)"
+        rewritten, paths = extract_local_images(text, str(tmp_path))
+        assert "![x](img.png)" in rewritten
+        assert "img_1.png" in rewritten
+        assert len(paths) == 2
+
+    def test_full_pipeline_to_jira(self, tmp_path: Path):
+        (tmp_path / "flow.png").write_bytes(b"PNG")
+        text = "See ![flow](flow.png) for details"
+        rewritten, paths = extract_local_images(text, str(tmp_path))
+        jira = md_to_jira_markup(rewritten)
+        assert "!flow.png!" in jira
+        assert len(paths) == 1
+
+
+# ---------------------------------------------------------------------------
+# MERMAID_BLOCK_RE
+# ---------------------------------------------------------------------------
+
+
+class TestMermaidBlockRegex:
+    def test_detects_single_block(self):
+        md = "text\n```mermaid\ngraph TD\n  A-->B\n```\nmore"
+        matches = MERMAID_BLOCK_RE.findall(md)
+        assert len(matches) == 1
+        assert "graph TD" in matches[0]
+
+    def test_detects_multiple_blocks(self):
+        md = "```mermaid\ngraph LR\n  A-->B\n```\n\n```mermaid\nsequenceDiagram\n  A->>B: hi\n```"
+        matches = MERMAID_BLOCK_RE.findall(md)
+        assert len(matches) == 2
+
+    def test_no_match_for_other_code_blocks(self):
+        md = "```python\nprint('hi')\n```"
+        assert MERMAID_BLOCK_RE.findall(md) == []
+
+    def test_no_match_for_plain_text(self):
+        assert MERMAID_BLOCK_RE.findall("no code blocks") == []
+
+
+# ---------------------------------------------------------------------------
+# render_mermaid_blocks
+# ---------------------------------------------------------------------------
+
+
+class TestRenderMermaidBlocks:
+    def test_no_mermaid_returns_unchanged(self):
+        text = "No mermaid here."
+        result, paths = render_mermaid_blocks(text)
+        assert result == text
+        assert paths == []
+
+    def test_non_mermaid_code_block_unchanged(self):
+        text = "```python\nprint('hi')\n```"
+        result, paths = render_mermaid_blocks(text)
+        assert result == text
+        assert paths == []
+
+    def test_renders_mermaid_block(self, tmp_path: Path):
+        md = "Before\n```mermaid\ngraph TD\n  A-->B\n```\nAfter"
+        result, paths = render_mermaid_blocks(md, output_dir=str(tmp_path))
+        if paths:
+            assert len(paths) == 1
+            assert "mermaid-diagram-1.png" in paths[0]
+            assert "```mermaid" not in result
+            assert "Before" in result
+            assert "After" in result
+            assert "![Mermaid Diagram 1]" in result
+        else:
+            assert "```mermaid" in result
+
+    def test_renders_multiple_blocks(self, tmp_path: Path):
+        md = "```mermaid\ngraph LR\n  A-->B\n```\n\n```mermaid\ngraph TD\n  C-->D\n```"
+        _, paths = render_mermaid_blocks(md, output_dir=str(tmp_path))
+        if paths:
+            assert len(paths) == 2
+            assert "mermaid-diagram-1.png" in paths[0]
+            assert "mermaid-diagram-2.png" in paths[1]
+
+    def test_full_pipeline_mermaid_to_jira(self, tmp_path: Path):
+        md = "# Title\n\n```mermaid\ngraph TD\n  A-->B\n```\n\nDone."
+        result, paths = render_mermaid_blocks(md, output_dir=str(tmp_path))
+        if paths:
+            rewritten, _ = extract_local_images(result, str(tmp_path))
+            jira = md_to_jira_markup(rewritten)
+            assert "!mermaid-diagram-1.png!" in jira
+            assert "h1. Title" in jira
 
 
 if __name__ == "__main__":

@@ -26,6 +26,8 @@ This skill gives **any SKILL.md-compatible agent** reliable Jira CRUD by combini
 | **Field discovery** | Auto-discover statuses, priorities, components, versions, sprints, and custom fields |
 | **Status transitions** | Move issues through workflow states via Jira's transition engine |
 | **Markup conversion** | Automatic Markdown ↔ Jira wiki markup conversion for descriptions |
+| **Image auto-attachment** | Local images in descriptions (`![alt](path)`) are extracted, rewritten to basenames for Jira wiki markup, and uploaded as attachments |
+| **Mermaid rendering** | ` ```mermaid ` code blocks are rendered to PNG via mmdc, attached to the issue, and embedded as `!filename.png!` |
 | **Link rewriting** | Convert relative markdown links to git browse URLs in ticket descriptions |
 | **Comments** | Add comments to issues via `--comment` flag during update |
 | **Issue links** | Create typed links between issues (Blocks, Duplicate, Relates, etc.) via `--link` flag |
@@ -46,6 +48,10 @@ This skill gives **any SKILL.md-compatible agent** reliable Jira CRUD by combini
 **5. Status transitions via the Jira workflow engine** — Updating status isn't a simple field write — Jira requires finding the correct transition ID. The skill queries available transitions for the issue and matches by target status name. If no direct transition exists (e.g., can't go from "To Do" to "Done" without passing through "In Progress"), the error message says so rather than silently failing.
 
 **6. Markdown ↔ Jira markup conversion** — Jira Cloud's REST API accepts Jira wiki markup, not markdown. The skill auto-converts descriptions during create/update (markdown → Jira markup) and during fetch/diff (Jira markup → markdown). `--no-convert` skips this for users who write Jira markup directly.
+
+**6a. Image auto-attachment** — During create/update, `extract_local_images()` scans the raw markdown description for `![alt](local_path)` references (HTTP/HTTPS URLs are left as-is). Local paths are resolved relative to the description file's directory (or CWD for inline `--description`), rewritten to basenames so Jira's `!filename.png!` syntax matches the attachment, and the original files are uploaded via the attachments API after issue creation/update. Duplicate basenames are de-duplicated with `_N` suffixes. Missing files generate warnings but don’t block creation.
+
+**6b. Mermaid diagram rendering** — Before image extraction, ` ```mermaid ` code blocks are detected via regex and rendered to PNG using `mmdc` (Mermaid CLI) or `npx @mermaid-js/mermaid-cli`. Rendered PNGs are placed in a temp directory and injected back into the markdown as absolute-path image references, which the downstream image extraction pipeline then picks up for basename rewriting and auto-attachment. If `mmdc`/`npx` is not available, blocks are left as code with a warning. Scale is 2x with transparent background.
 
 **7. Link rewriting for traceability** — `--rewrite-links` converts relative markdown links in descriptions to full git browse URLs (e.g., `./src/auth.ts` → `https://github.com/org/repo/blob/main/src/auth.ts`). This gives Jira readers clickable links to source code without requiring Jira-GitHub integrations.
 
@@ -150,6 +156,8 @@ If `field_catalog` is empty or stale, scripts may fail with "field not configure
 | Agent using wrong flag syntax (`-flag` vs `--flag`) | Medium | `normalize_args()` auto-corrects single-dash long flags |
 | Wrong assignee name (typo, wrong case) | Medium | Fuzzy matching suggests top 3 closest names; assignee not set until corrected |
 | Markup conversion artifacts | Low | `--no-convert` escape hatch; round-trip tested |
+| Missing local images in description | Low | Warning printed; attachment upload errors handled gracefully |
+| mmdc not installed for mermaid | Low | Blocks left as code with warning; no data loss |
 | Raw JQL matching too broadly | High | Dry-run preview; `--confirm` required; max-results cap with warning |
 
 ---
@@ -162,4 +170,4 @@ If `field_catalog` is empty or stale, scripts may fail with "field not configure
 
 ## Status
 
-**Stable (v2.0)** — Full CRUD, bulk operations, Agile board/sprint support, field discovery, diff/validate, markup conversion, comments, issue links, parent re-parenting with hierarchy diagnosis, and actionable auto-diagnosis implemented.
+**Stable (v2.1)** — Full CRUD, bulk operations, Agile board/sprint support, field discovery, diff/validate, markup conversion, image auto-attachment, mermaid diagram rendering, comments, issue links, parent re-parenting with hierarchy diagnosis, and actionable auto-diagnosis implemented.

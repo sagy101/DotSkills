@@ -16,7 +16,10 @@ Mirrors the confluence-publisher skill pattern (markdown + markdownify deps).
 
 import html as html_lib
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import types
 from collections.abc import Callable
 from pathlib import Path
@@ -411,6 +414,191 @@ def _jira_lists_to_md(text: str) -> str:
         result.append(line)
 
     return "\n".join(result)
+
+
+# ===================================================================
+# Mermaid diagram rendering (```mermaid blocks → PNG)
+# ===================================================================
+
+MERMAID_BLOCK_RE = re.compile(r"```mermaid\s*\n(.*?)```", re.DOTALL)
+
+
+def _find_mmdc() -> str | None:
+    """Locate the mmdc binary (Mermaid CLI) or fall back to npx."""
+    mmdc = shutil.which("mmdc")
+    if mmdc:
+        return mmdc
+    try:
+        result = subprocess.run(
+            ["npx", "--yes", "@mermaid-js/mermaid-cli", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode == 0:
+            return "npx"
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
+def _render_to_png(mmd_file: Path, png_file: Path, mmdc_path: str) -> bool:
+    """Render a .mmd file to PNG. Returns True on success."""
+    if mmdc_path == "npx":
+        cmd = [
+            "npx",
+            "-y",
+            "-p",
+            "@mermaid-js/mermaid-cli",
+            "mmdc",
+            "-i",
+            str(mmd_file),
+            "-o",
+            str(png_file),
+            "-b",
+            "transparent",
+            "--scale",
+            "2",
+        ]
+    else:
+        cmd = [
+            mmdc_path,
+            "-i",
+            str(mmd_file),
+            "-o",
+            str(png_file),
+            "-b",
+            "transparent",
+            "--scale",
+            "2",
+        ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        return result.returncode == 0 and png_file.exists()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def render_mermaid_blocks(
+    md_text: str, output_dir: str | Path | None = None
+) -> tuple[str, list[str]]:
+    """Render ````` mermaid`` code blocks in *md_text* to PNG images.
+
+    Each block is replaced with a markdown image reference pointing to the
+    rendered PNG (absolute path), which the downstream ``extract_local_images``
+    pipeline will pick up and rewrite to a basename for Jira attachment syntax.
+
+    Returns ``(modified_markdown, list_of_png_absolute_paths)``.
+
+    Requires ``mmdc`` (Mermaid CLI) or ``npx``.  If neither is available the
+    blocks are left untouched and a warning is printed.
+    """
+    blocks = list(MERMAID_BLOCK_RE.finditer(md_text))
+    if not blocks:
+        return md_text, []
+
+    mmdc = _find_mmdc()
+    if not mmdc:
+        print(
+            "WARNING: mmdc not found — mermaid blocks left as code. "
+            "Install via: npm i -g @mermaid-js/mermaid-cli",
+            file=sys.stderr,
+        )
+        return md_text, []
+
+    if output_dir is None:
+        output_dir = Path(tempfile.mkdtemp(prefix="jira-mermaid-"))
+    else:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+    png_paths: list[str] = []
+    counter = 0
+
+    def _replace(match: re.Match[str]) -> str:
+        nonlocal counter
+        counter += 1
+        mmd_src = match.group(1)
+        mmd_file = output_dir / f"mermaid-diagram-{counter}.mmd"
+        png_file = output_dir / f"mermaid-diagram-{counter}.png"
+
+        mmd_file.write_text(mmd_src, encoding="utf-8")
+
+        if _render_to_png(mmd_file, png_file, mmdc):
+            png_paths.append(str(png_file))
+            return f"![Mermaid Diagram {counter}]({png_file})"
+
+        print(
+            f"WARNING: Failed to render mermaid diagram {counter}",
+            file=sys.stderr,
+        )
+        return match.group(0)
+
+    modified = MERMAID_BLOCK_RE.sub(_replace, md_text)
+
+    rendered = len(png_paths)
+    total = len(blocks)
+    if rendered > 0:
+        print(f"  Rendered {rendered}/{total} mermaid diagram(s) to PNG")
+    return modified, png_paths
+
+
+# ===================================================================
+# Local image extraction (for auto-attachment support)
+# ===================================================================
+
+_MD_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+_URL_SCHEME_RE = re.compile(r"^https?://", re.IGNORECASE)
+
+
+def extract_local_images(md_text: str, base_dir: str | Path = ".") -> tuple[str, list[str]]:
+    """Extract local image references from markdown and rewrite paths to basenames.
+
+    Finds ``![alt](path)`` where *path* is a local file (not ``http://`` / ``https://``).
+    Resolves each path relative to *base_dir* and rewrites the markdown reference
+    to use just the filename so Jira wiki markup ``!filename.png!`` matches the
+    attachment uploaded alongside the description.
+
+    Returns ``(rewritten_markdown, resolved_file_paths)``.
+    Missing files are warned about but still included in the list — the caller
+    can filter or let ``upload_attachments`` handle the error.
+    """
+    base = Path(base_dir)
+    found_paths: list[str] = []
+    seen_basenames: dict[str, int] = {}
+
+    def _rewrite(match: re.Match[str]) -> str:
+        alt = match.group(1)
+        raw_path = match.group(2).strip()
+
+        if _URL_SCHEME_RE.match(raw_path):
+            return match.group(0)
+
+        resolved = (base / raw_path).resolve()
+
+        if not resolved.exists():
+            print(
+                f"WARNING: Image not found: {raw_path} (resolved to {resolved})",
+                file=sys.stderr,
+            )
+
+        basename = resolved.name
+
+        # Handle duplicate basenames by de-duplicating in the path list
+        if basename in seen_basenames:
+            count = seen_basenames[basename] + 1
+            seen_basenames[basename] = count
+            stem = resolved.stem
+            suffix = resolved.suffix
+            basename = f"{stem}_{count}{suffix}"
+        else:
+            seen_basenames[basename] = 0
+
+        found_paths.append(str(resolved))
+        return f"![{alt}]({basename})"
+
+    rewritten = _MD_IMAGE_RE.sub(_rewrite, md_text)
+    return rewritten, found_paths
 
 
 # ===================================================================
