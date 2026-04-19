@@ -51,7 +51,8 @@ python3 <skill_dir>/scripts/jira_preflight.py --skip-connectivity
 # Single ticket
 $PY $S/fetch_tickets.py --key PROJ-101 --format detail
 
-# Multiple tickets by key
+# Multiple tickets by key (--key is repeatable, or use comma-separated --keys)
+$PY $S/fetch_tickets.py --key PROJ-101 --key PROJ-102 --key PROJ-103 --format table
 $PY $S/fetch_tickets.py --keys PROJ-101,PROJ-102,PROJ-103 --format table
 
 # JQL search
@@ -168,6 +169,7 @@ $PY $S/delete_ticket.py --key PROJ-110 --confirm     # execute
 $PY $S/discover_fields.py --all --apply                # full discovery + save to config
 $PY $S/discover_fields.py --search "QBR"               # find a field by name
 $PY $S/discover_fields.py --fields-for-type epic        # list all fields + values for a type
+$PY $S/discover_fields.py --transitions PROJ-101        # list available workflow transitions
 ```
 
 ## Diff & validate
@@ -185,7 +187,7 @@ $PY $S/validate_estimates.py --epic PROJ-100   # check sub-ticket estimate sums
 4. **Never print credentials.**
 5. **`--set` works on both create and update** — resolves field names via `field_catalog`. For fields that `--set` can't resolve, use `--fields '{"customfield_123": "val"}'` (raw JSON).
 6. Descriptions auto-convert Markdown ↔ Jira markup. Use `--no-convert` to skip. `--rewrite-links` rewrites relative markdown links to git browse URLs.
-7. **Images in descriptions** are auto-attached. Local image references (`![alt](path/to/image.png)`) are detected, the paths are rewritten to basenames for Jira wiki markup (`!image.png!`), and the files are uploaded as attachments after issue creation/update. HTTP/HTTPS URLs are left as-is. For `--description-file`, paths resolve relative to the file's directory; for `--description`, relative to CWD. Works in `create_ticket`, `update_ticket`, and `bulk_create`.
+7. **Images in descriptions** are auto-attached. Local image references (`![alt](path/to/image.png)`) are detected, the paths are rewritten to basenames for Jira wiki markup (`!image.png!`), and the files are uploaded as attachments after issue creation/update. HTTP/HTTPS URLs are left as-is. For `--description-file`, paths resolve relative to the file's directory first, then fall back to CWD if not found; for `--description`, relative to CWD. Works in `create_ticket`, `update_ticket`, and `bulk_create`.
 8. **Mermaid diagrams** in descriptions (` ```mermaid ` code blocks) are automatically rendered to PNG and attached. Requires `mmdc` (`npm i -g @mermaid-js/mermaid-cli`) or `npx`. If neither is available the blocks are left as code with a warning.
 
 ## Error quick-ref

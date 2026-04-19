@@ -576,6 +576,11 @@ def extract_local_images(md_text: str, base_dir: str | Path = ".") -> tuple[str,
 
         resolved = (base / raw_path).resolve()
 
+        if not resolved.exists() and base != Path.cwd().resolve():
+            cwd_resolved = (Path.cwd() / raw_path).resolve()
+            if cwd_resolved.exists():
+                resolved = cwd_resolved
+
         if not resolved.exists():
             print(
                 f"WARNING: Image not found: {raw_path} (resolved to {resolved})",

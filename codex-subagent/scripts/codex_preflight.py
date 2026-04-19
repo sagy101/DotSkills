@@ -150,7 +150,9 @@ def _check_wrapper_script() -> bool:
         print(f"{_PASS} Wrapper script — found at {wrapper}")
         return True
     print(f"{_FAIL} Wrapper script — run_codex.py not found at {wrapper}")
-    print("  Hint: the skill may not be fully installed; check the codex-subagent/scripts/ directory")
+    print(
+        "  Hint: the skill may not be fully installed; check the codex-subagent/scripts/ directory"
+    )
     return False
 
 
@@ -160,15 +162,21 @@ def _check_model_strictness() -> bool:
     value = os.environ.get("CODEX_SUBAGENT_MODEL_STRICTNESS", "").strip()
 
     if not value:
-        print(f"{_WARN} Model strictness — CODEX_SUBAGENT_MODEL_STRICTNESS not set, using default: balanced")
-        print("  Hint: export CODEX_SUBAGENT_MODEL_STRICTNESS=balanced  # or conservative / aggressive")
+        print(
+            f"{_WARN} Model strictness — CODEX_SUBAGENT_MODEL_STRICTNESS not set, using default: balanced"
+        )
+        print(
+            "  Hint: export CODEX_SUBAGENT_MODEL_STRICTNESS=balanced  # or conservative / aggressive"
+        )
         return True  # warn, not fail
 
     if value in valid_values:
         print(f"{_PASS} Model strictness — {value}")
         return True
 
-    print(f"{_WARN} Model strictness — unrecognised value '{value}' (valid: conservative, balanced, aggressive)")
+    print(
+        f"{_WARN} Model strictness — unrecognised value '{value}' (valid: conservative, balanced, aggressive)"
+    )
     return True  # warn, not fail
 
 

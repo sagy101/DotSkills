@@ -255,13 +255,48 @@ def _handle_boards(client: JiraClient, fmt: str) -> None:
     print(f"\nTotal: {len(boards)}")
 
 
+def _normalize_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """Flatten filters, coalesce repeated --key into --keys, and validate mode exclusivity."""
+    if args.filter:
+        args.filter = [item for sublist in args.filter for item in sublist]
+
+    mode_count = sum(
+        1
+        for x in [args.key, args.keys, args.jql, args.children_of, args.boards, args.board_id]
+        if x
+    )
+
+    # Coalesce --key list into --keys when multiple --key flags are given
+    if args.key and len(args.key) > 1:
+        if args.keys:
+            parser.error("Cannot combine repeated --key with --keys")
+        args.keys = ",".join(args.key)
+        args.key = None
+    elif args.key:
+        args.key = args.key[0]  # unwrap single-element list
+
+    if mode_count > 1:
+        parser.error(
+            "Conflicting options: provide only one of --key, --keys, --jql, --children-of, --boards, or --board-id"
+        )
+
+    if mode_count == 0 and not args.filter:
+        parser.error(
+            "Must provide one of --key, --keys, --jql, --children-of, --filter, --boards, or --board-id"
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Fetch Jira issues")
     add_config_arg(parser)
 
     # We use a manual check instead of mutually_exclusive_group to allow
     # --filter to be combined with --board-id
-    parser.add_argument("--key", help="Fetch a single issue by key")
+    parser.add_argument(
+        "--key",
+        action="append",
+        help="Fetch issue(s) by key (repeatable, e.g. --key PROJ-1 --key PROJ-2)",
+    )
     parser.add_argument(
         "--keys",
         help="Fetch multiple issues by key (comma-separated, e.g. PROJ-1,PROJ-2,PROJ-3)",
@@ -313,27 +348,7 @@ def main() -> None:
         help="Skip Jira wiki markup to Markdown conversion for descriptions",
     )
     args = parser.parse_args()
-
-    # Flatten --filter lists into a single list of key=value pairs
-    if args.filter:
-        args.filter = [item for sublist in args.filter for item in sublist]
-
-    # Validate exclusive options
-    mode_count = sum(
-        1
-        for x in [args.key, args.keys, args.jql, args.children_of, args.boards, args.board_id]
-        if x
-    )
-    if mode_count > 1:
-        parser.error(
-            "Conflicting options: provide only one of --key, --keys, --jql, --children-of, --boards, or --board-id"
-        )
-
-    # If filter is provided without a primary mode, it counts as a mode (Project Search)
-    if mode_count == 0 and not args.filter:
-        parser.error(
-            "Must provide one of --key, --keys, --jql, --children-of, --filter, --boards, or --board-id"
-        )
+    _normalize_args(parser, args)
 
     config = load_config(args.config)
     client = JiraClient(config)
@@ -358,7 +373,7 @@ def main() -> None:
             convert,
             fetch_all=args.fetch_all,
         )
-    elif args.key:
+    elif args.key and not args.keys:
         _handle_key(client, config, args.key, args.format, field_list, convert)
     elif args.keys:
         keys = [k.strip() for k in args.keys.split(",") if k.strip()]

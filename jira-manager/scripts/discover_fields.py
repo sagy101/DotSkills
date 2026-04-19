@@ -377,6 +377,28 @@ def _print_suggestion(suggestion: dict[str, Any]) -> None:
     print(json.dumps(display, indent=2))
 
 
+def _run_transitions(client: JiraClient, issue_key: str) -> None:
+    """List available workflow transitions for an issue."""
+    try:
+        transitions = client.get_transitions(issue_key)
+    except Exception as e:
+        print(f"ERROR: Could not fetch transitions for {issue_key}: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if not transitions:
+        print(f"No transitions available for {issue_key}.")
+        return
+
+    print(f"Available transitions for {issue_key} ({len(transitions)} found):\n")
+    print(f"  {'ID':<8} {'Name':<30} {'Target Status'}")
+    print(f"  {'---':<8} {'---':<30} {'---'}")
+    for t in transitions:
+        tid = t.get("id", "")
+        tname = t.get("name", "")
+        to_status = t.get("to", {}).get("name", "")
+        print(f"  {tid:<8} {tname:<30} {to_status}")
+
+
 def _run_search(client: JiraClient, query: str) -> None:
     """Search all Jira fields by name substring (case-insensitive)."""
     all_fields = client.get_fields()
@@ -449,6 +471,11 @@ def main() -> None:
         "resolutions, and all fields. Saves to field_catalog in config.",
     )
     parser.add_argument(
+        "--transitions",
+        metavar="ISSUE_KEY",
+        help="List available workflow transitions for an issue (e.g. --transitions PROJ-101)",
+    )
+    parser.add_argument(
         "--search",
         metavar="NAME",
         help="Search all Jira fields by name substring (case-insensitive)",
@@ -469,6 +496,10 @@ def main() -> None:
         print("ERROR: Could not connect to Jira. Check credentials and URL.")
         sys.exit(1)
     print("Connection OK.\n")
+
+    if args.transitions:
+        _run_transitions(client, args.transitions)
+        return
 
     if args.search:
         _run_search(client, args.search)

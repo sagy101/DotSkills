@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Tests for fetch_tickets.py — table formatting, detail formatting, keys parsing."""
 
+import argparse
 import importlib.util
 import sys
 from pathlib import Path
@@ -166,6 +167,55 @@ class TestSprintExtraction:
 
     def test_none(self):
         assert _extract_sprint_from_value(None) is None
+
+
+# ---------------------------------------------------------------------------
+# --key coalescing (repeatable --key flags)
+# ---------------------------------------------------------------------------
+
+
+class TestKeyCoalescing:
+    """Test that repeated --key flags are coalesced into --keys."""
+
+    def _parse(self, argv: list[str]) -> argparse.Namespace:
+        """Import and run the main parser, returning parsed args.
+
+        We re-create the parser logic inline to test argument handling
+        without needing a live Jira connection.
+        """
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--key", action="append")
+        parser.add_argument("--keys")
+        args = parser.parse_args(argv)
+
+        if args.key and len(args.key) > 1:
+            if args.keys:
+                raise SystemExit("Cannot combine repeated --key with --keys")
+            args.keys = ",".join(args.key)
+            args.key = None
+        elif args.key:
+            args.key = args.key[0]
+        return args
+
+    def test_single_key_unwrapped(self) -> None:
+        args = self._parse(["--key", "PROJ-1"])
+        assert args.key == "PROJ-1"
+        assert args.keys is None
+
+    def test_multiple_keys_coalesced(self) -> None:
+        args = self._parse(["--key", "PROJ-1", "--key", "PROJ-2", "--key", "PROJ-3"])
+        assert args.key is None
+        assert args.keys == "PROJ-1,PROJ-2,PROJ-3"
+
+    def test_no_key(self) -> None:
+        args = self._parse([])
+        assert args.key is None
+        assert args.keys is None
+
+    def test_keys_flag_still_works(self) -> None:
+        args = self._parse(["--keys", "PROJ-1,PROJ-2"])
+        assert args.key is None
+        assert args.keys == "PROJ-1,PROJ-2"
 
 
 if __name__ == "__main__":

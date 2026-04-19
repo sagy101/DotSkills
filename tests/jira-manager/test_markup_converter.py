@@ -465,6 +465,53 @@ class TestExtractLocalImages:
         assert "!flow.png!" in jira
         assert len(paths) == 1
 
+    def test_cwd_fallback_when_base_dir_misses(self, tmp_path: Path, monkeypatch: object):
+        """When image isn't in base_dir but IS in CWD, the CWD copy is used."""
+        cwd_dir = tmp_path / "cwd"
+        cwd_dir.mkdir()
+        (cwd_dir / "diagram.png").write_bytes(b"PNG")
+
+        other_dir = tmp_path / "other"
+        other_dir.mkdir()
+
+        import os
+
+        monkeypatch.setattr(os, "getcwd", lambda: str(cwd_dir))  # type: ignore[attr-defined]
+
+        text = "![d](diagram.png)"
+        _, paths = extract_local_images(text, str(other_dir))
+        assert len(paths) == 1
+        assert str(cwd_dir / "diagram.png") in paths[0]
+
+    def test_base_dir_preferred_over_cwd(self, tmp_path: Path, monkeypatch: object):
+        """When image exists in both base_dir and CWD, base_dir wins."""
+        base_dir = tmp_path / "base"
+        base_dir.mkdir()
+        (base_dir / "img.png").write_bytes(b"BASE")
+
+        cwd_dir = tmp_path / "cwd"
+        cwd_dir.mkdir()
+        (cwd_dir / "img.png").write_bytes(b"CWD")
+
+        import os
+
+        monkeypatch.setattr(os, "getcwd", lambda: str(cwd_dir))  # type: ignore[attr-defined]
+
+        text = "![i](img.png)"
+        _, paths = extract_local_images(text, str(base_dir))
+        assert len(paths) == 1
+        assert str(base_dir / "img.png") in paths[0]
+
+    def test_no_fallback_when_base_equals_cwd(self, tmp_path: Path, monkeypatch: object):
+        """No double-check when base_dir IS the CWD (avoids redundant stat)."""
+        import os
+
+        monkeypatch.setattr(os, "getcwd", lambda: str(tmp_path))  # type: ignore[attr-defined]
+
+        text = "![m](missing.png)"
+        _, paths = extract_local_images(text, str(tmp_path))
+        assert len(paths) == 1
+
 
 # ---------------------------------------------------------------------------
 # MERMAID_BLOCK_RE
