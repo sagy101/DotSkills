@@ -517,6 +517,40 @@ class JiraClient:
         return result.get("comments", [])  # type: ignore[no-any-return]
 
     # -----------------------------------------------------------------
+    # Worklogs
+    # -----------------------------------------------------------------
+    def add_worklog(
+        self,
+        issue_key: str,
+        time_spent: str,
+        comment: str | None = None,
+        started: str | None = None,
+    ) -> dict[str, Any]:
+        """Add a time tracking worklog to an issue.
+
+        Args:
+            issue_key: The issue key (e.g. API-123)
+            time_spent: Jira duration string (e.g. "2h", "1d", "30m", "1h 30m")
+            comment: Optional work description
+            started: Optional ISO-8601 start time (defaults to now)
+        """
+        body: dict[str, Any] = {"timeSpent": time_spent}
+        if comment:
+            body["comment"] = comment
+        if started:
+            body["started"] = started
+        return self._request(  # type: ignore[no-any-return]
+            "POST",
+            f"/rest/api/2/issue/{issue_key}/worklog",
+            body,
+        )
+
+    def get_worklogs(self, issue_key: str) -> list[dict[str, Any]]:
+        """Fetch all worklogs for an issue."""
+        result = self._request("GET", f"/rest/api/2/issue/{issue_key}/worklog")
+        return result.get("worklogs", [])  # type: ignore[no-any-return]
+
+    # -----------------------------------------------------------------
     # Issue Links
     # -----------------------------------------------------------------
     def get_link_types(self) -> list[dict[str, Any]]:

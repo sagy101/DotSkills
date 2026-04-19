@@ -5,9 +5,10 @@ description: >
   (*.atlassian.net/wiki/*). Use when the user asks to publish, update, delete, preview, diff, or
   export markdown files to Confluence, or when they want to verify existing Confluence pages against
   local docs. Also supports surgical HTML edits (targeted find/replace without overwriting manual
-  formatting), version comparison (diff two page versions), version history browsing, and page
-  revert. Handles page creation, updates, deletion, cross-page link rewriting, Mermaid diagram
-  rendering, hierarchy verification, diff/preview, and reverse export to markdown.
+  formatting), version comparison (diff two page versions), version history browsing, page revert,
+  CQL search, page comments (list/add footer and inline), and space listing. Handles page creation,
+  updates, deletion, cross-page link rewriting, Mermaid diagram rendering, hierarchy verification,
+  diff/preview, and reverse export to markdown.
 license: MIT
 metadata:
   author: sagy101
@@ -582,6 +583,59 @@ Browse version history, fetch content from a specific version, or revert to a pr
 ```
 
 **Revert is a non-destructive operation** — it creates a new version with the old content. The reverted-from version remains in history. **Never revert without showing the dry-run plan first and getting explicit user approval.**
+
+### Search (CQL)
+
+Search Confluence content using CQL (Confluence Query Language):
+
+```bash
+# Search pages by title
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/search_pages.py \
+    --cql 'type=page AND space=DOCS AND title~"API"'
+
+# Search with limit and JSON output
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/search_pages.py \
+    --cql 'type=page AND text~"deployment"' --limit 50 --format json
+```
+
+CQL is Atlassian's query language for Confluence. Common operators: `=`, `~` (contains), `AND`, `OR`, `NOT`. Useful fields: `type`, `space`, `title`, `text`, `creator`, `lastModified`, `label`, `ancestor`.
+
+### Comments
+
+List and add comments on Confluence pages:
+
+```bash
+# List footer comments
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/page_comments.py list \
+    --page-id 123456
+
+# List inline comments
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/page_comments.py list \
+    --page-id 123456 --inline
+
+# List as JSON
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/page_comments.py list \
+    --page-id 123456 --format json
+
+# Add a footer comment (body is Confluence storage HTML)
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/page_comments.py add \
+    --page-id 123456 --body "<p>This looks good. Ship it.</p>"
+```
+
+### List spaces
+
+Browse available Confluence spaces:
+
+```bash
+# List all spaces
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/list_spaces.py
+
+# Filter by type
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/list_spaces.py --type global
+
+# JSON output
+<skill_dir>/.venv/bin/python <skill_dir>/scripts/list_spaces.py --format json
+```
 
 ## Future capabilities
 

@@ -140,9 +140,13 @@ $PY $S/update_ticket.py --key PROJ-101 --set "components=Backend"
 # Comment, link, attachment (all combinable in one call)
 $PY $S/update_ticket.py --key PROJ-101 --comment "Done." \
   --link "Blocks:PROJ-200" --attachment report.pdf
+
+# Log work (time tracking)
+$PY $S/update_ticket.py --key PROJ-101 --worklog "2h" --worklog-comment "Code review"
+$PY $S/update_ticket.py --key PROJ-101 --worklog "1d"
 ```
 
-Update flags: `--summary`, `--description`, `--status`, `--priority`, `--assignee`, `--parent`, `--component`, `--fix-version`, `--sprint`, `--labels`, `--story-points`, `--set "field=value"` (repeatable), `--fields` (raw JSON), `--comment`, `--link "Type:KEY"` (repeatable), `--attachment` (repeatable), `--dry-run`.
+Update flags: `--summary`, `--description`, `--status`, `--priority`, `--assignee`, `--parent`, `--component`, `--fix-version`, `--sprint`, `--labels`, `--story-points`, `--set "field=value"` (repeatable), `--fields` (raw JSON), `--comment`, `--link "Type:KEY"` (repeatable), `--attachment` (repeatable), `--worklog "TIME"` (e.g. `2h`, `1d`, `30m`), `--worklog-comment`, `--dry-run`.
 
 **`--parent`**: Sets the parent issue (e.g. `--parent PROJ-200`). Auto-wraps as `{"key": "..."}` for the API. If the update fails with a hierarchy error, the script auto-diagnoses the issue: shows both issue types' hierarchy levels and suggests what intermediate type to create. Also works via `--set "parent=PROJ-200"`.
 

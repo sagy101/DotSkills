@@ -185,6 +185,16 @@ def main() -> None:
         help="Link this issue to another. Format: 'Blocks:API-456' or "
         "'is blocked by:API-456'. Can be repeated.",
     )
+    parser.add_argument(
+        "--worklog",
+        metavar="TIME",
+        help="Log time spent (e.g. '2h', '1d', '30m', '1h 30m')",
+    )
+    parser.add_argument(
+        "--worklog-comment",
+        metavar="TEXT",
+        help="Description for the worklog entry (use with --worklog)",
+    )
     add_common_field_args(parser)
     args = parser.parse_args()
 
@@ -203,7 +213,13 @@ def main() -> None:
     links = args.link or []
 
     has_work = (
-        fields or effective_status or effective_sprint or args.attachment or args.comment or links
+        fields
+        or effective_status
+        or effective_sprint
+        or args.attachment
+        or args.comment
+        or links
+        or args.worklog
     )
     if not has_work:
         print("ERROR: No fields, status, sprint, attachments, comment, or links specified.")
@@ -217,19 +233,38 @@ def main() -> None:
             print(f"DRY RUN \u2014 would add comment to {args.key}: {args.comment[:80]}...")
         for link_spec in links:
             print(f"DRY RUN \u2014 would add link to {args.key}: {link_spec}")
+        if args.worklog:
+            print(f"DRY RUN \u2014 would log {args.worklog} on {args.key}")
         return
 
+    _execute_update(
+        client, args, fields, effective_status, effective_sprint, links, desc_image_paths, config
+    )
+
+
+def _execute_update(
+    client: JiraClient,
+    args: argparse.Namespace,
+    fields: dict[str, Any],
+    status: str | None,
+    sprint: str | None,
+    links: list[str],
+    desc_image_paths: list[str],
+    config: JiraConfig,
+) -> None:
+    """Execute all non-dry-run update operations."""
     if fields:
         _apply_field_updates(client, args.key, fields, args.parent)
 
-    if effective_status:
-        handle_status_transition(client, args.key, effective_status, config)
+    if status:
+        handle_status_transition(client, args.key, status, config)
 
-    if effective_sprint:
-        _handle_sprint(client, args.key, effective_sprint, config)
+    if sprint:
+        _handle_sprint(client, args.key, sprint, config)
 
     upload_attachments(client, args.key, desc_image_paths + args.attachment)
     _handle_comment(client, args.key, args.comment)
+    _handle_worklog(client, args.key, args.worklog, getattr(args, "worklog_comment", None))
     for link_spec in links:
         _handle_issue_link(client, args.key, link_spec)
 
@@ -245,6 +280,22 @@ def _handle_comment(client: JiraClient, issue_key: str, comment_text: str | None
         print(f"  Added comment to {issue_key}: {preview}{suffix}")
     except Exception:
         print(f"  WARNING: Failed to add comment to {issue_key}", file=sys.stderr)
+
+
+def _handle_worklog(
+    client: JiraClient, issue_key: str, time_spent: str | None, comment: str | None
+) -> None:
+    """Add a worklog entry to an issue if time_spent is provided."""
+    if not time_spent:
+        return
+    try:
+        client.add_worklog(issue_key, time_spent, comment=comment)
+        msg = f"  Logged {time_spent} on {issue_key}"
+        if comment:
+            msg += f" ({comment[:60]})"
+        print(msg)
+    except Exception:
+        print(f"  WARNING: Failed to log work on {issue_key}", file=sys.stderr)
 
 
 def _handle_issue_link(client: JiraClient, issue_key: str, link_spec: str) -> None:
