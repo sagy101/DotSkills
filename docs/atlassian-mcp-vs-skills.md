@@ -1,10 +1,12 @@
-# Atlassian Rovo MCP Server vs DotSkills — Feature Comparison
+# Atlassian MCP vs DotSkills — Jira, Confluence, and Bitbucket Comparison
 
 > Objective comparison of the [Atlassian Rovo MCP Server](https://support.atlassian.com/atlassian-rovo-mcp-server/docs/supported-tools/) against the DotSkills agent skills: **jira-manager**, **confluence-publisher**, and **bitbucket-manager**.
 >
 > Last updated: 2026-04-19
 
 Comparison notes:
+- This compares only the overlapping Jira, Confluence, and Bitbucket surfaces.
+- It intentionally does not score Jira Service Management, Compass, Rovo Search/Fetch, Teamwork Graph, or other Atlassian products with no local skill equivalent.
 - This compares the MCP tools listed in Atlassian's supported-tools page against capabilities that are actually implemented in this repo's scripts and skill docs.
 - "Tie" means both sides support the capability at a broadly comparable functional level, even if the UX or ergonomics differ.
 - The skills intentionally do not compete on wrappers for low-value native git/CLI operations when local tooling is clearly simpler.
@@ -70,7 +72,7 @@ Comparison notes:
 | **Inline comments — create** | `createConfluenceInlineComment` — tied to selected text | `page_comments.py add --page-id --inline --inline-text-selection ...` | Tie |
 | **Inline comments — edit** | Not supported | `page_comments.py edit --comment-id ... --inline --body ...` | **Skill** |
 | **Inline comments — delete** | Not supported | `page_comments.py delete --comment-id ... --inline` | **Skill** |
-| **Inline comments — resolve / unresolve** | Not supported | `page_comments.py resolve|unresolve --comment-id ... --inline` | **Skill** |
+| **Inline comments — resolve / reopen** | Not supported | `page_comments.py resolve --comment-id 123 --inline` and `page_comments.py unresolve --comment-id 123 --inline` | **Skill** |
 | **List spaces** | `getConfluenceSpaces` | `list_spaces.py` with `--type` filter | Tie |
 | **Pages in space** | `getPagesInConfluenceSpace` — filter by title/status/type | `list_pages.py --space-key --title --status --type` | Tie |
 | **Page descendants** | `getConfluencePageDescendants` | `discover_pages.py` — walks tree, builds manifest | Tie |
@@ -144,42 +146,6 @@ Comparison notes:
 
 ---
 
-## Atlassian Platform (MCP-only products)
-
-These are products/features exclusive to the MCP with no skill equivalent.
-
-| Product | MCP Tools | Notes |
-|---|---|---|
-| **Jira Service Management** | `getJsmOpsAlerts`, `getJsmOpsScheduleInfo`, `getJsmOpsTeamInfo`, `updateJsmOpsAlert` | Operations alerts, on-call schedules, team management |
-| **Compass** | `createCompassComponent`, `getCompassComponent`, `getCompassComponents`, `getCompassComponentLabels`, `getCompassComponentTypes`, `getCompassComponentsOwnedByMyTeams`, `getCompassComponentActivityEvents`, `createCompassComponentRelationship`, `deleteCompassComponent`, `deleteCompassComponentRelationship`, `createCompassCustomFieldDefinition`, `deleteCompassCustomFieldDefinition`, `getCompassCustomFieldDefinitions` | Service catalog, component relationships, custom fields |
-| **Rovo Search** | `search` (beta) | Natural language search across Jira + Confluence (not CQL/JQL) |
-| **Rovo Fetch** | `fetch` (beta) | Fetch any resource by Atlassian Resource Identifier (ARI) |
-| **Teamwork Graph** | `getTeamworkGraphContext`, `getTeamworkGraphObject` | Cross-product context: linked PRs, builds, deployments, designs per issue/page/user |
-| **User/site info** | `atlassianUserInfo`, `getAccessibleAtlassianResources` | Current user details, list accessible cloud sites |
-
----
-
-## Cross-cutting Comparison
-
-| Dimension | Atlassian MCP | DotSkills |
-|---|---|---|
-| **Product breadth** | 7 products in one server (Jira, Confluence, Bitbucket, JSM, Compass, Rovo, Teamwork Graph) | 3 products via 3 independent skills |
-| **Depth per product** | Thin CRUD layer — basic get/create/edit/search/transition per product | Deep workflows — bulk ops, diffing, surgical edits, auto-diagnosis, markup conversion, mermaid rendering, field discovery, version management |
-| **Setup** | Near-zero: cloud-hosted, OAuth 2.1 or API token | Python 3.10+, config file, API token per skill |
-| **Dry run / preview** | None | Available on all write operations across all skills |
-| **Bulk operations** | One item at a time | Bulk create, bulk update, batch publish, batch delete |
-| **Error handling** | Standard HTTP errors | Richer on Jira and preflight flows; still uneven on some newer Bitbucket/Confluence paths, but moving toward actionable hints |
-| **Markdown support** | Confluence pages accept markdown body | Jira: auto-converts markdown → wiki markup. Confluence: full transform pipeline (mermaid, cross-links, attachments) |
-| **Offline / air-gapped** | Cloud-hosted MCP, requires network access to Atlassian Cloud | Local scripts with user-managed config; still require network access to the target Jira/Confluence/Bitbucket API, whether cloud or internally reachable |
-| **Customization** | None — fixed tool set | Fully hackable Python scripts, config-driven |
-| **AI-native features** | Rovo natural language search, Teamwork Graph cross-linking, ARI fetch | None (but designed for AI agents via SKILL.md prompt format) |
-| **Auth model** | OAuth 2.1 (org-managed) or API token | API token (user-managed) |
-| **Pipelines / CI** | Full pipeline management (list, get, run, steps, logs) | Pipelines supported for list/get/run/steps/logs; adds dry-run for run |
-| **Deployment management** | Environments + Deployments CRUD | Environments list/get and deployments list/get |
-| **CLI policy** | Exposes many remote repository primitives directly | Deliberately avoids low-value wrappers when native git/CLI is clearly better |
-
----
-
 ## Score Summary
 
 | Product | Skill Wins | MCP Wins | Tie |
@@ -187,6 +153,5 @@ These are products/features exclusive to the MCP with no skill equivalent.
 | Jira | **20** | 0 | 9 |
 | Confluence | **24** | 0 | 11 |
 | Bitbucket | **13** | 7 | 11 |
-| Platform-only | 0 | **6 products** | 0 |
 
-**Bottom line:** The skills now tie or beat the MCP across most compared Jira and Confluence workflows and close much of the Bitbucket gap for PR, pipeline, environment, and deployment reads. The MCP still keeps clear advantages in Atlassian platform breadth (JSM, Compass, Rovo, Teamwork Graph), several Bitbucket administrative surfaces, and centralized hosted setup. The skills also intentionally leave some repository primitives to native git/CLI when that is the cleaner tool.
+**Bottom line within these three products:** the skills now tie or beat the MCP across most compared Jira and Confluence workflows and close much of the Bitbucket gap for PR, pipeline, environment, and deployment reads. The MCP still keeps clear advantages on several Bitbucket administrative and repository-content surfaces.
