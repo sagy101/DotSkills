@@ -190,47 +190,108 @@ def _convert_html_tables(text: str) -> str:
     return re.sub(r"<table>.*?</table>", _table_to_jira, text, flags=re.DOTALL)
 
 
+def _find_balanced_tag(
+    src: str, open_tag: str, close_tag: str, start: int = 0
+) -> tuple[int, int] | None:
+    """Return *(start, end)* of the first balanced *open_tag*…*close_tag* span."""
+    pos = src.find(open_tag, start)
+    if pos == -1:
+        return None
+    depth = 0
+    i = pos
+    while i < len(src):
+        if src[i : i + len(open_tag)] == open_tag:
+            depth += 1
+            i += len(open_tag)
+        elif src[i : i + len(close_tag)] == close_tag:
+            depth -= 1
+            if depth == 0:
+                return (pos, i + len(close_tag))
+            i += len(close_tag)
+        else:
+            i += 1
+    return None
+
+
+def _split_li_items(inner: str) -> list[str]:
+    """Split *inner* into top-level ``<li>…</li>`` bodies (balanced)."""
+    items: list[str] = []
+    i = 0
+    while i < len(inner):
+        span = _find_balanced_tag(inner, "<li>", "</li>", i)
+        if not span:
+            break
+        s, e = span
+        items.append(inner[s + 4 : e - 5])
+        i = e
+    return items
+
+
+def _process_html_list(html_text: str, prefix: str, depth: int) -> list[str]:
+    """Recursively convert a ``<ul>…</ul>`` or ``<ol>…</ol>`` block to Jira lines."""
+    lines: list[str] = []
+    bullet = prefix * (depth + 1)
+
+    inner = re.sub(r"^<[uo]l>\s*", "", html_text)
+    inner = re.sub(r"\s*</[uo]l>\s*$", "", inner)
+
+    for item in _split_li_items(inner):
+        nested_lists: list[tuple[str, str]] = []
+        clean = item
+        for tag, pfx in (("ul", "*"), ("ol", "#")):
+            while True:
+                span = _find_balanced_tag(clean, f"<{tag}>", f"</{tag}>")
+                if not span:
+                    break
+                ns, ne = span
+                nested_lists.append((clean[ns:ne], pfx))
+                clean = clean[:ns] + clean[ne:]
+
+        item_text = clean.strip()
+        if item_text:
+            lines.append(f"{bullet} {item_text}")
+
+        for nested_html, nested_pfx in nested_lists:
+            lines.extend(_process_html_list(nested_html, nested_pfx, depth + 1))
+
+    return lines
+
+
 def _convert_html_lists(text: str) -> str:
     """Convert HTML lists to Jira wiki markup lists."""
+    for tag, prefix in (("ul", "*"), ("ol", "#")):
+        while True:
+            span = _find_balanced_tag(text, f"<{tag}>", f"</{tag}>")
+            if not span:
+                break
+            s, e = span
+            lines = _process_html_list(text[s:e], prefix, 0)
+            text = text[:s] + "\n".join(lines) + text[e:]
 
-    def _process_list(html_text: str, prefix: str = "*", depth: int = 0) -> list[str]:
-        """Recursively process list items."""
-        lines = []
-        bullet = prefix * (depth + 1)
+    return text
 
-        # Find all list items at this level
-        items = re.findall(r"<li>(.*?)</li>", html_text, re.DOTALL)
-        for item in items:
-            # Check for nested lists
-            nested_ul = re.search(r"<ul>(.*?)</ul>", item, re.DOTALL)
-            nested_ol = re.search(r"<ol>(.*?)</ol>", item, re.DOTALL)
 
-            # Get text content (everything before nested list)
-            item_text = re.sub(r"<[uo]l>.*?</[uo]l>", "", item, flags=re.DOTALL).strip()
-            if item_text:
-                lines.append(f"{bullet} {item_text}")
+def _normalize_nested_list_indent(text: str) -> str:
+    """Normalize 2-space indented nested list items to 4-space.
 
-            if nested_ul:
-                lines.extend(_process_list(nested_ul.group(0), "*", depth + 1))
-            if nested_ol:
-                lines.extend(_process_list(nested_ol.group(0), "#", depth + 1))
-
-        return lines
-
-    # Process unordered lists (outermost first)
-    def _replace_ul(match: re.Match[str]) -> str:
-        lines = _process_list(match.group(0), "*", 0)
-        return "\n".join(lines)
-
-    def _replace_ol(match: re.Match[str]) -> str:
-        lines = _process_list(match.group(0), "#", 0)
-        return "\n".join(lines)
-
-    # Process outermost lists only (nested are handled recursively)
-    # We need to be careful to only match top-level lists
-    # Simple approach: process all <ul>...</ul> and <ol>...</ol>
-    text = re.sub(r"<ul>(.*?)</ul>", _replace_ul, text, flags=re.DOTALL)
-    return re.sub(r"<ol>(.*?)</ol>", _replace_ol, text, flags=re.DOTALL)
+    Python-Markdown requires 4-space indentation for nested lists.
+    Many authors use 2-space indentation (common in GitHub-flavored
+    markdown editors).  This function detects indented list markers
+    whose leading whitespace is a multiple of 2 but not 4 and doubles
+    them so the downstream parser recognises the nesting.
+    """
+    _LIST_MARKER = re.compile(r"^( +)([-*+] |\d+\. )")
+    lines = text.split("\n")
+    result: list[str] = []
+    for line in lines:
+        m = _LIST_MARKER.match(line)
+        if m:
+            indent = len(m.group(1))
+            if indent % 4 != 0 and indent % 2 == 0:
+                result.append(" " * (indent * 2) + line.lstrip())
+                continue
+        result.append(line)
+    return "\n".join(result)
 
 
 def _preprocess_markdown_blocks(text: str) -> str:
@@ -306,6 +367,7 @@ def md_to_jira_markup(text: str) -> str:
     if not text or not text.strip():
         return text
 
+    text = _normalize_nested_list_indent(text)
     text = _preprocess_markdown_blocks(text)
 
     md = _get_markdown()

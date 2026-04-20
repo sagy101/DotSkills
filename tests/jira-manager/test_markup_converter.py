@@ -21,6 +21,7 @@ md_to_jira_markup = _mod.md_to_jira_markup
 jira_markup_to_md = _mod.jira_markup_to_md
 _html_to_jira = _mod._html_to_jira
 _preprocess_markdown_blocks = _mod._preprocess_markdown_blocks
+_normalize_nested_list_indent = _mod._normalize_nested_list_indent
 _convert_html_lists = _mod._convert_html_lists
 _convert_html_tables = _mod._convert_html_tables
 _jira_tables_to_md = _mod._jira_tables_to_md
@@ -266,6 +267,68 @@ class TestPreprocessMarkdownBlocks:
     def test_code_block_then_list_untouched(self):
         md = "```\ncode\n```\n- item"
         assert _preprocess_markdown_blocks(md) == md
+
+
+# ---------------------------------------------------------------------------
+# _normalize_nested_list_indent — 2-space → 4-space indent
+# ---------------------------------------------------------------------------
+
+
+class TestNormalizeNestedListIndent:
+    def test_2space_nested_becomes_4space(self):
+        md = "- Parent\n  - Child 1\n  - Child 2"
+        result = _normalize_nested_list_indent(md)
+        assert result == "- Parent\n    - Child 1\n    - Child 2"
+
+    def test_4space_nested_untouched(self):
+        md = "- Parent\n    - Child"
+        assert _normalize_nested_list_indent(md) == md
+
+    def test_flat_list_untouched(self):
+        md = "- item 1\n- item 2"
+        assert _normalize_nested_list_indent(md) == md
+
+    def test_continuation_text_untouched(self):
+        md = "- Item\n  continuation text"
+        assert _normalize_nested_list_indent(md) == md
+
+    def test_ordered_nested_2space(self):
+        md = "1. Parent\n  1. Child\n  2. Child 2"
+        result = _normalize_nested_list_indent(md)
+        assert result == "1. Parent\n    1. Child\n    2. Child 2"
+
+    def test_mixed_markers(self):
+        md = "- Parent\n  + Child 1\n  * Child 2"
+        result = _normalize_nested_list_indent(md)
+        assert result == "- Parent\n    + Child 1\n    * Child 2"
+
+    def test_bold_children(self):
+        md = "- **Parent:** desc\n  - **Child** — text"
+        result = _normalize_nested_list_indent(md)
+        assert result == "- **Parent:** desc\n    - **Child** — text"
+
+    def test_non_list_2space_indent_untouched(self):
+        md = "paragraph\n  not a list"
+        assert _normalize_nested_list_indent(md) == md
+
+    def test_nested_produces_jira_sub_list(self):
+        """Full pipeline: 2-space nested list → Jira ** sub-items."""
+        md = "- Parent\n  - Child 1\n  - Child 2"
+        result = md_to_jira_markup(md)
+        assert "** Child 1" in result
+        assert "** Child 2" in result
+
+    def test_real_world_service_accounts(self):
+        """Simulates the real content pattern from the user's epic draft."""
+        md = (
+            "- **Agent service accounts:** create accounts\n"
+            "  - **Jira** — create tickets\n"
+            "  - **Bitbucket** — create PRs\n"
+            "- **Webhook registration:** one-time setup"
+        )
+        result = md_to_jira_markup(md)
+        assert "** *Jira*" in result or "**Jira**" in result
+        assert "* *Webhook registration:*" in result or "Webhook" in result
 
 
 # ---------------------------------------------------------------------------

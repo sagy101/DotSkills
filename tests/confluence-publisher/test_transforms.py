@@ -21,6 +21,44 @@ sys.modules["transforms"] = _mod
 
 markdown_to_confluence_storage = _mod.markdown_to_confluence_storage
 _preprocess_markdown_blocks = _mod._preprocess_markdown_blocks
+_normalize_nested_list_indent = _mod._normalize_nested_list_indent
+
+
+# ---------------------------------------------------------------------------
+# _normalize_nested_list_indent — 2-space → 4-space indent
+# ---------------------------------------------------------------------------
+
+
+class TestNormalizeNestedListIndent:
+    def test_2space_nested_becomes_4space(self):
+        md = "- Parent\n  - Child 1\n  - Child 2"
+        result = _normalize_nested_list_indent(md)
+        assert result == "- Parent\n    - Child 1\n    - Child 2"
+
+    def test_4space_nested_untouched(self):
+        md = "- Parent\n    - Child"
+        assert _normalize_nested_list_indent(md) == md
+
+    def test_flat_list_untouched(self):
+        md = "- item 1\n- item 2"
+        assert _normalize_nested_list_indent(md) == md
+
+    def test_continuation_text_untouched(self):
+        md = "- Item\n  continuation text"
+        assert _normalize_nested_list_indent(md) == md
+
+    def test_bold_children(self):
+        md = "- **Parent:** desc\n  - **Child** \u2014 text"
+        result = _normalize_nested_list_indent(md)
+        assert result == "- **Parent:** desc\n    - **Child** \u2014 text"
+
+    def test_nested_produces_confluence_sub_list(self):
+        md = "- Parent\n  - Child 1\n  - Child 2"
+        result = markdown_to_confluence_storage(md)
+        assert "<ul>" in result
+        assert "Child 1" in result
+        # Nested list should be inside the parent <li>
+        assert "<li>Parent" in result
 
 
 # ---------------------------------------------------------------------------

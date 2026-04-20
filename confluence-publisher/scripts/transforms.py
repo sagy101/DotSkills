@@ -56,6 +56,29 @@ def rewrite_attachment_links(html_content: str) -> str:
     return ATTACHMENT_LINK_RE.sub(_replace, html_content)
 
 
+def _normalize_nested_list_indent(text: str) -> str:
+    """Normalize 2-space indented nested list items to 4-space.
+
+    Python-Markdown requires 4-space indentation for nested lists.
+    Many authors use 2-space indentation (common in GitHub-flavored
+    markdown editors).  This function detects indented list markers
+    whose leading whitespace is a multiple of 2 but not 4 and doubles
+    them so the downstream parser recognises the nesting.
+    """
+    _LIST_MARKER = re.compile(r"^( +)([-*+] |\d+\. )")
+    lines = text.split("\n")
+    result: list[str] = []
+    for line in lines:
+        m = _LIST_MARKER.match(line)
+        if m:
+            indent = len(m.group(1))
+            if indent % 4 != 0 and indent % 2 == 0:
+                result.append(" " * (indent * 2) + line.lstrip())
+                continue
+        result.append(line)
+    return "\n".join(result)
+
+
 def _preprocess_markdown_blocks(text: str) -> str:
     """Ensure blank lines between block-level elements that the markdown parser
     would otherwise merge.
@@ -115,6 +138,7 @@ def _preprocess_markdown_blocks(text: str) -> str:
 
 def markdown_to_confluence_storage(md_content: str) -> str:
     """Convert Markdown to Confluence storage format (XHTML-based)."""
+    md_content = _normalize_nested_list_indent(md_content)
     md_content = _preprocess_markdown_blocks(md_content)
 
     html_content: str = md_lib.markdown(
