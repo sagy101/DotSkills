@@ -56,8 +56,67 @@ def rewrite_attachment_links(html_content: str) -> str:
     return ATTACHMENT_LINK_RE.sub(_replace, html_content)
 
 
+def _preprocess_markdown_blocks(text: str) -> str:
+    """Ensure blank lines between block-level elements that the markdown parser
+    would otherwise merge.
+
+    Python-Markdown (with ``sane_lists``) does **not** start a new block
+    element (list, heading) after a preceding paragraph / blockquote / table
+    row unless there is a blank line.  Authors often omit the blank line and
+    the parser silently absorbs the content into the wrong block.
+
+    This function injects blank lines at known problem boundaries so that the
+    downstream ``markdown`` library correctly recognises separate blocks.
+
+    Handled patterns:
+    - paragraph → unordered list (``- `` / ``* ``)
+    - paragraph → ordered list (``1. ``)
+    - bold/italic label line → any list
+    - blockquote line → list
+    - table row → heading (``#``)
+    - table row → list
+    """
+    _LIST_START = r"[-*+] |\d+\. "
+    _HEADING_START = r"#{1,6} "
+    _SEP = r"(?<!\n)\n(?!\n)"
+
+    # 1. Paragraph → list
+    text = re.sub(
+        rf"^([^\s\-\*\+#>|`].+){_SEP}({_LIST_START})",
+        r"\1\n\n\2",
+        text,
+        flags=re.MULTILINE,
+    )
+
+    # 2. Bold/italic label → list/heading
+    text = re.sub(
+        rf"^([\*_]{{1,3}}[^*_\n]+[\*_]{{1,3}}:?\s*){_SEP}({_LIST_START}|{_HEADING_START})",
+        r"\1\n\n\2",
+        text,
+        flags=re.MULTILINE,
+    )
+
+    # 3. Blockquote → list
+    text = re.sub(
+        rf"^(>.+){_SEP}({_LIST_START})",
+        r"\1\n\n\2",
+        text,
+        flags=re.MULTILINE,
+    )
+
+    # 4. Table row → heading/list
+    return re.sub(
+        rf"^(\|.+\|)\s*{_SEP}({_HEADING_START}|{_LIST_START})",
+        r"\1\n\n\2",
+        text,
+        flags=re.MULTILINE,
+    )
+
+
 def markdown_to_confluence_storage(md_content: str) -> str:
     """Convert Markdown to Confluence storage format (XHTML-based)."""
+    md_content = _preprocess_markdown_blocks(md_content)
+
     html_content: str = md_lib.markdown(
         md_content,
         extensions=[

@@ -20,6 +20,7 @@ sys.modules["markup_converter"] = _mod
 md_to_jira_markup = _mod.md_to_jira_markup
 jira_markup_to_md = _mod.jira_markup_to_md
 _html_to_jira = _mod._html_to_jira
+_preprocess_markdown_blocks = _mod._preprocess_markdown_blocks
 _convert_html_lists = _mod._convert_html_lists
 _convert_html_tables = _mod._convert_html_tables
 _jira_tables_to_md = _mod._jira_tables_to_md
@@ -83,6 +84,10 @@ class TestMdToJira:
         result = md_to_jira_markup("[Click here](https://example.com)")
         assert "[Click here|https://example.com]" in result
 
+    def test_link_with_title_attribute(self):
+        result = md_to_jira_markup('[text](http://x.com "title")')
+        assert "[text|http://x.com]" in result
+
     def test_unordered_list(self):
         md = "- item 1\n- item 2"
         result = md_to_jira_markup(md)
@@ -119,6 +124,148 @@ class TestMdToJira:
         # markdown lib may not support ~~strikethrough~~ without the del extension
         result = md_to_jira_markup("~~deleted~~")
         assert "deleted" in result
+
+    def test_heading_after_list_gets_blank_line(self):
+        """h3. headings after list items must have a blank line before them."""
+        md = "- item 1\n- item 2\n\n### Heading\n\n- item 3"
+        result = md_to_jira_markup(md)
+        assert "h3. Heading" in result
+        lines = result.split("\n")
+        for i, line in enumerate(lines):
+            if line.startswith("h3. "):
+                assert i > 0 and lines[i - 1].strip() == "", (
+                    f"Expected blank line before heading at line {i}, got: {lines[i - 1]!r}"
+                )
+
+    def test_bold_label_followed_by_unordered_list(self):
+        """**Label:** followed immediately by - items should produce a proper list."""
+        md = "**DoD:**\n- first item\n- second item"
+        result = md_to_jira_markup(md)
+        assert "* first item" in result
+        assert "- first item" not in result
+
+    def test_bold_label_followed_by_ordered_list(self):
+        """**Label:** followed immediately by 1. items should produce an ordered list."""
+        md = "**Steps:**\n1. first\n2. second"
+        result = md_to_jira_markup(md)
+        assert "# first" in result
+        assert "1. first" not in result
+
+    def test_italic_label_followed_by_list(self):
+        """*Label:* followed immediately by - items should produce a proper list."""
+        md = "*Note:*\n- item 1\n- item 2"
+        result = md_to_jira_markup(md)
+        assert "* item 1" in result
+        assert "- item 1" not in result
+
+    def test_italic_label_followed_by_ordered_list(self):
+        md = "*Note:*\n1. step 1\n2. step 2"
+        result = md_to_jira_markup(md)
+        assert "# step 1" in result
+        assert "1. step" not in result
+
+    def test_plain_paragraph_followed_by_unordered_list(self):
+        md = "Description text.\n- item 1\n- item 2"
+        result = md_to_jira_markup(md)
+        assert "* item 1" in result
+        assert "- item 1" not in result
+
+    def test_plain_paragraph_followed_by_ordered_list(self):
+        md = "Text here.\n1. first\n2. second"
+        result = md_to_jira_markup(md)
+        assert "# first" in result
+        assert "1. first" not in result
+
+    def test_blockquote_followed_by_list(self):
+        """List after blockquote should not be swallowed into the blockquote."""
+        md = "> quote\n- item 1\n- item 2"
+        result = md_to_jira_markup(md)
+        assert "* item 1" in result
+
+    def test_table_followed_by_heading(self):
+        """Heading after table must not become a table row."""
+        md = "| A | B |\n|---|---|\n| 1 | 2 |\n### After Table"
+        result = md_to_jira_markup(md)
+        assert "h3. After Table" in result
+
+    def test_table_followed_by_list(self):
+        """List after table must not break the table."""
+        md = "| A | B |\n|---|---|\n| 1 | 2 |\n- item"
+        result = md_to_jira_markup(md)
+        assert "* item" in result
+        assert "||" in result  # table header still works
+
+
+# ---------------------------------------------------------------------------
+# _preprocess_markdown_blocks — block boundary injection
+# ---------------------------------------------------------------------------
+
+
+class TestPreprocessMarkdownBlocks:
+    def test_normal_list_untouched(self):
+        md = "- item 1\n- item 2\n- item 3"
+        assert _preprocess_markdown_blocks(md) == md
+
+    def test_heading_then_list_untouched(self):
+        md = "### Title\n- item"
+        assert _preprocess_markdown_blocks(md) == md
+
+    def test_nested_list_untouched(self):
+        md = "- parent\n    - child\n    - child2"
+        assert _preprocess_markdown_blocks(md) == md
+
+    def test_multiline_list_item_untouched(self):
+        md = "- first line\n  continuation\n- second"
+        assert _preprocess_markdown_blocks(md) == md
+
+    def test_blank_line_injected_for_paragraph_then_list(self):
+        md = "Paragraph.\n- item"
+        result = _preprocess_markdown_blocks(md)
+        assert result == "Paragraph.\n\n- item"
+
+    def test_blank_line_injected_for_bold_label_then_list(self):
+        md = "**DoD:**\n- item"
+        result = _preprocess_markdown_blocks(md)
+        assert result == "**DoD:**\n\n- item"
+
+    def test_blank_line_injected_for_italic_label_then_list(self):
+        md = "*Note:*\n- item"
+        result = _preprocess_markdown_blocks(md)
+        assert result == "*Note:*\n\n- item"
+
+    def test_blank_line_injected_for_blockquote_then_list(self):
+        md = "> quote\n- item"
+        result = _preprocess_markdown_blocks(md)
+        assert result == "> quote\n\n- item"
+
+    def test_blank_line_injected_for_table_then_heading(self):
+        md = "| 1 | 2 |\n### Heading"
+        result = _preprocess_markdown_blocks(md)
+        assert result == "| 1 | 2 |\n\n### Heading"
+
+    def test_blank_line_injected_for_table_then_list(self):
+        md = "| 1 | 2 |\n- item"
+        result = _preprocess_markdown_blocks(md)
+        assert result == "| 1 | 2 |\n\n- item"
+
+    def test_paragraph_then_ordered_list(self):
+        md = "Text.\n1. first"
+        result = _preprocess_markdown_blocks(md)
+        assert result == "Text.\n\n1. first"
+
+    def test_bold_label_then_ordered_list(self):
+        md = "**Steps:**\n1. first"
+        result = _preprocess_markdown_blocks(md)
+        assert result == "**Steps:**\n\n1. first"
+
+    def test_already_separated_not_doubled(self):
+        md = "**DoD:**\n\n- item"
+        result = _preprocess_markdown_blocks(md)
+        assert result == md
+
+    def test_code_block_then_list_untouched(self):
+        md = "```\ncode\n```\n- item"
+        assert _preprocess_markdown_blocks(md) == md
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +389,22 @@ class TestJiraToMd:
         result = jira_markup_to_md(jira)
         assert "```" in result
         assert "some code" in result
+
+    def test_code_block_empty(self):
+        result = jira_markup_to_md("{code}\n{code}")
+        assert "```" in result
+
+    def test_code_block_with_title_and_language(self):
+        jira = "{code:title=Example|language=java}\npublic void foo(){}\n{code}"
+        result = jira_markup_to_md(jira)
+        assert "```java" in result
+        assert "public void foo(){}" in result
+
+    def test_code_block_language_only_param(self):
+        jira = "{code:language=python}\nx = 1\n{code}"
+        result = jira_markup_to_md(jira)
+        assert "```python" in result
+        assert "x = 1" in result
 
     def test_inline_code(self):
         result = jira_markup_to_md("Use {{foo()}} here")

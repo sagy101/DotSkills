@@ -118,7 +118,7 @@ def _html_to_jira(html_content: str) -> str:
     text = re.sub(r"<del>(.*?)</del>", r"-\1-", text)
 
     # --- Links ---
-    text = re.sub(r'<a href="([^"]+)">(.*?)</a>', r"[\2|\1]", text)
+    text = re.sub(r'<a href="([^"]+)"[^>]*>(.*?)</a>', r"[\2|\1]", text)
 
     # --- Images ---
     text = re.sub(r'<img[^>]+src="([^"]+)"[^>]*alt="([^"]*)"[^>]*/?>', r"!\1!", text)
@@ -152,6 +152,10 @@ def _html_to_jira(html_content: str) -> str:
 
     # --- Unescape HTML entities ---
     text = html_lib.unescape(text)
+
+    # --- Ensure blank line before headings ---
+    # Jira wiki requires a blank line before h1.-h6. headings for proper rendering.
+    text = re.sub(r"(?<!\n)\n(h[1-6]\. )", r"\n\n\1", text)
 
     # --- Clean up excessive blank lines ---
     text = re.sub(r"\n{3,}", "\n\n", text)
@@ -229,6 +233,71 @@ def _convert_html_lists(text: str) -> str:
     return re.sub(r"<ol>(.*?)</ol>", _replace_ol, text, flags=re.DOTALL)
 
 
+def _preprocess_markdown_blocks(text: str) -> str:
+    """Ensure blank lines between block-level elements that the markdown parser
+    would otherwise merge.
+
+    Python-Markdown (with ``sane_lists``) does **not** start a new block
+    element (list, heading) after a preceding paragraph / blockquote / table
+    row unless there is a blank line.  Authors often omit the blank line and
+    the parser silently absorbs the content into the wrong block.
+
+    This function injects blank lines at known problem boundaries so that the
+    downstream ``markdown`` library correctly recognises separate blocks.
+
+    Handled patterns:
+    - paragraph → unordered list (``- `` / ``* ``)
+    - paragraph → ordered list (``1. ``)
+    - bold/italic label line → any list
+    - blockquote line → list
+    - table row → heading (``#``)
+    - table row → list
+    """
+    # List-start marker at BOL: - , * , + , or digit(s).
+    _LIST_START = r"[-*+] |\d+\. "
+    _HEADING_START = r"#{1,6} "
+    # Single \n NOT preceded by \n and NOT followed by \n — i.e. the boundary
+    # between two non-blank lines.  This prevents double-injection when a blank
+    # line already exists.
+    _SEP = r"(?<!\n)\n(?!\n)"
+
+    # 1. Paragraph (non-blank, non-list, non-heading, non-blockquote,
+    #    non-table, non-HR, non-code-fence) followed immediately by a list start.
+    text = re.sub(
+        rf"^([^\s\-\*\+#>|`].+){_SEP}({_LIST_START})",
+        r"\1\n\n\2",
+        text,
+        flags=re.MULTILINE,
+    )
+
+    # 2. Bold/italic label lines (start with * or _) followed by a list/heading.
+    #    Rule 1 skips these because * is excluded.  Handle explicitly.
+    text = re.sub(
+        rf"^([\*_]{{1,3}}[^*_\n]+[\*_]{{1,3}}:?\s*){_SEP}({_LIST_START}|{_HEADING_START})",
+        r"\1\n\n\2",
+        text,
+        flags=re.MULTILINE,
+    )
+
+    # 3. Blockquote line followed immediately by a list start (list gets
+    #    swallowed into the blockquote otherwise).
+    text = re.sub(
+        rf"^(>.+){_SEP}({_LIST_START})",
+        r"\1\n\n\2",
+        text,
+        flags=re.MULTILINE,
+    )
+
+    # 4. Table row followed immediately by a heading or list (heading becomes
+    #    a table cell otherwise).
+    return re.sub(
+        rf"^(\|.+\|)\s*{_SEP}({_HEADING_START}|{_LIST_START})",
+        r"\1\n\n\2",
+        text,
+        flags=re.MULTILINE,
+    )
+
+
 def md_to_jira_markup(text: str) -> str:
     """Convert Markdown text to Jira wiki markup.
 
@@ -236,6 +305,8 @@ def md_to_jira_markup(text: str) -> str:
     """
     if not text or not text.strip():
         return text
+
+    text = _preprocess_markdown_blocks(text)
 
     md = _get_markdown()
     html_content = md.markdown(
@@ -250,6 +321,22 @@ def md_to_jira_markup(text: str) -> str:
 # ===================================================================
 
 
+def _jira_code_block_to_md(m: re.Match[str]) -> str:
+    """Convert a ``{code:params}...{code}`` match to a Markdown fenced block."""
+    params = m.group(1) or ""
+    body = (m.group(2) or "").strip("\n")
+    lang = ""
+    if params:
+        for part in params.split("|"):
+            if "=" in part:
+                k, v = part.split("=", 1)
+                if k.strip().lower() == "language":
+                    lang = v.strip()
+            else:
+                lang = part.strip()
+    return f"```{lang}\n{body}\n```"
+
+
 def jira_markup_to_md(text: str) -> str:
     """Convert Jira wiki markup to Markdown.
 
@@ -260,14 +347,14 @@ def jira_markup_to_md(text: str) -> str:
 
     # --- Code blocks ---
     text = re.sub(
-        r"\{code:(\w+)\}\s*\n(.*?)\n\{code\}",
-        r"```\1\n\2\n```",
+        r"\{code:([^}]+)\}\s*\n?(.*?)\n?\{code\}",
+        _jira_code_block_to_md,
         text,
         flags=re.DOTALL,
     )
     text = re.sub(
-        r"\{code\}\s*\n(.*?)\n\{code\}",
-        r"```\n\1\n```",
+        r"\{code\}\s*\n?(.*?)\n?\{code\}",
+        lambda m: f"```\n{(m.group(1) or '').strip(chr(10))}\n```",
         text,
         flags=re.DOTALL,
     )

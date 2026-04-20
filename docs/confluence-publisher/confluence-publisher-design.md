@@ -44,7 +44,7 @@ This skill gives **any SKILL.md-compatible agent** the ability to publish, sync,
 
 **3. Hierarchical publish order** — Parents are always published before children. This ensures parent page IDs exist when creating child pages. On failure, the skill stops immediately rather than creating orphaned children.
 
-**4. Automatic transformation pipeline** — The publish script handles markdown → Confluence storage format, Mermaid → PNG attachments, cross-page link rewriting, and attachment link conversion in a single pass. The agent doesn't need to understand Confluence XHTML — it just points at a markdown file.
+**4. Automatic transformation pipeline** — The publish script handles markdown → Confluence storage format, Mermaid → PNG attachments, cross-page link rewriting, and attachment link conversion in a single pass. The agent doesn't need to understand Confluence XHTML — it just points at a markdown file. A `_preprocess_markdown_blocks()` step (shared pattern with the jira-manager skill) injects blank lines at block boundaries that Python-Markdown would otherwise merge: paragraph/bold-label/italic-label → list, blockquote → list, and table-row → heading/list.
 
 **5. Normalized diff for accurate comparison** — Diff doesn't compare raw markdown to raw HTML. Instead, both sides go through normalization: local markdown is converted through the publish pipeline, remote HTML is fetched, Mermaid image macros are replaced with placeholders, and both are converted to markdown via `markdownify`. This eliminates false positives from diagram re-renders and link rewrites.
 
