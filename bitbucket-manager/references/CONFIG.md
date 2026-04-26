@@ -12,10 +12,16 @@ If both exist, they are **deep-merged** (project-level wins on conflicts).
 {
   "workspace": "myworkspace",
   "credentials": {
+    "auth_mode": "basic",
     "email_env": "BITBUCKET_EMAIL",
     "token_env": "BITBUCKET_TOKEN"
   },
   "env_file": ".env",
+  "repo_tokens": {
+    "myworkspace/example-repo": {
+      "token_env": "MY_REPO_BITBUCKET_TOKEN"
+    }
+  },
   "default_reviewers": ["user1-uuid", "user2-uuid"],
   "default_destination": "master"
 }
@@ -26,9 +32,11 @@ If both exist, they are **deep-merged** (project-level wins on conflicts).
 | Field | Required | Default | Description |
 |---|---|---|---|
 | `workspace` | Yes | — | Bitbucket workspace slug |
+| `credentials.auth_mode` | No | `"basic"` | Default auth mode. `"basic"` is the normal mode for Atlassian email + personal Bitbucket API token. `"bearer"` is kept as a legacy compatibility mode for a single direct bearer token. |
 | `credentials.email_env` | No | `"BITBUCKET_EMAIL"` | Environment variable name for the Bitbucket email/username |
 | `credentials.token_env` | No | `"BITBUCKET_TOKEN"` | Environment variable name for the API token |
 | `env_file` | No | `null` | Optional path to a `.env` file. Absolute paths are used as-is (useful in global config). Relative paths resolve against project root (traversal-protected). If the file is missing, the skill warns and falls back to normal shell environment variables. |
+| `repo_tokens` | No | `{}` | Optional map of `workspace/repo` to repository-token config. Used as a fallback when default `basic` auth is unavailable or Bitbucket rejects it. |
 | `default_reviewers` | No | `[]` | List of reviewer UUIDs added to new PRs when `--reviewers` is omitted |
 | `default_destination` | No | `"master"` | Default destination branch for new PRs when `--destination` is omitted |
 
@@ -46,8 +54,14 @@ Put shared settings in `~/.bitbucket.json`:
 {
   "workspace": "myworkspace",
   "credentials": {
+    "auth_mode": "basic",
     "email_env": "BITBUCKET_EMAIL",
     "token_env": "BITBUCKET_TOKEN"
+  },
+  "repo_tokens": {
+    "myworkspace/example-repo": {
+      "token_env": "MY_REPO_BITBUCKET_TOKEN"
+    }
   }
 }
 ```
@@ -88,3 +102,47 @@ If SSH git commands work but the REST scripts still return `401`, the most commo
 - the token is the wrong credential type for Bitbucket Cloud REST auth
 - the token is missing the scopes required by the specific endpoint
 - the wrong email is paired with the token in Basic auth
+
+## Repository-token fallback
+
+If personal Bitbucket API tokens are blocked or broken in your Atlassian org, configure repository access tokens in `repo_tokens`.
+
+Recommended pattern:
+
+```json
+{
+  "workspace": "firelayers",
+  "credentials": {
+    "auth_mode": "basic",
+    "email_env": "BITBUCKET_EMAIL",
+    "token_env": "BITBUCKET_TOKEN"
+  },
+  "repo_tokens": {
+    "firelayers/dotskills": {
+      "token_env": "DOTSKILLS_BITBUCKET_TOKEN"
+    }
+  }
+}
+```
+
+Notes:
+- The skill tries default `basic` auth first.
+- If Bitbucket rejects default `basic` auth for a repo, the skill checks `repo_tokens["workspace/repo"]`.
+- Repository access tokens are scoped to a single repo, so preflight validates against the current target repo.
+- If no repo token exists for the target repo, the skill should fail with an actionable message telling the agent to ask the human to configure one.
+
+## Legacy direct bearer mode
+
+For compatibility, the skill still accepts:
+
+```json
+{
+  "workspace": "firelayers",
+  "credentials": {
+    "auth_mode": "bearer",
+    "token_env": "BITBUCKET_TOKEN"
+  }
+}
+```
+
+Use this only when you intentionally want one bearer token as the primary auth path for the whole current repo context. Prefer `repo_tokens` for normal multi-repo setups.

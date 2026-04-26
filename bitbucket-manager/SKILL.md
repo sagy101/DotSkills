@@ -46,7 +46,10 @@ Use when the user wants to:
 ## Prerequisites
 
 1. **Config**: `.bitbucket.json` in project root and/or `~/.bitbucket.json` for global defaults (see [CONFIG.md](references/CONFIG.md))
-2. **Credentials**: `BITBUCKET_EMAIL` and `BITBUCKET_TOKEN` exported in shell profile or in a `.env` file
+2. **Credentials**:
+   - default path: `BITBUCKET_EMAIL` + `BITBUCKET_TOKEN` for personal Bitbucket API tokens with `credentials.auth_mode: "basic"` (default)
+   - fallback path: per-repo repository access tokens configured in `repo_tokens`
+   - compatibility path: a direct bearer token via `credentials.auth_mode: "bearer"` if you intentionally want that mode
 
 Bitbucket token setup is important:
 - Use **Create API token with scopes**, not the plain **Create API token** button
@@ -70,8 +73,14 @@ If no config is found anywhere, help the user create one. For users with one Bit
 {
   "workspace": "<your-workspace>",
   "credentials": {
+    "auth_mode": "basic",
     "email_env": "BITBUCKET_EMAIL",
     "token_env": "BITBUCKET_TOKEN"
+  },
+  "repo_tokens": {
+    "<your-workspace>/<repo>": {
+      "token_env": "MY_REPO_BITBUCKET_TOKEN"
+    }
   }
 }
 ```
@@ -89,15 +98,20 @@ Then a minimal per-project `.bitbucket.json` only needs optional overrides:
 Run the preflight script before any other operation:
 
 ```bash
+# Inside the target repo
 python3 <skill_dir>/scripts/bb_preflight.py
+
+# From a parent or different repo
+python3 <skill_dir>/scripts/bb_preflight.py --repo <repo_slug>
 ```
 
 This checks Python version, config file, credentials, repo auto-detection, and API connectivity in one pass. Each check prints `[PASS]`, `[FAIL]`, or `[WARN]` with actionable fix instructions. Exit code 0 = all checks passed, 1 = at least one failed.
 
 If connectivity fails with a `401`, check the token type before anything else:
 - a no-scope Atlassian token is not enough for Bitbucket REST
-- the token must be a Bitbucket token created with scopes
-- `BITBUCKET_EMAIL` must match the Atlassian account that created the token
+- for default `basic` auth, the token must be a Bitbucket personal token created with scopes and `BITBUCKET_EMAIL` must match the Atlassian account that created it
+- if that default auth is unavailable or Bitbucket rejects it, configure a repository token in `repo_tokens` for the target `workspace/repo`
+- direct `auth_mode: "bearer"` remains available for compatibility, but `repo_tokens` is the recommended fallback model
 
 Skip the connectivity check (faster, offline-safe):
 
@@ -106,6 +120,8 @@ python3 <skill_dir>/scripts/bb_preflight.py --skip-connectivity
 ```
 
 If any check fails, fix the issue and re-run before proceeding.
+
+When operating from a parent or nested repo context, pass `--repo <repo_slug>` so the shared auth resolver validates and selects auth for the intended target repo rather than the nearest enclosing repo.
 
 ## Workflow
 

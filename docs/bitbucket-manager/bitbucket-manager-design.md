@@ -65,6 +65,20 @@ This skill gives **any SKILL.md-compatible agent** reliable Bitbucket Cloud PR m
 
 **13. Thin workflow scripts for pipelines and deployments** — New Bitbucket CLI entrypoints stay intentionally small: one command each for PR diffs, pipeline listing/getting/running/step listing/log fetch, and environment/deployment listing/getting. This keeps the user-facing interface simple while mapping directly to the REST endpoints.
 
+**14. Basic-first auth with repo-token fallback** — The default path remains personal Bitbucket REST auth using `BITBUCKET_EMAIL` + `BITBUCKET_TOKEN`. If that auth is unavailable or Bitbucket rejects it, shared code may fall back to a repository access token configured for the resolved target repo. This preserves the existing happy path while unblocking orgs where personal scoped Bitbucket tokens are broken or disallowed.
+
+**15. One central config, no per-repo config drift** — Bitbucket auth should stay centrally managed in `~/.bitbucket.json`. The config may include a `repo_tokens` map keyed by `workspace/repo`, so the skill can choose the correct repository token without asking users to duplicate config in every repo checkout.
+
+**16. Repo-scoped bearer support only** — Bearer-token support is intentionally limited to Bitbucket repository access tokens for now. Workspace and project bearer tokens stay out of scope to avoid broadening semantics, endpoint assumptions, and test surface before they are needed.
+
+**17. Existing CLI flags stay stable** — Repo-level scripts already support `--repo` and `--workspace`. The upgrade should preserve those interfaces. Agents inside a target repo can keep omitting `--repo`; agents operating from a parent or nested repo context should use `--repo` explicitly.
+
+**18. Explicit fallback reporting** — If the skill falls back from `basic` auth to a repo token, preflight and user-facing errors should say so clearly. Silent fallback makes debugging harder and weakens trust during live demos.
+
+**19. Target-repo resolution must be shared** — All Bitbucket scripts should resolve the target repo through the same shared code path. That resolver must respect explicit `--repo`, otherwise use the nearest enclosing git repo, and support nested-repo layouts such as `cap-projects` containing `cap-onboarding`.
+
+**20. Workspace-wide actions remain basic-auth-centric** — Operations like listing all repos in a workspace should keep working with personal auth. When only a repo token is available, the skill should fail clearly rather than pretending a repo-scoped token can browse the whole workspace.
+
 ---
 
 ## Approval Gates
@@ -92,6 +106,119 @@ This skill gives **any SKILL.md-compatible agent** reliable Bitbucket Cloud PR m
 
 ---
 
+## Auth Upgrade Design
+
+### Problem Statement
+
+Some Atlassian orgs currently cannot create working personal Bitbucket scoped tokens because the Atlassian token UI has an expiry-date bug. In those environments, the existing Bitbucket skill fails at REST auth even though the agent workflow and repo access are otherwise valid.
+
+The skill therefore needs a backward-compatible fallback path that:
+
+- preserves current behavior for users whose personal Bitbucket API token already works
+- supports repository access tokens without changing every script interface
+- works from nested-repo and parent-repo layouts
+- keeps failures actionable for agents and humans
+
+### Config Model
+
+The upgraded central config should support:
+
+```json
+{
+  "workspace": "firelayers",
+  "credentials": {
+    "auth_mode": "basic",
+    "email_env": "BITBUCKET_EMAIL",
+    "token_env": "BITBUCKET_TOKEN"
+  },
+  "repo_tokens": {
+    "firelayers/cap-onboarding": {
+      "token_env": "BITBUCKET_CAP_ONBOARDING_TOKEN"
+    },
+    "firelayers/dotskills": {
+      "token_env": "BITBUCKET_DOTSKILLS_TOKEN"
+    }
+  }
+}
+```
+
+Rules:
+
+- `credentials` remains the default personal-auth configuration.
+- `repo_tokens` is optional and keyed by canonical `workspace/repo`.
+- Each `repo_tokens` entry represents a Bitbucket repository access token only.
+- Existing configs without `repo_tokens` remain valid.
+
+### Auth Selection Rules
+
+For every repo-scoped command:
+
+1. Resolve the target repo:
+   - explicit `--repo` wins
+   - otherwise use the nearest enclosing git repo
+2. Attempt default `basic` auth if it is configured
+3. If `basic` auth is missing or Bitbucket rejects it, look up `workspace/repo` in `repo_tokens`
+4. If a repo token exists, retry with bearer auth and report that fallback happened
+5. If no repo token exists, fail with an actionable message instructing the agent to ask the human to configure auth for that repo
+
+This model keeps the default behavior unchanged for current users while making fallback deterministic.
+
+### Repo Resolution Rules
+
+The skill must handle nested repo layouts and parent-repo working directories safely.
+
+- If the agent is inside `~/cap-projects/cap-onboarding`, the target repo is `cap-onboarding`.
+- If the agent is inside `~/cap-projects` and does not pass `--repo`, the target repo is `cap-projects`.
+- If the agent is inside `~/cap-projects` but intends to operate on `cap-onboarding`, it should pass `--repo cap-onboarding`, and shared resolution code should target that child repo.
+
+The resolver should not recursively guess a repo when no explicit target is available and multiple candidates could exist.
+
+### Preflight Behavior
+
+Preflight should validate the exact auth path that would be used for the resolved target repo.
+
+- If `basic` auth succeeds, report that
+- If `basic` auth fails and a repo token succeeds, report the fallback explicitly
+- If neither works, report whether the failure was:
+  - missing `basic` credentials
+  - `basic` rejected by Bitbucket
+  - missing repo-token mapping
+  - missing repo-token environment variable
+  - repo-token auth rejection
+
+Preflight should validate one target repo at a time, not every repo in a directory tree.
+
+### Out Of Scope
+
+This upgrade intentionally does not include:
+
+- workspace bearer tokens
+- project bearer tokens
+- storing repo hierarchies in config
+- automatic multi-repo scans that silently change the target repo
+- breaking CLI compatibility for existing scripts
+
+### Documentation Impact
+
+The implementation must update:
+
+- `bitbucket-manager/SKILL.md`
+- `bitbucket-manager/references/CONFIG.md`
+- this design document
+- any user-facing guidance that currently assumes “create a personal scoped API token” is always the answer
+
+### Testing Impact
+
+The implementation must preserve all existing basic-auth behavior and add coverage for:
+
+- `repo_tokens` config parsing
+- target repo resolution with and without `--repo`
+- bearer fallback after rejected `basic` auth
+- actionable errors when a repo token is missing for a target repo
+- clear behavior for workspace-level commands under repo-token-only conditions
+
+---
+
 ## References
 
 - **Bitbucket Cloud REST API v2** — The underlying API for all operations
@@ -100,4 +227,4 @@ This skill gives **any SKILL.md-compatible agent** reliable Bitbucket Cloud PR m
 
 ## Status
 
-**Stable (v1.4)** — Added PR diff retrieval, comment reopen, pipelines, environments, and deployments workflows alongside the existing PR/comment features; preserved the shared threaded comment model and automatic 429 retry with exponential backoff.
+**Stable with planned auth upgrade** — Current PR/comment/pipeline functionality remains stable. A backward-compatible auth-resolution upgrade is planned to add repository-token fallback without regressing existing personal-token users.

@@ -16,7 +16,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, NoReturn
 
-from bb_config import BitbucketConfig, resolve_credentials
+from bb_config import AuthResolutionError, BitbucketConfig, select_auth
 
 _DEBUG = os.environ.get("BB_DEBUG", "").lower() in ("1", "true", "yes")
 _MAX_429_RETRIES = 3
@@ -29,12 +29,114 @@ class BitbucketClient:
 
     def __init__(self, config: BitbucketConfig) -> None:
         self.config = config
-        email, api_token = resolve_credentials(config)
-        creds = base64.b64encode(f"{email}:{api_token}".encode()).decode()
-        self._headers = {
-            "Authorization": f"Basic {creds}",
-            "Content-Type": "application/json",
-        }
+        self._preferred_auth_by_key: dict[str, str] = {}
+        self._last_auth_summary: str | None = None
+
+    @staticmethod
+    def _build_headers(mode: str, email: str | None, api_token: str) -> dict[str, str]:
+        if mode == "bearer":
+            authorization = f"Bearer {api_token}"
+        else:
+            creds = base64.b64encode(f"{email}:{api_token}".encode()).decode()
+            authorization = f"Basic {creds}"
+        return {"Authorization": authorization, "Content-Type": "application/json"}
+
+    @staticmethod
+    def _parse_target_from_path(path: str) -> tuple[str | None, str | None]:
+        parts = [part for part in path.split("/") if part]
+        if len(parts) >= 2 and parts[0] == "repositories":
+            workspace = parts[1]
+            repo_slug = parts[2] if len(parts) >= 3 else None
+            return workspace, repo_slug
+        return None, None
+
+    @staticmethod
+    def _auth_cache_key(workspace: str | None, repo_slug: str | None) -> str:
+        if workspace and repo_slug:
+            return f"{workspace}/{repo_slug}"
+        if workspace:
+            return workspace
+        return "<global>"
+
+    def _record_auth_success(
+        self,
+        auth_key: str,
+        candidate_source: str,
+        repo_key: str | None = None,
+        fallback_used: bool = False,
+    ) -> None:
+        self._preferred_auth_by_key[auth_key] = candidate_source
+        if fallback_used:
+            self._last_auth_summary = (
+                f"Basic auth rejected; fell back to repo token for {repo_key or auth_key}"
+            )
+        else:
+            self._last_auth_summary = f"Using {candidate_source} auth"
+
+    def _select_candidates(self, workspace: str, repo_slug: str | None) -> tuple[str, list[Any]]:
+        auth_key = self._auth_cache_key(workspace, repo_slug)
+        try:
+            selection = select_auth(
+                self.config,
+                workspace,
+                repo_slug,
+                preferred_source=self._preferred_auth_by_key.get(auth_key),
+            )
+        except AuthResolutionError as err:
+            print(f"ERROR: {err}", file=sys.stderr)
+            raise SystemExit(2) from None
+
+        candidates = [selection.candidate]
+        if (
+            selection.candidate.source == "basic"
+            and repo_slug
+            and "repo_token" in selection.attempted_sources
+        ):
+            fallback_selection = select_auth(
+                self.config,
+                workspace,
+                repo_slug,
+                preferred_source="repo_token",
+            )
+            if fallback_selection.candidate.source == "repo_token":
+                candidates.append(fallback_selection.candidate)
+
+        return auth_key, candidates
+
+    @staticmethod
+    def _build_connection_path(
+        workspace: str, repo_slug: str | None
+    ) -> tuple[str, dict[str, str] | None]:
+        if repo_slug:
+            return f"/repositories/{workspace}/{repo_slug}", None
+        return f"/repositories/{workspace}", {"pagelen": "1"}
+
+    def _connection_error_detail(
+        self,
+        error: urllib.error.HTTPError,
+        path: str,
+        auth_key: str,
+        candidate: Any,
+        idx: int,
+    ) -> tuple[bool, str]:
+        hint = self._http_error_hint(error.code, path)
+        if error.code == 401:
+            if idx > 0 and candidate.source == "repo_token":
+                return (
+                    False,
+                    f"Basic auth was rejected, and repo-token auth for "
+                    f"'{candidate.repo_key or auth_key}' was also rejected.{hint}",
+                )
+            return False, f"REST auth rejected the token.{hint}"
+        if error.code == 403:
+            return False, f"REST auth succeeded, but access to '{path}' was denied.{hint}"
+        if error.code == 404 and candidate.source == "repo_token":
+            return (
+                False,
+                f"REST auth succeeded, but '{path}' was not found. Verify the token "
+                "scope matches this repository or use the repo's own access token.",
+            )
+        return False, f"HTTP {error.code} while contacting '{path}'."
 
     # -----------------------------------------------------------------
     # Low-level HTTP
@@ -62,9 +164,11 @@ class BitbucketClient:
     def _http_error_hint(code: int, path: str) -> str:
         if code == 401:
             return (
-                " Hint: verify BITBUCKET_EMAIL plus a Bitbucket Cloud API token/app password "
-                "with REST scopes for this endpoint. Plain no-scope Atlassian tokens will fail "
-                "for Bitbucket REST auth. SSH git access alone does not validate REST auth."
+                " Hint: for auth_mode=basic, use BITBUCKET_EMAIL plus a Bitbucket personal API "
+                "token/app password with REST scopes. For auth_mode=bearer, use a Bitbucket "
+                "repository/workspace/project access token as the bearer token. Plain no-scope "
+                "Atlassian tokens will fail for Bitbucket REST auth. SSH git access alone does "
+                "not validate REST auth."
             )
         if code == 403:
             return (
@@ -135,8 +239,9 @@ class BitbucketClient:
         path: str,
         body: bytes | None,
         raw: bool,
+        headers: dict[str, str],
     ) -> Any:
-        req = urllib.request.Request(url, data=body, headers=self._headers, method=method)
+        req = urllib.request.Request(url, data=body, headers=headers, method=method)
         with urllib.request.urlopen(req, timeout=60) as resp:
             return self._decode_response(resp, raw)
 
@@ -155,21 +260,43 @@ class BitbucketClient:
         url = self._build_url(path, params)
         body = self._build_body(method, data)
         self._log_debug_request(f"{method} {url}", body)
+        workspace, repo_slug = self._parse_target_from_path(path)
+        auth_key, candidates = self._select_candidates(
+            workspace or self.config.workspace,
+            repo_slug,
+        )
 
         last_error: urllib.error.HTTPError | None = None
-        for attempt in range(_MAX_429_RETRIES + 1):
-            try:
-                return self._request_once(method, url, path, body, raw)
-            except TimeoutError:
-                print(f"ERROR: Request timed out (60s) {method} {path}", file=sys.stderr)
-                raise
-            except urllib.error.HTTPError as e:
-                if self._maybe_retry_rate_limit(e, attempt, method, path):
-                    last_error = e
-                    continue
-                self._handle_http_error(e, method, path)
-            except urllib.error.URLError as e:
-                self._handle_url_error(e, method, path)
+        for idx, candidate in enumerate(candidates):
+            headers = self._build_headers(candidate.mode, candidate.email, candidate.token)
+            for attempt in range(_MAX_429_RETRIES + 1):
+                try:
+                    result = self._request_once(method, url, path, body, raw, headers)
+                    self._record_auth_success(
+                        auth_key,
+                        candidate.source,
+                        repo_key=candidate.repo_key,
+                        fallback_used=(idx > 0),
+                    )
+                    return result
+                except TimeoutError:
+                    print(f"ERROR: Request timed out (60s) {method} {path}", file=sys.stderr)
+                    raise
+                except urllib.error.HTTPError as e:
+                    if self._maybe_retry_rate_limit(e, attempt, method, path):
+                        last_error = e
+                        continue
+                    if (
+                        e.code == 401
+                        and idx == 0
+                        and len(candidates) > 1
+                        and candidate.source == "basic"
+                    ):
+                        e.read()
+                        break
+                    self._handle_http_error(e, method, path)
+                except urllib.error.URLError as e:
+                    self._handle_url_error(e, method, path)
 
         # All retries exhausted
         if last_error:
@@ -637,23 +764,41 @@ class BitbucketClient:
     # -----------------------------------------------------------------
     # Utility
     # -----------------------------------------------------------------
-    def test_connection(self, workspace: str) -> tuple[bool, str | None]:
+    def test_connection(
+        self, workspace: str, repo_slug: str | None = None
+    ) -> tuple[bool, str | None]:
         """Test connectivity and credentials with an actionable failure reason."""
-        url = self._build_url(f"/repositories/{workspace}", {"pagelen": "1"})
-        req = urllib.request.Request(url, headers=self._headers, method="GET")
+        path, params = self._build_connection_path(workspace, repo_slug)
+        url = self._build_url(path, params)
         try:
-            with urllib.request.urlopen(req, timeout=60):
-                pass
-            return True, None
-        except urllib.error.HTTPError as e:
-            hint = self._http_error_hint(e.code, f"/repositories/{workspace}")
-            if e.code == 401:
-                return False, f"REST auth rejected the token.{hint}"
-            if e.code == 403:
-                return (
-                    False,
-                    f"REST auth succeeded, but access to workspace '{workspace}' was denied.{hint}",
+            auth_key, candidates = self._select_candidates(workspace, repo_slug)
+        except SystemExit:
+            return False, "No usable Bitbucket auth path was resolved."
+
+        for idx, candidate in enumerate(candidates):
+            headers = self._build_headers(candidate.mode, candidate.email, candidate.token)
+            req = urllib.request.Request(url, headers=headers, method="GET")
+            try:
+                with urllib.request.urlopen(req, timeout=60):
+                    pass
+                self._record_auth_success(
+                    auth_key,
+                    candidate.source,
+                    repo_key=candidate.repo_key,
+                    fallback_used=(idx > 0),
                 )
-            return False, f"HTTP {e.code} while contacting workspace '{workspace}'."
-        except urllib.error.URLError as e:
-            return False, f"Network error while contacting Bitbucket: {e.reason}"
+                return True, self._last_auth_summary
+            except urllib.error.HTTPError as e:
+                if (
+                    e.code == 401
+                    and idx == 0
+                    and len(candidates) > 1
+                    and candidate.source == "basic"
+                ):
+                    e.read()
+                    continue
+                return self._connection_error_detail(e, path, auth_key, candidate, idx)
+            except urllib.error.URLError as e:
+                return False, f"Network error while contacting Bitbucket: {e.reason}"
+
+        return False, f"Failed to contact '{path}'. Check credentials and access."

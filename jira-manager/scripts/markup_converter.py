@@ -142,7 +142,10 @@ def _html_to_jira(html_content: str) -> str:
     text = re.sub(r"<hr\s*/?>", "----", text)
 
     # --- Paragraphs ---
-    text = re.sub(r"<p>(.*?)</p>", r"\1\n", text, flags=re.DOTALL)
+    # Use \n\n before content to ensure a blank line separates paragraphs from
+    # preceding list items.  Without this, Jira wiki markup interprets bold
+    # labels (e.g. *DoD:*) as list continuations when they follow ** items.
+    text = re.sub(r"<p>(.*?)</p>", r"\n\n\1\n", text, flags=re.DOTALL)
 
     # --- Line breaks ---
     text = re.sub(r"<br\s*/?>", "\n", text)
@@ -247,7 +250,7 @@ def _process_html_list(html_text: str, prefix: str, depth: int) -> list[str]:
                 nested_lists.append((clean[ns:ne], pfx))
                 clean = clean[:ns] + clean[ne:]
 
-        item_text = clean.strip()
+        item_text = re.sub(r"</?p>", "", clean).strip()
         if item_text:
             lines.append(f"{bullet} {item_text}")
 

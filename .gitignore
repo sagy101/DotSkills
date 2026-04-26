@@ -26,6 +26,7 @@ Thumbs.db
 .junie/
 .roo/
 .claude/
+.worktrees/
 
 # Confluence runtime artifacts
 .confluence-manifest.json

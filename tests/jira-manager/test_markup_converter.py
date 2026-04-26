@@ -330,6 +330,40 @@ class TestNormalizeNestedListIndent:
         assert "** *Jira*" in result or "**Jira**" in result
         assert "* *Webhook registration:*" in result or "Webhook" in result
 
+    def test_bold_label_after_nested_list_not_absorbed(self):
+        """Regression: **DoD:** after a nested list must not be absorbed into the list.
+
+        Python-Markdown correctly puts <p><strong>DoD:</strong></p> outside the
+        list, but without a blank line before the paragraph in the Jira wiki
+        output, Jira interprets *DoD:* as a list continuation because * is the
+        list bullet character in wiki markup.
+        """
+        md = (
+            "- **Eval checks and judges** (eval/):\n"
+            "  - eval.yaml: declares all checks\n"
+            "  - **Deterministic checks**: pattern_detection\n"
+            "  - **Fixtures — dev set**: 50+ entries, edge cases\n"
+            "\n"
+            "**DoD:**\n"
+            "- The feedback agent manifest is read by the unified server\n"
+            "- All external service interactions go through server-side tools"
+        )
+        result = md_to_jira_markup(md)
+        lines = result.split("\n")
+        # Find the line containing DoD
+        dod_indices = [i for i, line in enumerate(lines) if "DoD:" in line]
+        assert dod_indices, "DoD: label not found in output"
+        dod_idx = dod_indices[0]
+        # Must have a blank line before it (not a list continuation)
+        assert dod_idx > 0 and lines[dod_idx - 1].strip() == "", (
+            f"Expected blank line before *DoD:* at line {dod_idx}, got: {lines[dod_idx - 1]!r}"
+        )
+        # The DoD list items must be top-level (* not **)
+        dod_items = [line for line in lines[dod_idx + 1 :] if line.startswith("*")]
+        assert all(not line.startswith("**") for line in dod_items), (
+            f"DoD items should be top-level list, got nested: {dod_items}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # _html_to_jira — direct HTML conversion

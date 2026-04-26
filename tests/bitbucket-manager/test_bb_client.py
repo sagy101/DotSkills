@@ -2,10 +2,12 @@
 """Tests for new Bitbucket client helpers used by the Bitbucket lane."""
 
 import importlib.util
+import os
 import sys
 import urllib.error
 from email.message import Message
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest import mock
 
@@ -23,10 +25,31 @@ sys.modules["bb_client"] = _client_mod
 
 
 def _make_client() -> Any:
-    config = mock.MagicMock()
-    config.workspace = "acme"
-    with mock.patch.object(_client_mod, "resolve_credentials", return_value=("user", "token")):
-        return _client_mod.BitbucketClient(config)
+    config = SimpleNamespace(
+        workspace="acme",
+        auth_mode="basic",
+        email_env="BITBUCKET_EMAIL",
+        token_env="BITBUCKET_TOKEN",
+        env_file=None,
+        repo_tokens={},
+        project_root=Path.cwd(),
+        auto_detect_repo=lambda: "repo",
+    )
+    return _client_mod.BitbucketClient(config)
+
+
+def _make_bearer_client(auto_repo: str | None = "repo") -> Any:
+    config = SimpleNamespace(
+        workspace="acme",
+        auth_mode="basic",
+        email_env="BITBUCKET_EMAIL",
+        token_env="BITBUCKET_TOKEN",
+        env_file=None,
+        repo_tokens={f"acme/{auto_repo}": "BB_ACCESS_TOKEN"} if auto_repo else {},
+        project_root=Path.cwd(),
+        auto_detect_repo=lambda: auto_repo,
+    )
+    return _client_mod.BitbucketClient(config)
 
 
 class TestPrDiff:
@@ -157,13 +180,20 @@ class TestConnectivity:
         response = mock.MagicMock()
         response.__enter__.return_value = response
         response.__exit__.return_value = False
-        with mock.patch.object(
-            _client_mod.urllib.request, "urlopen", return_value=response
-        ) as mock_urlopen:
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"BITBUCKET_EMAIL": "user@example.com", "BITBUCKET_TOKEN": "token"},
+                clear=False,
+            ),
+            mock.patch.object(
+                _client_mod.urllib.request, "urlopen", return_value=response
+            ) as mock_urlopen,
+        ):
             ok, detail = client.test_connection("acme")
 
         assert ok is True
-        assert detail is None
+        assert detail == "Using basic auth"
         mock_urlopen.assert_called_once()
 
     def test_test_connection_401_has_actionable_hint(self) -> None:
@@ -175,7 +205,14 @@ class TestConnectivity:
             hdrs=Message(),
             fp=None,
         )
-        with mock.patch.object(_client_mod.urllib.request, "urlopen", side_effect=error):
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"BITBUCKET_EMAIL": "user@example.com", "BITBUCKET_TOKEN": "token"},
+                clear=False,
+            ),
+            mock.patch.object(_client_mod.urllib.request, "urlopen", side_effect=error),
+        ):
             ok, detail = client.test_connection("acme")
 
         assert ok is False
@@ -183,3 +220,62 @@ class TestConnectivity:
         assert "REST auth rejected the token" in detail
         assert "Plain no-scope Atlassian tokens will fail" in detail
         assert "SSH git access alone does not validate REST auth" in detail
+
+    def test_bearer_client_uses_bearer_header(self) -> None:
+        client = _make_bearer_client()
+        headers = client._build_headers("bearer", None, "access-token")
+        assert headers["Authorization"] == "Bearer access-token"
+
+    def test_bearer_test_connection_uses_repo_endpoint(self) -> None:
+        client = _make_bearer_client(auto_repo="demo-repo")
+        response = mock.MagicMock()
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+
+        with (
+            mock.patch.dict(
+                os.environ,
+                {
+                    "BB_ACCESS_TOKEN": "access-token",
+                    "BITBUCKET_EMAIL": "",
+                    "BITBUCKET_TOKEN": "",
+                },
+                clear=False,
+            ),
+            mock.patch.object(
+                _client_mod.urllib.request, "urlopen", return_value=response
+            ) as mock_urlopen,
+        ):
+            ok, detail = client.test_connection("acme", "demo-repo")
+
+        assert ok is True
+        assert detail == "Using repo_token auth"
+        request = mock_urlopen.call_args.args[0]
+        assert request.full_url == "https://api.bitbucket.org/2.0/repositories/acme/demo-repo"
+
+    def test_bearer_test_connection_404_explains_repo_scope(self) -> None:
+        client = _make_bearer_client(auto_repo="demo-repo")
+        error = urllib.error.HTTPError(
+            "https://api.bitbucket.org/2.0/repositories/acme/demo-repo",
+            404,
+            "Not Found",
+            hdrs=Message(),
+            fp=None,
+        )
+        with (
+            mock.patch.dict(
+                os.environ,
+                {
+                    "BB_ACCESS_TOKEN": "access-token",
+                    "BITBUCKET_EMAIL": "",
+                    "BITBUCKET_TOKEN": "",
+                },
+                clear=False,
+            ),
+            mock.patch.object(_client_mod.urllib.request, "urlopen", side_effect=error),
+        ):
+            ok, detail = client.test_connection("acme", "demo-repo")
+
+        assert ok is False
+        assert detail is not None
+        assert "Verify the token scope matches this repository" in detail
