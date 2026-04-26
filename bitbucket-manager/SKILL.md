@@ -47,19 +47,20 @@ Use when the user wants to:
 
 1. **Config**: `.bitbucket.json` in project root and/or `~/.bitbucket.json` for global defaults (see [CONFIG.md](references/CONFIG.md))
 2. **Credentials**:
-   - default path: `BITBUCKET_EMAIL` + `BITBUCKET_TOKEN` for personal Bitbucket API tokens with `credentials.auth_mode: "basic"` (default)
-   - fallback path: per-repo repository access tokens configured in `repo_tokens`
+   - recommended path: one personal Bitbucket API token with scopes via `BITBUCKET_EMAIL` + `BITBUCKET_TOKEN` and `credentials.auth_mode: "basic"` (default)
+   - fallback path: per-repo repository access tokens configured in `repo_tokens` only if the personal-token path is unavailable in your org
    - compatibility path: a direct bearer token via `credentials.auth_mode: "bearer"` if you intentionally want that mode
 
 Bitbucket token setup is important:
 - Use **Create API token with scopes**, not the plain **Create API token** button
 - Choose **Bitbucket** as the app when prompted
-- Minimum read-only scopes:
+- Recommended minimal scopes for this skill:
   - `Repositories: Read`
   - `Pull requests: Read`
-- Add write scopes for live mutations:
-  - `Repositories: Write`
+  - `Pipelines: Read`
+  - `Workspace: Read`
   - `Pull requests: Write`
+- `Repositories: Write` is not required for normal PR, comment, checks, and pipeline-read workflows in this skill.
 
 If you use a plain no-scope Atlassian token, Bitbucket REST calls will fail with `401 Unauthorized` even if SSH git access works.
 
@@ -109,9 +110,11 @@ This checks Python version, config file, credentials, repo auto-detection, and A
 
 If connectivity fails with a `401`, check the token type before anything else:
 - a no-scope Atlassian token is not enough for Bitbucket REST
-- for default `basic` auth, the token must be a Bitbucket personal token created with scopes and `BITBUCKET_EMAIL` must match the Atlassian account that created it
-- if that default auth is unavailable or Bitbucket rejects it, configure a repository token in `repo_tokens` for the target `workspace/repo`
-- direct `auth_mode: "bearer"` remains available for compatibility, but `repo_tokens` is the recommended fallback model
+- the preferred setup is one Bitbucket personal API token created with scopes, used with `BITBUCKET_EMAIL`
+- `BITBUCKET_EMAIL` must match the Atlassian account that created the token
+- recommended minimum scopes are `Repositories: Read`, `Pull requests: Read`, `Pipelines: Read`, `Workspace: Read`, and `Pull requests: Write`
+- if that personal-token path is unavailable or Bitbucket still rejects it, configure a repository token in `repo_tokens` for the target `workspace/repo`
+- direct `auth_mode: "bearer"` remains available for compatibility, but `repo_tokens` is only a fallback model
 
 Skip the connectivity check (faster, offline-safe):
 
@@ -378,8 +381,8 @@ When composing `--description` or `--body` arguments:
 
 | Error | Cause | Fix |
 |---|---|---|
-| `401 Unauthorized` | Wrong token type, wrong email, expired token, or invalid credentials | Verify `BITBUCKET_EMAIL` and `BITBUCKET_TOKEN`. Use **Create API token with scopes** for Bitbucket; plain no-scope Atlassian tokens will fail |
-| `403 Forbidden` | Insufficient permissions | API token needs repository and PR read/write scopes |
+| `401 Unauthorized` | Wrong token type, wrong email, expired token, or invalid credentials | Verify `BITBUCKET_EMAIL` and `BITBUCKET_TOKEN`. Prefer one Bitbucket personal API token created via **Create API token with scopes**; plain no-scope Atlassian tokens will fail |
+| `403 Forbidden` | Insufficient permissions | Add the missing Bitbucket scopes. Recommended minimum: Repositories Read, Pull requests Read, Pipelines Read, Workspace Read, Pull requests Write |
 | `403` on resolve | Tried to resolve a general comment | Only inline (diff) comments can be resolved. General PR comments cannot be resolved via the API |
 | `403` on delete | Not the comment author | You can only delete comments you authored |
 | `404 Not Found` | Wrong workspace, repo slug, PR ID, or comment ID | Verify config `workspace` and run `repo_list.py` to check |

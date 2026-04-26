@@ -91,21 +91,27 @@ Prefer **Bitbucket Cloud API tokens** with the needed REST scopes. Atlassian is 
 
 Create a Bitbucket API token at **Bitbucket Settings > Personal settings > API tokens**.
 
-Required scopes:
-- `Repositories: Read` — for listing repos and reading PR details
-- `Repositories: Write` — for build status operations
-- `Pull requests: Read` — for listing and reading PRs
+Recommended minimum scopes:
+- `Repositories: Read` — for repository detection, PR repo metadata, and repository endpoints
+- `Pull requests: Read` — for listing and reading PRs plus comment retrieval
+- `Pipelines: Read` — for pipeline status, steps, logs, and checks-related visibility
+- `Workspace: Read` — for workspace-scoped lookups used by some listing and discovery flows
 - `Pull requests: Write` — for creating, updating, merging, declining PRs and posting comments
+
+Not normally required for this skill's common workflows:
+- `Repositories: Write`
+- `Pipelines: Write`
 
 If SSH git commands work but the REST scripts still return `401`, the most common causes are:
 - the token is invalid or expired
 - the token is the wrong credential type for Bitbucket Cloud REST auth
-- the token is missing the scopes required by the specific endpoint
 - the wrong email is paired with the token in Basic auth
+
+If the REST scripts return `403`, the token was accepted but is missing one or more required scopes for that endpoint.
 
 ## Repository-token fallback
 
-If personal Bitbucket API tokens are blocked or broken in your Atlassian org, configure repository access tokens in `repo_tokens`.
+Prefer one personal Bitbucket API token with scopes for normal multi-repo use. If that path is blocked or broken in your Atlassian org, configure repository access tokens in `repo_tokens`.
 
 Recommended pattern:
 
@@ -126,7 +132,7 @@ Recommended pattern:
 ```
 
 Notes:
-- The skill tries default `basic` auth first.
+- The skill tries default `basic` auth first, and that is the recommended normal setup.
 - If Bitbucket rejects default `basic` auth for a repo, the skill checks `repo_tokens["workspace/repo"]`.
 - Repository access tokens are scoped to a single repo, so preflight validates against the current target repo.
 - If no repo token exists for the target repo, the skill should fail with an actionable message telling the agent to ask the human to configure one.

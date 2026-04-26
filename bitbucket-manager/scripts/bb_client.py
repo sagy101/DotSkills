@@ -164,16 +164,20 @@ class BitbucketClient:
     def _http_error_hint(code: int, path: str) -> str:
         if code == 401:
             return (
-                " Hint: for auth_mode=basic, use BITBUCKET_EMAIL plus a Bitbucket personal API "
-                "token/app password with REST scopes. For auth_mode=bearer, use a Bitbucket "
-                "repository/workspace/project access token as the bearer token. Plain no-scope "
-                "Atlassian tokens will fail for Bitbucket REST auth. SSH git access alone does "
-                "not validate REST auth."
+                " Hint: prefer one Bitbucket personal API token with scopes, used as "
+                "BITBUCKET_EMAIL plus BITBUCKET_TOKEN in auth_mode=basic. Recommended minimum "
+                "scopes: Repositories Read, Pull requests Read, Pipelines Read, Workspace Read, "
+                "and Pull requests Write. Plain no-scope Atlassian tokens will fail for "
+                "Bitbucket REST auth. Only fall back to repo_tokens or direct bearer mode if "
+                "the personal-token path is unavailable. SSH git access alone does not validate "
+                "REST auth."
             )
         if code == 403:
             return (
                 " Hint: credentials were accepted, but this account/token lacks permission for "
-                f"{path}."
+                f"{path}. Add the missing Bitbucket scopes; the usual minimum is Repositories "
+                "Read, Pull requests Read, Pipelines Read, Workspace Read, and Pull requests "
+                "Write."
             )
         return ""
 
