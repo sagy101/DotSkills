@@ -170,7 +170,7 @@ def _create_or_update(
 
     page_url = f"{config.confluence_url}/pages/{result_id}"
     if "_links" in result and "webui" in result["_links"]:
-        base_url = config.confluence_url.removesuffix("/wiki")
+        base_url = result["_links"].get("base", config.confluence_url)
         page_url = base_url + result["_links"]["webui"]
 
     return str(result_id), page_url

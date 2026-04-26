@@ -62,6 +62,8 @@ This skill gives **any SKILL.md-compatible agent** the ability to publish, sync,
 
 **12. REST v2 comment and like limits** — Confluence Cloud v2 exposes separate footer and inline comment routes. We use v2 for list/add/reply/edit/delete and inline resolve state. Like counts and like-user reads are supported for pages, footer comments, and inline comments. Like/unlike mutation is not exposed in the reviewed Cloud REST docs, so the skill only reads likes and does not pretend to toggle them.
 
+**14. Page URL construction from API response** — The page URL returned after publish uses `_links.base` from the Confluence API response, not `config.confluence_url` with suffix stripping. The API's `webui` path (e.g. `/spaces/IPE/pages/123`) does not always include the `/wiki` prefix, so manually removing `/wiki` from the config URL produced broken URLs for update operations. Using `_links.base` (which the API provides as the canonical base) is correct regardless of whether the instance uses `/wiki` or not. Falls back to `config.confluence_url` when `_links.base` is absent.
+
 **13. Footer-reply CLI scope** — The `reply` CLI is intentionally footer-focused because that is the primary documented workflow for threaded discussion. Inline replies are still possible at the API layer through `parentCommentId`, but the CLI stays narrow so it does not imply a stronger UX guarantee than the API docs support.
 
 ---

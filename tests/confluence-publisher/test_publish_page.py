@@ -42,8 +42,14 @@ def _make_config() -> ConfluenceConfig:
 
 def _make_confluence_mock(page_id: str = "999") -> MagicMock:
     mock = MagicMock()
-    mock.create_page.return_value = {"id": page_id, "_links": {"webui": "/spaces/TEST/pages/999"}}
-    mock.update_page.return_value = {"id": page_id, "_links": {"webui": "/spaces/TEST/pages/999"}}
+    mock.create_page.return_value = {
+        "id": page_id,
+        "_links": {"base": "https://example.atlassian.net/wiki", "webui": "/spaces/TEST/pages/999"},
+    }
+    mock.update_page.return_value = {
+        "id": page_id,
+        "_links": {"base": "https://example.atlassian.net/wiki", "webui": "/spaces/TEST/pages/999"},
+    }
     mock.get_page_by_id.return_value = {"id": page_id, "version": {"number": 1}}
     mock.attach_file.return_value = True
     return mock
@@ -305,7 +311,10 @@ class TestUploadOrdering:
         confluence = _make_confluence_mock(page_id="123")
 
         call_log: list[str] = []
-        _page_result = {"id": "123", "_links": {"webui": "/p/123"}}
+        _page_result = {
+            "id": "123",
+            "_links": {"base": "https://example.atlassian.net/wiki", "webui": "/p/123"},
+        }
 
         def _log_create(**kw) -> dict:  # noqa: ANN003
             call_log.append("create_page")
@@ -402,3 +411,99 @@ class TestStripTitleHeading:
 
         body = confluence.create_page.call_args.kwargs.get("body", "")
         assert "Different Heading" in body
+
+
+# ---------------------------------------------------------------------------
+# Fix 4: Page URL uses _links.base from API response (not removesuffix hack)
+# ---------------------------------------------------------------------------
+
+
+class TestPageUrlConstruction:
+    def test_url_uses_api_base_on_create(self) -> None:
+        """Page URL must use _links.base from the API, not strip /wiki from config."""
+        config = _make_config()
+        confluence = _make_confluence_mock()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            md_path = Path(tmp) / "test.md"
+            md_path.write_text("Body content", encoding="utf-8")
+
+            result = publish_page(
+                confluence=confluence,
+                config=config,
+                file_path=md_path,
+                title="URL Test",
+                mode="create",
+                parent_id="100",
+            )
+
+        _page_id, page_url = result
+        assert page_url == "https://example.atlassian.net/wiki/spaces/TEST/pages/999"
+
+    def test_url_uses_api_base_on_update(self) -> None:
+        """Page URL must use _links.base from the API on update too."""
+        config = _make_config()
+        confluence = _make_confluence_mock(page_id="888")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            md_path = Path(tmp) / "test.md"
+            md_path.write_text("Body content", encoding="utf-8")
+
+            result = publish_page(
+                confluence=confluence,
+                config=config,
+                file_path=md_path,
+                title="URL Test",
+                mode="update",
+                page_id="888",
+            )
+
+        _page_id, page_url = result
+        assert page_url == "https://example.atlassian.net/wiki/spaces/TEST/pages/999"
+
+    def test_url_falls_back_to_config_when_base_missing(self) -> None:
+        """When _links.base is absent, fall back to config.confluence_url."""
+        config = _make_config()
+        confluence = _make_confluence_mock()
+        confluence.create_page.return_value = {
+            "id": "999",
+            "_links": {"webui": "/spaces/TEST/pages/999"},
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            md_path = Path(tmp) / "test.md"
+            md_path.write_text("Body content", encoding="utf-8")
+
+            result = publish_page(
+                confluence=confluence,
+                config=config,
+                file_path=md_path,
+                title="Fallback Test",
+                mode="create",
+                parent_id="100",
+            )
+
+        _page_id, page_url = result
+        assert page_url == "https://example.atlassian.net/wiki/spaces/TEST/pages/999"
+
+    def test_url_fallback_when_no_links(self) -> None:
+        """When _links is absent entirely, use the config-based fallback URL."""
+        config = _make_config()
+        confluence = _make_confluence_mock()
+        confluence.create_page.return_value = {"id": "999"}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            md_path = Path(tmp) / "test.md"
+            md_path.write_text("Body content", encoding="utf-8")
+
+            result = publish_page(
+                confluence=confluence,
+                config=config,
+                file_path=md_path,
+                title="No Links Test",
+                mode="create",
+                parent_id="100",
+            )
+
+        _page_id, page_url = result
+        assert page_url == "https://example.atlassian.net/wiki/pages/999"
