@@ -31,3 +31,6 @@ Thumbs.db
 # Confluence runtime artifacts
 .confluence-manifest.json
 .confluence.json
+
+# Local live demo package (kept only in Bitbucket repo)
+/demo/
