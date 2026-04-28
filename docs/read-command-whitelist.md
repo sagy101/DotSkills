@@ -10,6 +10,7 @@ These commands only **read** data — they never create, update, or delete resou
 ## jira-manager
 
 ```
+*/scripts/jira_preflight.py *
 */scripts/fetch_tickets.py *
 */scripts/discover_fields.py *
 */scripts/diff_tickets.py *
@@ -54,12 +55,14 @@ These commands only **read** data — they never create, update, or delete resou
 ## sbt-build-test
 
 ```
+*/scripts/preflight_check.sh *
 */scripts/sbt_status.sh *
 ```
 
 ## confluence-publisher
 
 ```
+*/scripts/confluence_preflight.py *
 */scripts/validate_manifest.py *
 */scripts/verify_hierarchy.py *
 */scripts/discover_pages.py *
@@ -73,6 +76,7 @@ These commands only **read** data — they never create, update, or delete resou
 ## codebase-analyzer
 
 ```
+*/scripts/analyzer_preflight.py *
 */scripts/analyze.py *
 */scripts/analyzer_setup_env.py
 ```
@@ -80,12 +84,27 @@ These commands only **read** data — they never create, update, or delete resou
 ## review-prompts
 
 ```
+*/scripts/rp_preflight.py
 */scripts/build-prompt.py *
+```
+
+## super-review
+
+```
+*/scripts/sr_preflight.py
+```
+
+## skill-creator
+
+```
+*/scripts/sc_preflight.py
+*/scripts/quick_validate.py *
 ```
 
 ## codex-subagent
 
 ```
+*/scripts/codex_preflight.py *
 */scripts/run_codex.py --mode read-only *
 */scripts/run_codex.py --status *
 ```

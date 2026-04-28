@@ -59,7 +59,12 @@ echo "--- Python 3 ---"
 
 if command -v python3 >/dev/null 2>&1; then
   PYTHON_VER=$(python3 --version 2>&1 | head -1)
-  ok "$PYTHON_VER"
+  PYTHON_MINOR=$(python3 -c 'import sys; print(sys.version_info.minor)' 2>/dev/null || echo "0")
+  if [ "$PYTHON_MINOR" -ge 10 ] 2>/dev/null; then
+    ok "$PYTHON_VER (>= 3.10)"
+  else
+    warn "$PYTHON_VER — 3.10+ recommended for full compatibility"
+  fi
   echo "  Required by parse_test_reports.sh for XML parsing"
 else
   warn "python3 not found — parse_test_reports.sh will not work"

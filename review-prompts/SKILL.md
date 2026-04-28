@@ -41,6 +41,16 @@ Use this skill when the user wants to:
 | **JavaScript** | `prompts/javascript.md` | ES2024+, async patterns, closures, Node.js, framework idioms |
 | **Prompt Engineering** | `prompts/prompt-engineering.md` | Clarity, structure, examples, output format, constraints, token efficiency |
 
+## Pre-flight checks
+
+Run the preflight script before first use:
+
+```bash
+python3 <skill_dir>/scripts/rp_preflight.py
+```
+
+This checks Python version, build-prompt.py presence, shared template, prompt files, and a runtime test of `--list` in one pass. Each check prints `[PASS]`, `[FAIL]`, or `[WARN]`. Exit code 0 = all checks passed, 1 = at least one failed.
+
 ## Building Prompts
 
 Each review type is stored as a lean `.md` file (Role + Checklist only). Shared sections (Process, Output Format, Constraints) live in `prompts/_shared.md`. A build script assembles the complete prompt with every section in the right place.

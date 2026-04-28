@@ -14,6 +14,7 @@ Each skill with non-trivial design decisions has a companion design document exp
 | [jira-manager](jira-manager/jira-manager-design.md) | Why, capabilities, discovery-first architecture, bulk update scoping, field discovery flow, config discovery | Stable (v1.6) |
 | [eks-pod-ops](eks-pod-ops/eks-pod-ops-design.md) | Why, secret redaction pipeline, exec blocklist, sidecar-aware container selection, Rancher Desktop workaround, module structure | Stable (v1.1) |
 | [sbt-build-test](sbt-build-test/sbt-build-test-design.md) | Why, four-command agent interface, isolated Ivy home, hybrid discovery, batched SBT evaluation, workspace graph, auto-publish chains | Stable (v10.0) |
+| [super-review](super-review/super-review-design.md) | Why, three-layer stack, backend-agnostic orchestration, grading rubric, synthesis workflow, preflight dependency validation | Stable (v1.0) |
 
 ## Templates
 
@@ -39,6 +40,8 @@ docs/
 │   └── jira-manager-design.md
 ├── sbt-build-test/
 │   └── sbt-build-test-design.md
+├── super-review/
+│   └── super-review-design.md
 └── templates/
     └── skill-design-doc-template.md
 ```

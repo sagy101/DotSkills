@@ -39,6 +39,16 @@ def _is_cascade() -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _check_python() -> bool:
+    """Check Python version >= 3.10."""
+    major, minor = sys.version_info[:2]
+    if major >= 3 and minor >= 10:
+        print(f"{_PASS} Python {major}.{minor}")
+        return True
+    print(f"{_FAIL} Python {major}.{minor} — requires 3.10+")
+    return False
+
+
 def _check_review_prompts() -> bool:
     """Check that the review-prompts skill is installed as a sibling directory."""
     skill_md = REVIEW_PROMPTS_DIR / "SKILL.md"
@@ -146,13 +156,16 @@ def main() -> None:
 
     results = []
 
-    # 1. review-prompts skill
+    # 1. Python version
+    results.append(_check_python())
+
+    # 2. review-prompts skill
     results.append(_check_review_prompts())
 
-    # 2. build-prompt.py test
+    # 3. build-prompt.py test
     results.append(_check_build_prompt())
 
-    # 3. Sub-agent capability (agent-aware)
+    # 4. Sub-agent capability (agent-aware)
     results.append(_check_subagent_capability())
 
     # Summary

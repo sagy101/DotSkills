@@ -35,6 +35,18 @@ Use this skill when the user wants to:
 - Generate proper SKILL.md frontmatter and body content
 - Apply prompt engineering best practices to skill instructions
 
+## Pre-flight checks
+
+Run the preflight script before first use:
+
+```bash
+python3 <skill_dir>/scripts/sc_preflight.py
+```
+
+This checks Python version (3.10+), PyYAML availability, expected scripts, and reference docs in one pass. Each check prints `[PASS]`, `[FAIL]`, or `[WARN]`. Exit code 0 = all checks passed, 1 = at least one failed.
+
+If PyYAML is missing, install it: `pip install PyYAML>=6.0`
+
 ## Workflow
 
 Always follow this sequence. Never skip the analysis or plan steps.
