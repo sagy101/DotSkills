@@ -4,7 +4,7 @@ description: >
   Delegate coding tasks to OpenAI Codex CLI as a sub-agent. Use when the user asks to delegate work,
   run parallel coding tasks, get a code review or second opinion, explore code with fresh context,
   or when multiple independent subtasks can be parallelized. Use only when the task justifies
-  delegation overhead (> 2 min of direct work) and benefits from fresh context or parallelism.
+  delegation overhead (more than 2 min of direct work) and benefits from fresh context or parallelism.
   IMPORTANT: NEVER run `codex` CLI commands directly — always use this skill's wrapper script (run_codex.py).
 license: MIT
 metadata:

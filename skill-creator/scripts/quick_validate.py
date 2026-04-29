@@ -9,6 +9,9 @@ import sys
 from pathlib import Path
 
 MAX_SKILL_NAME_LENGTH = 64
+WARN_BODY_CHARS = 20_000
+MAX_BODY_CHARS = 25_000
+LARGE_BODY_NO_REFS_CHARS = 10_000
 
 
 def parse_frontmatter_simple(raw_yaml: str) -> dict[str, str]:
@@ -98,8 +101,8 @@ def validate_keys(frontmatter: dict[str, str]) -> tuple[bool, str | None]:
     return True, None
 
 
-def validate_name(name: str | None) -> tuple[bool, str | None]:
-    """Validate skill name format."""
+def validate_name(name: str | None, skill_path: Path | None = None) -> tuple[bool, str | None]:
+    """Validate skill name format and directory match."""
     if not isinstance(name, str):
         return False, f"Name must be a string, got {type(name).__name__}"
 
@@ -123,6 +126,15 @@ def validate_name(name: str | None) -> tuple[bool, str | None]:
             f"Name is too long ({len(name)} characters). "
             f"Maximum is {MAX_SKILL_NAME_LENGTH} characters.",
         )
+
+    if skill_path is not None:
+        dir_name = Path(skill_path).resolve().name
+        if name != dir_name:
+            return (
+                False,
+                f"Name '{name}' does not match directory name '{dir_name}'",
+            )
+
     return True, None
 
 
@@ -168,11 +180,75 @@ def validate_body(body: str | None) -> tuple[bool, str | None]:
     if len(non_heading_lines) < 2:
         return False, "SKILL.md body has no meaningful content beyond headings"
 
+    # Check body character count (~4 chars/token, spec recommends < 5000 tokens)
+    body_len = len(body)
+    if body_len > MAX_BODY_CHARS:
+        return (
+            False,
+            f"SKILL.md body is too long ({body_len:,} chars, ~{body_len // 4:,} tokens). "
+            f"Maximum is {MAX_BODY_CHARS:,} chars. "
+            f"Move detailed content to references/ files.",
+        )
+
     return True, None
+
+
+def validate_links(body: str, skill_path: Path) -> tuple[bool, str | None]:
+    """Validate that internal markdown links point to existing files."""
+    link_pattern = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+    broken = []
+
+    # Strip fenced code blocks and inline code spans
+    body_no_code = re.sub(r"^```.*?^```", "", body, flags=re.MULTILINE | re.DOTALL)
+    body_no_code = re.sub(r"`[^`]+`", "", body_no_code)
+
+    for _text, target in link_pattern.findall(body_no_code):
+        # Skip external URLs and anchors
+        if target.startswith(("http://", "https://", "#")):
+            continue
+        # Skip non-file URI schemes (attachment:, mailto:, etc.)
+        if re.match(r"^[a-z]+:", target) and not target.startswith("./"):
+            continue
+        # Skip placeholder/example paths
+        if any(p in target for p in ("path/to/", "example", "<", ">", "skill_dir")):
+            continue
+        target_path = skill_path / target
+        if not target_path.exists():
+            broken.append(target)
+
+    if broken:
+        listed = ", ".join(broken)
+        return False, f"Broken internal link(s): {listed}"
+
+    return True, None
+
+
+def collect_warnings(body: str, skill_path: Path) -> list[str]:
+    """Collect non-fatal warnings."""
+    warnings = []
+    body_len = len(body)
+
+    if body_len > WARN_BODY_CHARS:
+        warnings.append(
+            f"SKILL.md body is {body_len:,} chars (~{body_len // 4:,} tokens). "
+            f"Recommended max is {WARN_BODY_CHARS:,} chars (~5000 tokens). "
+            f"Consider moving content to references/ files."
+        )
+
+    has_refs = (skill_path / "references").is_dir()
+    has_scripts = (skill_path / "scripts").is_dir()
+    if body_len > LARGE_BODY_NO_REFS_CHARS and not has_refs and not has_scripts:
+        warnings.append(
+            f"SKILL.md body is {body_len:,} chars but has no references/ or scripts/ directory. "
+            f"Consider extracting detailed content into supporting files."
+        )
+
+    return warnings
 
 
 def validate_skill(skill_path: str | Path) -> tuple[bool, str]:
     """Basic validation of a skill"""
+    skill_path = Path(skill_path)
     frontmatter, body, error = parse_frontmatter(skill_path)
     if error:
         return False, error
@@ -185,7 +261,7 @@ def validate_skill(skill_path: str | Path) -> tuple[bool, str]:
         assert msg is not None
         return False, msg
 
-    valid_name, msg = validate_name(frontmatter.get("name"))
+    valid_name, msg = validate_name(frontmatter.get("name"), skill_path)
     if not valid_name:
         assert msg is not None
         return False, msg
@@ -200,14 +276,32 @@ def validate_skill(skill_path: str | Path) -> tuple[bool, str]:
         assert msg is not None
         return False, msg
 
+    assert body is not None
+    valid_links, msg = validate_links(body, skill_path)
+    if not valid_links:
+        assert msg is not None
+        return False, msg
+
+    warnings = collect_warnings(body, skill_path)
+    if warnings:
+        return True, "WARNING: " + "; ".join(warnings)
+
     return True, "Skill is valid!"
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python3 quick_validate.py <skill_directory>")
+    if len(sys.argv) < 2:
+        print("Usage: python3 quick_validate.py <skill_directory_or_file> [...]")
         sys.exit(1)
 
-    valid, message = validate_skill(sys.argv[1])
-    print(message)
-    sys.exit(0 if valid else 1)
+    failed = False
+    for arg in sys.argv[1:]:
+        path = Path(arg)
+        # If given a file path (e.g. from pre-commit), use its parent directory
+        if path.is_file():
+            path = path.parent
+        valid, message = validate_skill(path)
+        print(f"{path}: {message}")
+        if not valid:
+            failed = True
+    sys.exit(1 if failed else 0)

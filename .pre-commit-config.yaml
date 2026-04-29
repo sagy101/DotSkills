@@ -28,3 +28,11 @@ repos:
     hooks:
       - id: detect-secrets
         args: ['--baseline', '.secrets.baseline']
+
+  - repo: local
+    hooks:
+      - id: validate-skills
+        name: Validate SKILL.md files
+        entry: python3 skill-creator/scripts/quick_validate.py
+        language: system
+        files: SKILL\.md$
