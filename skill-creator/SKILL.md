@@ -137,6 +137,25 @@ compatibility: >            # Only if specific requirements exist
 ---
 ```
 
+#### Skill type
+
+Before writing the body, determine the skill type:
+
+| Type | Examples | Key traits |
+|------|----------|------------|
+| **External-resource** | Jira, Confluence, Bitbucket, Jenkins, EKS | Calls APIs; needs config, credentials, connectivity checks; mutations need approval gates and `--dry-run` |
+| **Local-only** | Code analysis, review prompts, file transforms, linters | Operates on local files/repos; no credentials or API config; no approval gates needed for read-only operations |
+
+All sections below apply to **external-resource** skills. For **local-only** skills, simplify:
+
+- **Prerequisites** — list only runtime dependencies (e.g., Python version, CLI tools), omit config file and credentials
+- **Configuration** — omit or reduce to optional settings (e.g., output format preferences), no `CONFIG.md` needed if there is nothing to configure
+- **Pre-flight checks** — check runtime environment and dependencies only; omit credential and connectivity checks
+- **Workflow** — omit approval gates and dry-run steps if the skill is read-only or non-destructive
+- **Error handling** — omit API error codes; focus on runtime errors (missing dependencies, invalid input, file not found)
+
+Every other section (title, when-to-use, operations, important rules, troubleshooting) applies to both types.
+
 #### Body structure (mandatory sections)
 
 Write these sections in this exact order:
@@ -200,7 +219,11 @@ When creating scripts, follow these patterns:
 - **CLI interface** — every script uses standard flag parsing (e.g., `argparse`, `minimist`)
 - **Path handling** — scripts must handle execution from any working directory (use absolute paths or self-discovery)
 - **Structured exit codes** — 0 success, 1 operation error, 2 config error
-- **Helpful error messages** — tell the user what went wrong AND how to fix it
+- **Helpful error messages** — tell the user what went wrong AND how to fix it. When a script fails, it should attempt auto-diagnosis and print a concrete suggested fix, not just the raw error. For example:
+  - If a field is missing or invalid, query the API for valid options and print them
+  - If auth fails, confirm which env var is missing or which scope is needed
+  - If a resource is not found, suggest discovery commands or config corrections
+  - Pattern: `print("ERROR: <what failed>", file=sys.stderr)` followed by `print("  Fix: <exact command or config change>", file=sys.stderr)`
 - **`--dry-run`** flag — for any destructive operation, support preview mode
 
 ### Step 5 — Verify the skill
