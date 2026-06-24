@@ -1,5 +1,13 @@
 # DotSkills
 
+> [!WARNING]
+> **This repository is deprecated and is no longer maintained on GitHub.**
+>
+> DotSkills has been adopted internally by an enterprise, where it is now
+> actively enhanced and maintained in a private environment. This public
+> version is frozen as-is and will not receive further updates, fixes, or
+> support. It remains available for reference only.
+
 **Production-grade Agent Skills that close the developer loop — from Jira ticket to merged PR.**
 
 A curated collection of 14 self-contained skills following the [Agent Skills Open Standard](https://agentskills.io/specification).
